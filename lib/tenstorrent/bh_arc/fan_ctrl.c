@@ -50,22 +50,30 @@ STATIC uint32_t fan_curve(float max_asic_temp, float max_gddr_temp)
 	uint32_t fan_speed1;
 	uint32_t fan_speed2;
 
-	if (max_asic_temp < 49) {
-		fan_speed1 = 35;
+	if (max_asic_temp < 60) {
+		fan_speed1 = 20;
 	} else if (max_asic_temp < 90) {
-		fan_speed1 =
-			(uint32_t)(0.03867f * (max_asic_temp - 49.0f) * (max_asic_temp - 49.0f)) +
-			35;
+		if (max_asic_temp < 72) {
+			fan_speed1 = (uint32_t)(0.833f * max_asic_temp - 29.98f);
+		} else if (max_asic_temp < 75) {
+			fan_speed1 = (uint32_t)(3.333f * max_asic_temp - 209.976f);
+		} else {
+			fan_speed1 = (uint32_t)(4.0f * max_asic_temp - 260.0f);
+		}
 	} else {
 		fan_speed1 = 100;
 	}
 
-	if (max_gddr_temp < 43) {
-		fan_speed2 = 35;
+	if (max_gddr_temp < 45) {
+		fan_speed2 = 20;
 	} else if (max_gddr_temp < 82) {
-		fan_speed2 =
-			(uint32_t)(0.04274f * (max_gddr_temp - 43.0f) * (max_gddr_temp - 43.0f)) +
-			35;
+		if (max_gddr_temp < 60) {
+			fan_speed2 = (uint32_t)(0.667f * max_gddr_temp - 10.015f);
+		} else if (max_gddr_temp < 65) {
+			fan_speed2 = (uint32_t)(2.0f * max_gddr_temp - 90.0f);
+		} else {
+			fan_speed2 = (uint32_t)(3.529f * max_gddr_temp - 189.385f);
+		}
 	} else {
 		fan_speed2 = 100;
 	}
