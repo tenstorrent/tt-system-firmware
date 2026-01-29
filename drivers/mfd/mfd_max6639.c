@@ -31,11 +31,11 @@ static int max6639_init(const struct device *dev)
 	}
 
 	/* enable PWM manual mode, RPM to max */
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_1, 0x83);
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_1, 0x82);
 	if (result != 0) {
 		return result;
 	}
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_1, 0x83);
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_1, 0x82);
 	if (result != 0) {
 		return result;
 	}
@@ -52,6 +52,16 @@ static int max6639_init(const struct device *dev)
 		return result;
 	}
 	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_3, 0x23);
+	if (result != 0) {
+		return result;
+	}
+
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_FAN_1_PPR, 0x40);
+	if (result != 0) {
+		return result;
+	}
+
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_FAN_2_PPR, 0x40);
 	if (result != 0) {
 		return result;
 	}
