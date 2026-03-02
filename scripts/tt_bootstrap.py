@@ -207,6 +207,10 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             / "zephyr"
             / "blobs"
             / "tt_blackhole_serdes_eth_fw.bin",
+            "destwipe": TT_Z_P_ROOT
+            / "zephyr"
+            / "blobs"
+            / "tt_blackhole_trisc_dest_wipe.bin",
         }
         # CMFW should be first entry, so the bootrom finds it and jumps to
         # it before copying other tags to invalid ICCM addresses.

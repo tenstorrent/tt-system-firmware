@@ -223,3 +223,12 @@ blobs:
           raw/refs/heads/main/zephyr/blobs/fw_pack-grayskull.tar.gz"
     description: "Grayskull FW"
     doc-url: https://tenstorrent.com
+  - path: tt_blackhole_trisc_dest_wipe.bin
+    sha256: 038c8e7d1393c3f3cd076344c3cb9377c8cb9cb1c01e1d64c0b2e9767769184f
+    type: img
+    version: '0.1'
+    license-path: zephyr/blobs/license.txt
+    url: "https://github.com/tenstorrent/tt-zephyr-platforms/\
+          raw/refs/heads/main/zephyr/blobs/tt_blackhole_trisc_dest_wipe.bin"
+    description: "TRISC 0 DEST wipe firmware"
+    doc-url: https://tenstorrent.com

@@ -173,6 +173,14 @@ partitions {
 		read-only;
 	};
 
+	/* TRISC dest wipe firmware, loaded to Tensix L1 by wipe_dest() */
+	destwipe: partition@22c000 {
+		label = "destwipe";
+		reg = <0x22c000 DT_SIZE_K(4)>;
+		binary-path = "$BLOBS_DIR/tt_blackhole_trisc_dest_wipe.bin";
+		read-only;
+	};
+
 	/* Update firmware image for the DMC, as seen by mcuboot */
 	dmfw: partition@22d000 {
 		label = "dmfw";
