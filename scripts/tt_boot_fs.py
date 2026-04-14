@@ -1039,6 +1039,17 @@ def invoke_generate_bootfs_yaml(args):
     See parse_args() for a descriptive list of arguments.
     """
 
+    sys.path.insert(
+        0,
+        str(
+            Path(__file__).parents[6]
+            / "zephyr"
+            / "scripts"
+            / "dts"
+            / "python-devicetree"
+            / "src"
+        ),
+    )
     from devicetree import edtlib
 
     if args.verbose:
