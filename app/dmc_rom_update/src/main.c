@@ -25,8 +25,8 @@ uint8_t flash_copy_buf[4 * 1024] __aligned(4);
 
 int main(void)
 {
-	const struct device *tgt_flash = FIXED_PARTITION_NODE_DEVICE(MCUBOOT_PART_NODE);
-	const struct device *src_flash = FIXED_PARTITION_NODE_DEVICE(BLUPDATE_PART_NODE);
+	const struct device *tgt_flash = PARTITION_NODE_DEVICE(MCUBOOT_PART_NODE);
+	const struct device *src_flash = PARTITION_NODE_DEVICE(BLUPDATE_PART_NODE);
 	int rc;
 	off_t tgt_off, src_off, dmfw_off;
 	size_t len, erase_len;
@@ -40,7 +40,7 @@ int main(void)
 	tgt_off = DT_REG_ADDR(MCUBOOT_PART_NODE);
 	src_off = DT_REG_ADDR(BLUPDATE_PART_NODE);
 	dmfw_off = DT_REG_ADDR(DMFW_PART_NODE);
-	len = FIXED_PARTITION_NODE_SIZE(BLUPDATE_PART_NODE);
+	len = PARTITION_NODE_SIZE(BLUPDATE_PART_NODE);
 	/* Erase an additional 0x200 bytes so the new slot0 header will be cleared */
 	erase_len = len + 0x200;
 
