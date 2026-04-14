@@ -17,7 +17,7 @@ manifest:
     - name: zephyr
       remote: tenstorrent
       repo-path: zephyr-fork
-      revision: 5ab07b7c18aca6cd47fc3e68c478d082db1d3717
+      revision: f1bda3e7ea7a6611cda92e18260f663901aff61c
       import:
         name-allowlist:
           - cmsis_6
@@ -26,6 +26,7 @@ manifest:
           - mcuboot
           - nanopb
           - segger
+          - tf-psa-crypto
   # zephyr-keep-sorted-stop
 
   group-filter:

@@ -555,3 +555,10 @@ Tenstorrent Platforms:
     - "zephyr 🪁"
   description: |
     Maintained upstream.
+
+"West project: tf-psa-crypto":
+  status: odd fixes
+  files: []
+  labels: []
+  description: |
+    Maintained upstream.
