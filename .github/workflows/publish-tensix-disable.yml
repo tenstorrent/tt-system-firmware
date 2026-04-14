@@ -68,7 +68,7 @@ jobs:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
     runs-on: ${{ matrix.config.runs-on }}
     container:
-      image: ghcr.io/tenstorrent/tt-zephyr-platforms/ci-image:v18.12.0-rc1
+      image: ghcr.io/jgrowdentt/tt-system-firmware/ci-image:zephyr-4.4
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
