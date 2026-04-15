@@ -10,8 +10,8 @@ if(NOT Zephyr-sdk_FOUND)
 endif()
 
 # Set the target compiler
-set(CMAKE_C_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc)
-set(CMAKE_CXX_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++)
+set(CMAKE_C_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc)
+set(CMAKE_CXX_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++)
 # Add baremetal C compilation flags
 string(APPEND CMAKE_C_FLAGS "-Os -Wall -ffunction-sections -fdata-sections ")
 string(APPEND CMAKE_C_FLAGS "-fpic -msingle-pic-base -mpic-register=9 ")
