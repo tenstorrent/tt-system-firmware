@@ -5,4 +5,5 @@
 
 tst_dma0: &dma0 {
 	status = "okay";
+	dma-buf-addr-alignment = <32>;
 };

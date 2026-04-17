@@ -116,7 +116,7 @@ if [[ "$TEST_SET" == *"smc"* ]]; then
 	"$ZEPHYR_BASE/scripts/twister" -i \
 		-p "$SMC_BOARD" --device-testing \
 		--device-serial-pty "$TT_Z_P_ROOT/scripts/smc_console.py -d $CONSOLE_DEV" \
-		--failure-script "$TT_Z_P_ROOT/scripts/smc_test_recovery.py --asic-id $ASIC_ID" \
+		--failure-script "$TT_Z_P_ROOT/scripts/smc_test_recovery.py" \
 		--flash-before \
 		--west-flash="--no-prompt" \
 		--west-runner tt_bootstrap \

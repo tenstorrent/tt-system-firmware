@@ -536,19 +536,33 @@ uint32_t I2CTransaction(uint32_t id, const uint8_t *write_data, uint32_t write_l
 uint32_t I2CWriteBytes(uint32_t id, uint16_t command, uint32_t command_byte_size,
 		       const uint8_t *p_write_buf, uint32_t data_byte_size)
 {
-	/* Combines command and data into a single buffer prior to calling the I2CTransaction
-	 * function, which treats the combined buffer as a single transaction.
-	 */
-	uint32_t combined_buf_size = command_byte_size + data_byte_size;
-	uint8_t combined_buf[combined_buf_size];
-
-	memcpy(combined_buf, &command, command_byte_size);
-	if (p_write_buf != NULL) {
-		memcpy(combined_buf + command_byte_size, p_write_buf, data_byte_size);
+	if (asic_state == A3State) {
+		return IC_ABRT_A3_STATE;
 	}
 
-	/* Calls I2CTransaction with the combined buffer */
-	return I2CTransaction(id, combined_buf, combined_buf_size, NULL, 0);
+	const uint8_t *cmd_buf = (const uint8_t *)&command;
+
+	for (uint32_t i = 0; i < command_byte_size; i++) {
+		uint32_t last_byte_flag =
+			(data_byte_size == 0 && i == command_byte_size - 1) ? IC_DATA_STOP : 0;
+
+		WriteTxFifo(id, cmd_buf[i] | IC_DATA_WRITE | last_byte_flag);
+	}
+
+	if (p_write_buf != NULL) {
+		for (uint32_t i = 0; i < data_byte_size; i++) {
+			uint32_t last_byte_flag = (i == data_byte_size - 1) ? IC_DATA_STOP : 0;
+
+			WriteTxFifo(id, p_write_buf[i] | IC_DATA_WRITE | last_byte_flag);
+		}
+	}
+
+	/* This is a write-only transaction, so wait for completion and aborts. */
+	if ((command_byte_size > 0) || (data_byte_size > 0)) {
+		return WaitAllTxDone(id);
+	}
+
+	return 0;
 }
 
 uint32_t I2CReadBytes(uint32_t id, uint16_t command, uint32_t command_byte_size,

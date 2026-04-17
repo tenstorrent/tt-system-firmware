@@ -32,6 +32,7 @@ def get_sdk_sysroot():
     if "SDK_INSTALL_DIR" in str(proc.stderr):
         return (
             Path(str(proc.stderr).split(":")[1][:-3])
+            / "hosttools"
             / "sysroots"
             / "x86_64-pokysdk-linux"
         )

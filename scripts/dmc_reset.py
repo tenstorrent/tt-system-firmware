@@ -38,7 +38,10 @@ proc = subprocess.run(
 )
 if "SDK_INSTALL_DIR" in str(proc.stderr):
     DEFAULT_SDK_INSTALL_DIR = (
-        Path(str(proc.stderr).split(":")[1][:-3]) / "sysroots" / "x86_64-pokysdk-linux"
+        Path(str(proc.stderr).split(":")[1][:-3])
+        / "hosttools"
+        / "sysroots"
+        / "x86_64-pokysdk-linux"
     )
 else:
     DEFAULT_SDK_INSTALL_DIR = SDK_SYSROOT
