@@ -11,6 +11,11 @@ DEFINE_FFF_GLOBALS;
 DEFINE_FAKE_VALUE_FUNC(uint32_t, ReadReg, uint32_t /*addr*/);
 DEFINE_FAKE_VOID_FUNC(WriteReg, uint32_t /*addr*/, uint32_t /*val*/);
 
+void ChangeLinkSpeed(uint8_t pcie_speed)
+{
+	(void)pcie_speed;
+}
+
 static void reset_reg(const struct ztest_unit_test *test, void *data)
 {
 	(void)test;
