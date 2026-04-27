@@ -17,16 +17,6 @@
 #define PCIE_BAR2_SIZE_DEFAULT_MB 1
 #define PCIE_BAR4_SIZE_DEFAULT_MB 32768
 
-typedef enum {
-	EndPoint = 0,
-	RootComplex = 1,
-} PCIeDeviceType;
-
-typedef enum {
-	PCIeInitOk = 0,
-	PCIeSerdesFWLoadTimeout = 1,
-	PCIeLinkTrainTimeout = 2,
-} PCIeInitStatus;
 
 #define PCIE_INST0_LOGICAL_X 2
 #define PCIE_INST1_LOGICAL_X 11
