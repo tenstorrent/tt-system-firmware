@@ -1,0 +1,27 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+if LOG
+
+config TT_PCIE_LOG_BACKEND
+	bool "Enable Tenstorrent Host tt_pcie_log backend"
+	depends on !LOG_MODE_IMMEDIATE
+	select LOG_OUTPUT
+	help
+	  Enable tt_pcie_log backend that outputs logs to shared host memory buffer
+	  via DMA for kernel module consumption. When host is not available,
+	  logs are stored in local buffer and transferred when host connects.
+
+if TT_PCIE_LOG_BACKEND
+
+config TT_PCIE_LOG_BACKEND_BUFFER_SIZE
+	int "Local log buffer size in bytes"
+	default 4096
+	help
+	  Size of local buffer to aggregate logs into. Logs from this buffer
+	  are flushed on a timer, or when approaching capacity, and only if the
+	  host has messaged FW the buffer is available.
+
+endif # TT_PCIE_LOG_BACKEND
+
+endif # LOG

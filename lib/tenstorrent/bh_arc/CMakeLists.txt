@@ -27,6 +27,7 @@ zephyr_library_sources(
   noc2axi.c
   noc_init.c
   pcie.c
+  pcie_msi.c
   pll.c
   post_code.c
   reset.c
@@ -54,6 +55,8 @@ if(CONFIG_BH_FWTABLE)
   zephyr_library_add_dependencies(nanopb_generated_headers)
 endif()
 
+zephyr_library_sources_ifdef(CONFIG_TT_PCIE_LOG_BACKEND tt_pcie_log.c)
+
 zephyr_linker_sources(DATA_SECTIONS iterables.ld)
 if(CONFIG_ARC)
   zephyr_library_link_libraries(${ZEPHYR_CURRENT_MODULE_DIR}/zephyr/blobs/tt_blackhole_libpciesd.a)
@@ -75,7 +78,6 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
     gddr.c
     i2c_messages.c
     pcie_dma.c
-    pcie_msi.c
     pvt.c
     regulator.c
     regulator_config.c

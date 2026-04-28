@@ -165,6 +165,9 @@ enum tt_smc_msg {
 
 	/** @brief @ref characterisation_rqst "Generic characterization message" */
 	TT_SMC_MSG_CHARACTERISATION = 0xC6,
+
+	/** @brief @ref tt_pcie_log_rqst "FW logging setup/release request" */
+	TT_SMC_MSG_TT_PCIE_LOG = 0xC7,
 };
 
 /** @brief Enumeration of characterization submessage IDs */

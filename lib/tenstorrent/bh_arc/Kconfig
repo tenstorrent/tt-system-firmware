@@ -27,7 +27,7 @@ config TT_BH_ARC_EMUL
 
 config TT_BH_ARC_NUM_MSG_CODES
 	int "Number of message codes"
-	default 199
+	default 200
 	help
 	  The number of message codes
 
@@ -113,5 +113,7 @@ config TT_BH_ARC_DMFW_PING_TIMEOUT
 module = BH_ARC
 module-str = bh_arc
 source "subsys/logging/Kconfig.template.log_config"
+
+rsource "Kconfig.tt_pcie_log"
 
 endif
