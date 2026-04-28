@@ -9,6 +9,7 @@ tests:
       - tt_blackhole@p100a/tt_blackhole/smc
       - tt_blackhole@p150a/tt_blackhole/smc
       - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@orion_slt/tt_blackhole/smc
     extra_configs:
       # The below values are set experimentally. A test failure may
       # indicate a performance regression in the flash driver.

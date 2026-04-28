@@ -11,6 +11,7 @@ tests:
       - tt_blackhole@p150a/tt_blackhole/smc
       - tt_blackhole@p150b/tt_blackhole/smc
       - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@orion_slt/tt_blackhole/smc
       - tt_mimir/tt_mimir/smc
     extra_args:
       - "platform:tt_blackhole@p100a/tt_blackhole/smc:DTC_OVERLAY_FILE=\
@@ -24,6 +25,9 @@ tests:
          boards/tt_blackhole_tt_blackhole_smc.overlay"
       - "platform:tt_blackhole@p300a/tt_blackhole/smc:DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/gpio/gpio_api_1pin\
+         boards/tt_blackhole_tt_blackhole_smc.overlay"
+      - "platform:tt_blackhole@orion_slt/tt_blackhole/smc:DTC_OVERLAY_FILE=\
+         ../../../../../tt-system-firmware/test-conf/tests/drivers/gpio/gpio_api_1pin/\
          boards/tt_blackhole_tt_blackhole_smc.overlay"
       - "platform:tt_mimir/tt_mimir/smc:DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/gpio/gpio_api_1pin/\

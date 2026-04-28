@@ -73,8 +73,14 @@ make -C "$TT_Z_P_ROOT"/scripts/tooling -j"$(nproc)"
 if [[ "$TEST_SET" == *"e2e-stress"* ]]; then
 	# Run the DMC tests
 	echo "Running e2e stress tests..."
-    # Reset the card first. If this fails tt-flash won't work either
-    tt-smi -r
+    # Reset the card first. If this fails tt-flash won't work either.
+    # orion_slt is not supported by tt-smi natively, so use the luwen
+    # backend for that board.
+    if [ "$BOARD" == "orion_slt" ]; then
+        tt-smi -r --use_luwen
+    else
+        tt-smi -r
+    fi
     # Run a full stress test, using tt-flash as the runner
     "$ZEPHYR_BASE/scripts/twister" -i -p "$SMC_BOARD" \
         --tag e2e-stress -T "$TT_Z_P_ROOT/app" \

@@ -6,6 +6,7 @@ common:
     - tt_blackhole@p100a/tt_blackhole/dmc
     - tt_blackhole@p150a/tt_blackhole/dmc
     - tt_blackhole@p300a/tt_blackhole/dmc
+    - tt_blackhole@orion_slt/tt_blackhole/dmc
   harness: console
   harness_config:
     type: one_line

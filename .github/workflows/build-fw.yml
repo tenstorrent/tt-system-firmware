@@ -445,6 +445,7 @@ jobs:
           - p100a
           - p150a
           - p300a
+          - orion_slt
         test: ${{ fromJson(needs.discover-smc-tests.outputs.tests) }}
 
     steps:

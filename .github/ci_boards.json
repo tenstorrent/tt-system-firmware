@@ -8,6 +8,11 @@
   ],
   "bh": [
     {
+      "board": "orion_slt",
+      "supports_smoke": true,
+      "kmd_build": "2.8.0"
+    },
+    {
       "board": "p100a",
       "supports_smoke": true,
       "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.68.0-dev20260317-16-gbb89a89897",

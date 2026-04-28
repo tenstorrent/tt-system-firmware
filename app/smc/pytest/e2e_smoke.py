@@ -464,6 +464,10 @@ def temperature_sensors_test(arc_chip_dut, asic_id):
     return fail_count
 
 
+@pytest.mark.skipif(
+    "os.getenv('BOARD') == 'orion_slt'",
+    reason="Orion SLT has no recovery/downgrade path for major version upgrade test",
+)
 def test_upgrade_from_19_00(arc_chip_dut, tmp_path: Path, board_name, unlaunched_dut):
     upgrade_from_version_test(
         arc_chip_dut,
@@ -561,6 +565,10 @@ def test_boot_status(arc_chip_dut, asic_id):
     assert err == 0, "FW Init error"
 
 
+@pytest.mark.skipif(
+    "os.getenv('BOARD') == 'orion_slt'",
+    reason="Orion SLT DMC does not set this register",
+)
 def test_smbus_status(arc_chip_dut, asic_id):
     """
     Validates that the SMBUS tests run from the DMC firmware passed
@@ -827,11 +835,17 @@ def test_telemetry_asic_id_from_functional_efuse(arc_chip_dut, asic_id):
     )
 
 
+def _tt_smi_reset_base():
+    if os.getenv("BOARD") == "orion_slt":
+        return "tt-smi -r --use_luwen"
+    return "tt-smi -r"
+
+
 def smi_reset_test(asic_id):
     """
     Helper to run tt-smi reset test. Returns True if test passed, False otherwise
     """
-    smi_reset_cmd = "tt-smi -r --eth_train_skip"
+    smi_reset_cmd = f"{_tt_smi_reset_base()} --eth_train_skip"
     smi_reset_result = subprocess.run(
         smi_reset_cmd.split(), capture_output=True, check=False
     )
@@ -846,7 +860,7 @@ def smi_reset_with_eth(asic_id):
     """
     Helper to run tt-smi reset test with ethernet training. Returns True if test passed, False otherwise
     """
-    smi_reset_cmd = "tt-smi -r"
+    smi_reset_cmd = _tt_smi_reset_base()
     smi_reset_result = subprocess.run(
         smi_reset_cmd.split(), capture_output=True, check=False
     )
@@ -1157,7 +1171,7 @@ def test_mcuboot(unlaunched_dut, asic_id):
     arc_chip.as_bh().spi_write(MCUBOOT_HEADER_ADDR, buf)
     # Reset the SMC to trigger the fallback
     del arc_chip  # Force re-detection of the chip
-    smi_reset_cmd = "tt-smi -r"
+    smi_reset_cmd = _tt_smi_reset_base()
     # tt-smi will fail here since it checks for valid telemetry after reset,
     # we still need to run it to trigger the SMC reboot
     subprocess.run(smi_reset_cmd.split(), capture_output=False, check=False)
@@ -1287,6 +1301,10 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
     return 0
 
 
+@pytest.mark.skipif(
+    "os.getenv('BOARD') == 'orion_slt'",
+    reason="Orion SLT does not support the power state toggle flow",
+)
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
     """
     Validates that toggling between high and low power states results in a TDP delta > 90W

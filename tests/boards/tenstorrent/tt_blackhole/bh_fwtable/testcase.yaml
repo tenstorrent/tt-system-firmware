@@ -8,3 +8,4 @@ tests:
       - tt_blackhole@p150a/tt_blackhole/smc
       - tt_blackhole@p150b/tt_blackhole/smc
       - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@orion_slt/tt_blackhole/smc

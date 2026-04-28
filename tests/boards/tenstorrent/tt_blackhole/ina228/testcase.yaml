@@ -12,6 +12,7 @@ tests:
       - tt_blackhole@p300a/tt_blackhole/dmc
       - tt_blackhole@p300b/tt_blackhole/dmc
       - tt_blackhole@p300c/tt_blackhole/dmc
+      - tt_blackhole@orion_slt/tt_blackhole/dmc
     extra_args:
       - "platform:tt_blackhole@p100a/tt_blackhole/dmc:CONFIG_TDP_LIMIT=100"
       - "platform:tt_blackhole@p150a/tt_blackhole/dmc:CONFIG_TDP_LIMIT=150"
@@ -20,3 +21,4 @@ tests:
       - "platform:tt_blackhole@p300a/tt_blackhole/dmc:CONFIG_TDP_LIMIT=86"
       - "platform:tt_blackhole@p300b/tt_blackhole/dmc:CONFIG_TDP_LIMIT=94"
       - "platform:tt_blackhole@p300c/tt_blackhole/dmc:CONFIG_TDP_LIMIT=158"
+      - "platform:tt_blackhole@orion_slt/tt_blackhole/dmc:CONFIG_TDP_LIMIT=150"
