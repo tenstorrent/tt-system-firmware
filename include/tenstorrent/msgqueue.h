@@ -910,6 +910,36 @@ struct confirm_flashed_spi_rqst {
 	uint32_t challenge_data;
 };
 
+/** @brief Host request to setup/release FW logging
+ * @details Messages of this type are processed by the logging handler.
+ *
+ * For SETUP sub-command, buffer_addr_lo/hi specify the host DMA buffer IOVA
+ * and buffer_size specifies the size in bytes. For RELEASE sub-command,
+ * only subcmd is used - other fields are ignored.
+ */
+struct tt_pcie_log_rqst {
+	/** @brief The command code corresponding to @ref TT_SMC_MSG_TT_PCIE_LOG */
+	uint8_t command_code;
+
+	/** @brief tt_pcie_log sub-command: 1=SETUP, 2=RELEASE */
+	uint8_t subcmd;
+
+	/** @brief Host version for tt_pcie_log protocol (for SETUP) */
+	uint8_t version;
+
+	/** @brief One byte of padding */
+	uint8_t pad;
+
+	/** @brief Lower 32 bits of host buffer IOVA (for SETUP) */
+	uint32_t buffer_addr_lo;
+
+	/** @brief Upper 32 bits of host buffer IOVA (for SETUP) */
+	uint32_t buffer_addr_hi;
+
+	/** @brief Buffer size in bytes (for SETUP) */
+	uint32_t buffer_size;
+};
+
 /** @brief A tenstorrent host request*/
 union request {
 	/** @brief The interpretation of the request as an array of uint32_t entries*/
@@ -1035,6 +1065,9 @@ union request {
 
 	/** @brief A confirm SPI flash request */
 	struct confirm_flashed_spi_rqst confirm_flashed_spi;
+
+	/** @brief A tt_pcie_log setup/release request */
+	struct tt_pcie_log_rqst tt_pcie_log;
 };
 
 /** @} */
