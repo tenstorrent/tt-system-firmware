@@ -123,7 +123,7 @@ static uint8_t power_setting_msg_handler(const union request *request, struct re
 	const struct power_setting_rqst *power_setting = &request->power_setting;
 
 	apply_power_settings(power_setting);
-	LOG_INF("Power State: GDDR-%u Tensix-%u AICLK-%u, L2CPU-%u",
+	LOG_DBG("Power State: GDDR-%u Tensix-%u AICLK-%u, L2CPU-%u",
 		power_state[BH_POWER_DOMAIN_MRISC], power_state[BH_POWER_DOMAIN_TENSIX],
 		power_state[BH_POWER_DOMAIN_AICLK], power_state[BH_POWER_DOMAIN_L2CPU]);
 
