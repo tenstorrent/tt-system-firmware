@@ -7,6 +7,7 @@
 #include "asic_state.h"
 
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
 
@@ -14,11 +15,14 @@
 #include "aiclk_ppm.h"
 #include "voltage.h"
 
+LOG_MODULE_REGISTER(asic_state, CONFIG_LOG_DEFAULT_LEVEL);
+
 uint8_t asic_state = A0State;
 
 static void enter_state0(void)
 {
 	asic_state = A0State;
+	LOG_INF("ASIC entering A0 state (active)");
 }
 
 static void enter_state3(void)
@@ -28,12 +32,14 @@ static void enter_state3(void)
 	ForceVdd(750);
 #endif
 	asic_state = A3State;
+	LOG_INF("ASIC entering A3 state (low power)");
 }
 
 /* May be called from ISR. */
 void lock_down_for_reset(void)
 {
 	asic_state = A3State;
+	LOG_ERR("System locked down for reset");
 
 	/* More could be done here. We can shut down everything except the SMBus slave */
 	/* (and the I2C code it relies on). */
