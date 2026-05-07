@@ -104,11 +104,17 @@ def generate_release_notes(
 
 > This is a working draft for the up-coming {next_version_base} release.
 
-We are pleased to announce the release of TT Zephyr Platforms firmware version {next_version_base} 🥳🎉.
+We are pleased to announce the release of TT System Firmware version {next_version_base} 🥳🎉.
 
 Major enhancements with this release include:
 
 ## What's Changed
+
+## Wormhole
+
+## Blackhole
+
+## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->
 <!-- UL PCIe -->
