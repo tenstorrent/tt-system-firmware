@@ -207,8 +207,8 @@ def upgrade_from_version_test(
     fwbundle_version_new = arc_chip.as_wh().get_telemetry().fw_bundle_version
     m3_version_new = arc_chip.as_wh().get_telemetry().m3_app_fw_version
 
-    assert f"{((19 << 24) | (9 << 16) | (1)):08x}" == f"{fwbundle_version_new:08x}"
-    assert f"{((2 << 24) | (42 << 16)):08x}" == f"{arc0_version_new:08x}"
+    assert f"{((19 << 24) | (10 << 16) | (1)):08x}" == f"{fwbundle_version_new:08x}"
+    assert f"{((2 << 24) | (43 << 16)):08x}" == f"{arc0_version_new:08x}"
     assert f"{(5 << 24 | 12 << 16):08x}" == f"{m3_version_new:08x}"
 
     logger.info(
@@ -262,7 +262,7 @@ def test_fw_bundle_version(arc_chip_dut, asic_id):
     arc_chip = pyluwen.detect_chips()[asic_id]
     telemetry = arc_chip.get_telemetry()
 
-    exp_bundle_version = 19 << 24 | 9 << 16 | 1
+    exp_bundle_version = 19 << 24 | 10 << 16 | 1
     assert telemetry.fw_bundle_version == exp_bundle_version, (
         f"Firmware bundle version mismatch: {telemetry.fw_bundle_version:#010x} != {exp_bundle_version:#010x}"
     )
