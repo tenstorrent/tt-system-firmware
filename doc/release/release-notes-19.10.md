@@ -10,6 +10,11 @@ Major enhancements with this release include:
 
 ## Wormhole
 
+### Power & Performance Improvements
+- Link AICLK_BUSY to the `max_ai_clk` bit of the power message
+- Disable DRAM low power on instances that are slow to retrain
+- Update msg ID for `POWER_SETTING` message to 0xC0 and mark 0xBF as reserved. This prevents KMD from enabling this feature on previous FWs.
+
 ## Blackhole
 
 ## Grendel
