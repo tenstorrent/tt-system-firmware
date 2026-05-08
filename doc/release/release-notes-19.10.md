@@ -8,6 +8,12 @@ Major enhancements with this release include:
 
 ## What's Changed
 
+## General
+
+### Documentation
+
+  * Add documentation for testing the release process on a personal fork.
+
 ## Wormhole
 
 ### Power & Performance Improvements
@@ -17,27 +23,26 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+### Documentation
+
+  * Autogenerate board-specific documentation from protobuf definitions.
+
+### Power and voltage
+
+  * Get `VDD_MIN` and `VDD_MAX` from the fw_table
+
+### Fan control and telemetry
+
+  * Disable the MAX6639 fan controller on boards that have no fan (relevant P150/P300 DMC overlays) so the DMC does not report telemetry for a non-present fan.
+  * When fan control is disabled, report fan speed and RPM telemetry as invalid (`0xffffffff`).
+
+### CI
+
+  * Add Loudbox to CI, running nightly soak and Metal tests
+
 ## Grendel
 
-<!-- Subsections can break down improvements by (area or board) -->
-<!-- UL PCIe -->
-<!-- UL DDR -->
-<!-- UL Ethernet -->
-<!-- UL Telemetry -->
-<!-- UL Debug / Developer Features -->
-<!-- UL Drivers -->
-<!-- UL Libraries -->
-
-<!-- Performance Improvements, if applicable -->
-<!-- New and Experimental Features, if applicable -->
-<!-- External Project Collaboration Efforts, if applicable -->
-<!-- Stability Improvements, if applicable -->
-<!-- Security vulnerabilities fixed? -->
-<!-- API Changes, if applicable -->
-<!-- Removed APIs, H3 Deprecated APIs, H3 New APIs, if applicable -->
-<!-- New Samples, if applicable -->
-<!-- Other Notable Changes, if applicable -->
-<!-- New Boards, if applicable -->
+No Grendel changes.
 
 ## Migration guide
 
