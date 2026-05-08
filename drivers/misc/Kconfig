@@ -7,6 +7,7 @@ menu "Miscellaneous Drivers"
 
 # zephyr-keep-sorted-start
 rsource "bh_fwtable/Kconfig"
+rsource "tt_occp_i3c/Kconfig"
 rsource "tt_smc_remoteproc/Kconfig"
 # zephyr-keep-sorted-stop
 
