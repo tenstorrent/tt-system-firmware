@@ -1,0 +1,5 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_TT_BLACKHOLE_GLX2_DMC
+	select SOC_STM32U375XX

@@ -92,7 +92,8 @@ jobs:
 
           EXTRA_ARGS="--"
           EXTRA_ARGS+=" -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y"
-          if [ -n "$SIGNATURE_KEY_FILE" ]; then
+          # galaxy_2 is not yet validated on hardware; skip signing until tests pass
+          if [ -n "$SIGNATURE_KEY_FILE" ] && ! [[ "${{ matrix.board }}" == "galaxy_2" ]]; then
             EXTRA_ARGS+=" -DSB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$SIGNATURE_KEY_FILE\""
           fi
 
@@ -109,10 +110,12 @@ jobs:
         run: |
           if [ -z "$SIGNATURE_KEY_FILE" ]; then
             echo "SIGNATURE_KEY_FILE is not set, skipping signature verification"
+          elif [[ "${{ matrix.board }}" == "galaxy_2" ]]; then
+            echo "Skipping signature verification for galaxy_2"
           else
             # verify that built images for smc and dmc fw are signed
             # imgtool returns a non-zero exit code if the image is not signed
-            if ! [[ "${{ matrix.board }}" =~ ^galaxy ]]; then
+            if ! [[ "${{ matrix.board }}" =~ ^galaxy(_revc)?$ ]]; then
               imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
             fi
             imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/recovery/zephyr/zephyr.signed.bin

@@ -1,0 +1,39 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+# Enable RTT
+CONFIG_USE_SEGGER_RTT=y
+CONFIG_SEGGER_RTT_BUFFER_SIZE_UP=3072
+
+# enable console
+CONFIG_CONSOLE=y
+CONFIG_RTT_CONSOLE=y
+
+# GPIO Controller
+CONFIG_GPIO=y
+
+# Enable Clocks
+CONFIG_CLOCK_CONTROL=y
+
+# enable i2c
+CONFIG_I2C=y
+
+# enable spi
+CONFIG_SPI=y
+
+# enable flash
+CONFIG_FLASH=y
+
+# enable external spi flash
+CONFIG_SPI_NOR=y
+CONFIG_SPI_NOR_FLASH_LAYOUT_PAGE_SIZE=4096
+CONFIG_SPI_NOR_SFDP_RUNTIME=y
+
+# interrupts are not needed for nxp,pca955x gpio expanders
+CONFIG_GPIO_PCA_SERIES_INTERRUPT=n
+
+# enable USB
+#CONFIG_USB_DEVICE_STACK=y
+
+# enable watchdog
+CONFIG_WATCHDOG=y

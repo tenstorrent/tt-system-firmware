@@ -18,6 +18,12 @@ if [ $# -ge 2 ]; then
 fi
 
 case "$1" in
+  galaxy_2)
+  if [ "$CLUSTER" = "dmc" ]; then
+    BOARD="tt_blackhole_glx2_dmc"
+  else
+    BOARD="tt_blackhole@$1/tt_blackhole/$CLUSTER"
+  fi;;
   p100a|p150a|p150b|p150c|p300a|p300b|p300c|galaxy|galaxy_revc|orion_slt)
   BOARD="tt_blackhole@$1/tt_blackhole/$CLUSTER";;
   bh-galaxy)

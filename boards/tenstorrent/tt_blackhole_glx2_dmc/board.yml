@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+board:
+  name: tt_blackhole_glx2_dmc
+  full_name: Tenstorrent Blackhole GLX2 DMC board
+  vendor: tenstorrent
+  socs:
+    - name: stm32u375xx

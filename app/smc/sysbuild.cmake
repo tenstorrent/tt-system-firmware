@@ -20,7 +20,7 @@ endif()
 # ======== Board validation ========
 # galaxy and galaxy_revc do not require a DMC image in bootfs
 set(IS_GALAXY_BOARD FALSE)
-if("${BOARD_REVISION}" MATCHES "^galaxy")
+if("${BOARD_REVISION}" STREQUAL "galaxy" OR "${BOARD_REVISION}" STREQUAL "galaxy_revc")
   set(IS_GALAXY_BOARD TRUE)
 endif()
 if("${SB_CONFIG_DMC_BOARD}" STREQUAL "" AND NOT IS_GALAXY_BOARD)

@@ -1,0 +1,7 @@
+# Copyright (c) 2025 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+reprogrammed_count: 0
+date_programmed: 0
+vrm_checksum: 0
+tt_flash_version: 0
