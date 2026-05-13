@@ -32,7 +32,7 @@ LOG_MODULE_REGISTER(main, CONFIG_TT_APP_LOG_LEVEL);
 static const struct device *const wdt0 = DEVICE_DT_GET(DT_NODELABEL(wdt0));
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
-BUILD_ASSERT(FIXED_PARTITION_EXISTS(cmfw), "cmfw fixed-partition does not exist");
+BUILD_ASSERT(PARTITION_EXISTS(cmfw), "cmfw fixed-partition does not exist");
 
 int main(void)
 {
