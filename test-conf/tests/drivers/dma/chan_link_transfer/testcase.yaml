@@ -13,9 +13,6 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
          tt_bh_noc.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
-         tt_bh_noc.conf"
   drivers.dma.chan_link_transfer.arc_hs.interrupts:
     extra_args:
       - "DTC_OVERLAY_FILE=\

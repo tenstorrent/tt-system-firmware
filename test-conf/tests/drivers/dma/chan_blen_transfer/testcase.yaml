@@ -23,9 +23,6 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
          tt_bh_noc.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
-         tt_bh_noc.conf"
   drivers.dma.chan_blen_transfer.arc_hs.interrupts:
     platform_allow:
       - tt_blackhole@p100a/tt_blackhole/smc
@@ -36,9 +33,6 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
          arc_hs.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
-         arc_hs.conf"
   drivers.dma.chan_blen_transfer.arc_hs.polling:
     platform_allow:
       - tt_blackhole@p100a/tt_blackhole/smc
@@ -49,6 +43,3 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
          arc_hs_polling.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_blen_transfer/\
-         arc_hs.conf"
