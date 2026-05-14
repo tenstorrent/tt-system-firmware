@@ -89,6 +89,7 @@ if [[ "$TEST_SET" == *"e2e-flash"* ]]; then
 		--west-runner tt_flash \
 		--device-testing -c \
 		--device-flash-timeout 240 \
+		--pytest-args=--flash-timeout=240 \
 		--device-serial-pty "$TT_Z_P_ROOT/scripts/smc_console.py -d $CONSOLE_DEV -p" \
 		--failure-script "$TT_Z_P_ROOT/scripts/smc_test_recovery.py --asic-id $ASIC_ID" \
 		--flash-before \

@@ -82,6 +82,7 @@ if [[ "$TEST_SET" == *"e2e-stress"* ]]; then
         --west-runner tt_flash \
         --device-testing -c \
         --device-flash-timeout 120 \
+        --pytest-args=--flash-timeout=120 \
         --device-serial-pty "$TT_Z_P_ROOT/scripts/smc_console.py -p -d $CONSOLE_DEV" \
         --flash-before \
         --outdir "$ZEPHYR_BASE/twister-e2e-stress" \
