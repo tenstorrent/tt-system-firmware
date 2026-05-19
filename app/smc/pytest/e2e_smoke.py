@@ -73,7 +73,7 @@ SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _skip_boards(board_name) -> bool:
-    return board_name == "loudbox" or "galaxy" in board_name.lower()
+    return board_name in ("loudbox", "quietbox2") or "galaxy" in board_name.lower()
 
 
 REFCLK_HZ = 50_000_000
@@ -217,6 +217,8 @@ def check_chip_count(board_name):
         assert len(chips) == 32, f"Expected 32 BH chips on Galaxy, found {len(chips)}"
     elif "loudbox" in board_name:
         assert len(chips) == 8, f"Expected 8 BH chips on Loudbox, found {len(chips)}"
+    elif "quietbox2" in board_name:
+        assert len(chips) == 4, f"Expected 4 BH chips on Quietbox2, found {len(chips)}"
     elif "p300" in board_name:
         assert len(chips) == 2, f"Expected 2 BH chips on P300, found {len(chips)}"
     else:
@@ -876,8 +878,8 @@ def dirty_reset_test():
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Galaxy: no DMC path; Loudbox: no STLink for OpenOCD dirty reset",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy: no DMC path; Loudbox/Quietbox2: no STLink for OpenOCD dirty reset",
 )
 def test_dirty_reset():
     """
@@ -1190,7 +1192,7 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
 
     Toggles between high and low power states and verifies that the TDP
     difference between the two states is greater than 80W.
-    For galaxy and loudbox, only tests power state setting without TDP validation.
+    For galaxy, loudbox, and quietbox2, only tests power state setting without TDP validation.
     """
     expected_power_delta = 80
     settling_time = 0.5
@@ -1234,7 +1236,7 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
     """
     Validates that toggling between high and low power states results in a TDP delta > 90W
-    For galaxy and loudbox, only validates power state setting functionality.
+    For galaxy, loudbox, and quietbox2, only validates power state setting functionality.
     """
     assert 0 == power_state_toggle_test(arc_chip_dut, asic_id, board_name), (
         "power_state_toggle_test failed"

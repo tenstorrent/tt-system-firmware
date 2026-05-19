@@ -86,7 +86,7 @@ jobs:
         run: |
           if [[ "${{ matrix.config.board }}" == "p300a" ]]; then
             echo "HF_MODEL=/opt/tenstorrent/hf-models/meta-llama/Llama-3.1-8B/" >> $GITHUB_ENV
-          elif [[ "${{ matrix.config.board }}" == "galaxy" || "${{ matrix.config.board }}" == "loudbox" ]]; then
+          elif [[ "${{ matrix.config.board }}" == "galaxy" || "${{ matrix.config.board }}" == "loudbox" || "${{ matrix.config.board }}" == "quietbox2" ]]; then
             echo "HF_MODEL=/opt/tenstorrent/hf-models/meta-llama/Llama-3.3-70B-Instruct/" >> $GITHUB_ENV
             echo "LLAMA_DIR=/opt/tenstorrent/hf-models/meta-llama/Llama-3.3-70B-Instruct/" >> $GITHUB_ENV
           fi
@@ -126,10 +126,10 @@ jobs:
             sed -i "/$SEARCH/a$INSERT" dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh
           fi
 
-          # On loudbox the upstream script hardcodes data_parallel_devices=8, which
-          # replicates the 70B weights on every P150 and OOMs. Force data_parallel=1
-          # so the 8-device mesh is used as a single tensor-parallel group instead.
-          if [ "${{ matrix.config.board }}" == "loudbox" ]; then
+          # On loudbox/quietbox2 the upstream script hardcodes data_parallel_devices to the
+          # mesh size, which replicates the 70B weights on every device and OOMs. Force
+          # data_parallel=1 so the mesh is used as a single tensor-parallel group instead.
+          if [ "${{ matrix.config.board }}" == "loudbox" ] || [ "${{ matrix.config.board }}" == "quietbox2" ]; then
             sed -i 's/--data_parallel "\$data_parallel_devices"/--data_parallel 1/g' \
               dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh
             sed -i 's/-k "performance and ci-32" --data_parallel 1 --timeout 1200/-k "performance and ci-32" --data_parallel 1 --timeout 3600/' \
@@ -138,7 +138,7 @@ jobs:
             # Bump every Llama-3.3-70B entry in trace_region_config.py to 128 MiB.
             # tt_metal's conftest reads this dict and overrides the parametrized
             # trace_region_size; the configured 80MB / 84MB values are too tight
-            # for the TP=8 / batch=32 / ci-32 trace on loudbox.
+            # for the TP=8 / batch=32 / ci-32 trace on loudbox/quietbox2.
             sed -i -E '/"Llama-3\.3-70B":/,/},/ s/(":[[:space:]]+)[0-9]+/\1134217728/' \
               models/tt_transformers/demo/trace_region_config.py
             sed -n '/"Llama-3\.3-70B":/,/},/p' models/tt_transformers/demo/trace_region_config.py

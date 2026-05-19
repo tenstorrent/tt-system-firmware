@@ -49,5 +49,14 @@
     "metal-target": "blackhole_loudbox",
     "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
     "kmd_build": "2.7.0"
+  },
+  {
+    "board": "quietbox2",
+    "runs-on": "quietbox2",
+    "product": "bh",
+    "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.68.0-dev20260317-16-gbb89a89897",
+    "metal-target": "blackhole_qb_ge",
+    "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
+    "kmd_build": "2.7.0"
   }
 ]

@@ -22,6 +22,8 @@ case "$1" in
   BOARD="tt_blackhole@$1/tt_blackhole/$CLUSTER";;
   loudbox)
   BOARD="tt_blackhole@p150b/tt_blackhole/$CLUSTER";;
+  quietbox2)
+  BOARD="tt_blackhole@p300c/tt_blackhole/$CLUSTER";;
   *) >&2 echo "Unknown board: $1"; exit 1;;
 esac
 

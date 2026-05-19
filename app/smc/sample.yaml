@@ -63,6 +63,7 @@ tests:
       - tt_blackhole@p150a/tt_blackhole/smc
       - tt_blackhole@p150b/tt_blackhole/smc
       - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@p300c/tt_blackhole/smc
       - tt_blackhole@galaxy/tt_blackhole/smc
     harness: pytest
     sysbuild: true

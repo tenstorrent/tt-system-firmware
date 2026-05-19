@@ -36,8 +36,8 @@ jobs:
         shell: bash
         run: |
           # Filter to only Blackhole boards (product == "bh"), then remove the product field
-          # Exclude galaxy and loudbox since they have no STLink/recovery path for smoke tests
-          MATRIX_CONFIG_BH="$(jq -c '[.[] | select((.product == "bh") and (.board != "galaxy") and (.board != "loudbox")) | del(.product)]' .github/ci_boards.json)"
+          # Exclude galaxy, loudbox, and quietbox2 since they have no STLink/recovery path for smoke tests
+          MATRIX_CONFIG_BH="$(jq -c '[.[] | select((.product == "bh") and (.board != "galaxy") and (.board != "loudbox") and (.board != "quietbox2")) | del(.product)]' .github/ci_boards.json)"
           echo "matrix-config-bh=$MATRIX_CONFIG_BH" | tee -a $GITHUB_OUTPUT
 
           # Filter to only Wormhole boards (product == "wh"), then remove the product field

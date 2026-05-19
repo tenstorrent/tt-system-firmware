@@ -42,7 +42,7 @@ SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _skip_boards() -> bool:
-    return os.getenv("BOARD") in ("galaxy", "loudbox")
+    return os.getenv("BOARD") in ("galaxy", "loudbox", "quietbox2")
 
 
 # Constant memory addresses we can read from SMC
@@ -82,8 +82,8 @@ def tt_smi_reset():
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Galaxy lacks a DMC; Loudbox excluded from DMC-dependent stress tests",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
 )
 def test_arc_watchdog(arc_chip_dut, asic_id):
     """
@@ -112,8 +112,8 @@ def test_arc_watchdog(arc_chip_dut, asic_id):
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Galaxy lacks a DMC; Loudbox excluded from DMC-dependent stress tests",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
 )
 def test_pcie_fw_load_time(arc_chip_dut, asic_id):
     """
@@ -228,8 +228,8 @@ def test_smi_reset_with_eth(arc_chip_dut, asic_id):
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Galaxy lacks a DMC; Loudbox has no STLink for dirty reset",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 have no STLink for dirty reset",
 )
 def test_dirty_reset():
     """
@@ -263,8 +263,8 @@ def test_dirty_reset():
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Galaxy lacks a DMC; Loudbox excluded from DMC-dependent stress tests",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
 )
 def test_dmc_ping(arc_chip_dut, asic_id):
     """
@@ -404,8 +404,8 @@ def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Burnin not stable on Galaxy or Loudbox",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
 def test_power_virus(arc_chip_dut, asic_id):
     """
@@ -500,8 +500,8 @@ def test_power_virus(arc_chip_dut, asic_id):
 
 
 @pytest.mark.skipif(
-    "os.getenv('BOARD') in ('galaxy', 'loudbox')",
-    reason="Burnin not stable on Galaxy or Loudbox",
+    "os.getenv('BOARD') in ('galaxy', 'loudbox', 'quietbox2')",
+    reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
 def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
     """
