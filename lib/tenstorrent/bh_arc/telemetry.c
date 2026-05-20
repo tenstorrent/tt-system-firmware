@@ -8,6 +8,7 @@
 #include "cat.h"
 #include "cm2dm_msg.h"
 #include "fan_ctrl.h"
+#include "efuse.h" /* to read from efuse */
 #include "functional_efuse.h"
 #include "harvesting.h"
 #include "reg.h"
@@ -170,6 +171,7 @@ static struct telemetry_table telemetry_table = {
 		[63] = {TAG_ENABLED_MAX_ARB, TELEM_OFFSET(TAG_ENABLED_MAX_ARB)},
 		[64] = {TAG_AICLK_PPM_INFO, TELEM_OFFSET(TAG_AICLK_PPM_INFO)},
 		[65] = {TAG_HOST_AICLK_LIMIT, TELEM_OFFSET(TAG_HOST_AICLK_LIMIT)},
+		[66] = {TAG_SUBSTRATE_VERSION, TELEM_OFFSET(TAG_SUBSTRATE_VERSION)}
 	},
 };
 /* clang-format on */
@@ -382,6 +384,10 @@ static void write_static_telemetry(uint32_t app_version)
 	 */
 
 	telemetry[TAG_ASIC_LOCATION] = tt_bh_fwtable_get_asic_location(fwtable_dev);
+
+	/* Get substrate version from efuse and store in telemetry. */
+	telemetry[TAG_SUBSTRATE_VERSION] =
+		GetTelemetrySubstrateVersion(EfuseDirect, EfuseBoxFunc, 0x3D);
 }
 
 static void update_telemetry(void)
@@ -453,8 +459,13 @@ static void update_telemetry(void)
 					     * yet), lower 16 bits - current L2CPUCLK3
 					     */
 
-	telemetry[TAG_FAN_SPEED] = GetFanSpeed(); /* Target fan speed - reported in percentage */
-	telemetry[TAG_FAN_RPM] = GetFanRPM();     /* Actual fan RPM */
+	bool fan_ctrl_en = tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.fan_ctrl_en;
+
+	/*Target fan speed - reported in percentage */
+	telemetry[TAG_FAN_SPEED] = fan_ctrl_en ? GetFanSpeed() : 0xFFFFFFFFU;
+
+	/* Actual fan RPM */
+	telemetry[TAG_FAN_RPM] = fan_ctrl_en ? GetFanRPM() : 0xFFFFFFFFU;
 	UpdateEthTelemetry();
 	UpdateGddrTelemetry();
 	telemetry[TAG_MAX_GDDR_TEMP] = GetMaxGDDRTemp();
@@ -548,4 +559,27 @@ uint32_t GetTelemetryTag(uint16_t tag)
 		return -1;
 	}
 	return telemetry[tag];
+}
+
+/*
+ * Input format confirmed:
+ * read bytes = [MSB ... LSB] = ['1']['A'][0x00][0x00] for A1
+ * Returns 0 on invalid format/content.
+ */
+uint32_t GetTelemetrySubstrateVersion(EfuseAccessType acc_type, EfuseBoxId efuse_box_id,
+				      uint32_t offset)
+{
+	uint32_t word = EfuseRead(acc_type, efuse_box_id, offset);
+
+	uint32_t c0 = (word >> 24) & 0xFF; /* version digit: '1','2','3' */
+	uint32_t c1 = (word >> 16) & 0xFF; /* expected 'A' */
+
+	/* UN-COMMENT THE FOLLOWING WHEN EFUSE READ FOMAT IS CONFIRMED!! */
+	/*
+	 * if (c1 != 'A' || c0 < '0' || c0 > '3') {
+	 *	return 0;
+	 * }
+	 */
+
+	return ((c1 << 8) | c0);
 }

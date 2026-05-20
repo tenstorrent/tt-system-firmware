@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "efuse.h"
 
 /**
  * @defgroup telemetry Telemetry
@@ -314,12 +315,20 @@
  */
 #define TAG_HOST_AICLK_LIMIT 70
 
+/**
+ * @brief Substrate version information.
+ *
+ * This tag provides details about the substrate version of the substrate used in the ASIC.
+ * Stored data relates to the ASCII code for the following versions: 'A0', 'A1', 'A2' or 'A3'.
+ */
+#define TAG_SUBSTRATE_VERSION 71
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 71
+#define TAG_COUNT 72
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -337,5 +346,9 @@ void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 bool GetTelemetryTagValid(uint16_t tag);
 uint32_t GetTelemetryTag(uint16_t tag);
+
+/* read substrate version from efuse and return in proper bit format */
+uint32_t GetTelemetrySubstrateVersion(EfuseAccessType acc_type, EfuseBoxId efuse_box_id,
+				      uint32_t offset);
 
 #endif
