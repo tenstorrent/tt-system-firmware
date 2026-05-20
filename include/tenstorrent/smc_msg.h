@@ -136,6 +136,9 @@ enum tt_smc_msg {
 	/** @brief @ref toggle_tensix_reset_rqst "Toggle Tensix reset request" */
 	TT_SMC_MSG_TOGGLE_TENSIX_RESET = 0xAF,
 
+	/** @brief @ref eth_tile_reset_rqst "Toggle ETH tile reset request" */
+	TT_SMC_MSG_TOGGLE_ETH_RESET = 0xB0,
+
 	/** @brief @ref gddr_reset_rqst "Toggle GDDR reset request" */
 	TT_SMC_MSG_TOGGLE_GDDR_RESET = 0xB6,
 

@@ -14,8 +14,11 @@
 #include "noc2axi.h"
 #include "reg.h"
 #include "serdes_eth.h"
+#include "aiclk_ppm.h"
 
+#include <tenstorrent/msgqueue.h>
 #include <tenstorrent/post_code.h>
+#include <tenstorrent/smc_msg.h>
 #include <tenstorrent/spi_flash_buf.h>
 #include <tenstorrent/sys_init_defines.h>
 #include <tenstorrent/tt_boot_fs.h>
@@ -26,6 +29,7 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_tt_bh_noc.h>
 #include <zephyr/drivers/dma/dma_arc_hs.h>
+#include <zephyr/device.h>
 
 LOG_MODULE_REGISTER(eth, CONFIG_TT_APP_LOG_LEVEL);
 
@@ -528,6 +532,134 @@ static void EthInit(void)
 		saved_heartbeat[eth_inst] = 0;
 	}
 }
+
+static void assert_eth_risc_soft_reset(uint32_t eth_inst, uint32_t ring)
+{
+	const uint32_t kAllRiscSoftReset = 0x47800;
+	uint8_t x, y;
+
+	GetEthNocCoords(eth_inst, ring, &x, &y);
+	NOC2AXITlbSetup(ring, ETH_SETUP_TLB, x, y, ETH_RISC_DEBUG_SOFT_RESET_0);
+	NOC2AXIWrite32(ring, ETH_SETUP_TLB, ETH_RISC_DEBUG_SOFT_RESET_0, kAllRiscSoftReset);
+}
+
+static uint8_t toggle_eth_reset_handler(const union request *req, struct response *rsp)
+{
+	const uint32_t ring = 0;
+	const uint32_t valid_bits = (1U << MAX_ETH_INSTANCES) - 1U;
+	uint32_t requested = req->eth_tile_reset.eth_inst_mask;
+	int rc;
+
+	if (!IS_ENABLED(CONFIG_ARC)) {
+		return 0;
+	}
+
+	if (requested & ~valid_bits) {
+		rsp->data[1] = ETH_RESET_ERR_INVALID_MASK;
+		return 1;
+	}
+
+	uint32_t mask = requested & tile_enable.eth_enabled;
+
+	if (mask == 0) {
+		rsp->data[1] = 0;
+		return 0;
+	}
+
+	if (is_cable_fault_mode()) {
+		rsp->data[1] = ETH_RESET_ERR_CABLE_FAULT;
+		return 1;
+	}
+
+	if (flash == NULL || !device_is_ready(flash)) {
+		rsp->data[1] = ETH_RESET_ERR_NO_FLASH;
+		return 1;
+	}
+
+	tt_boot_fs_fd fw_fd;
+	tt_boot_fs_fd cfg_fd;
+
+	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, &fw_fd);
+	if (rc < 0) {
+		rsp->data[1] = ETH_RESET_ERR_FW_LOOKUP;
+		return 1;
+	}
+
+	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, &cfg_fd);
+	if (rc < 0) {
+		rsp->data[1] = ETH_RESET_ERR_CFG_LOOKUP;
+		return 1;
+	}
+
+	if (cfg_fd.flags.f.image_size > SCRATCHPAD_SIZE) {
+		rsp->data[1] = ETH_RESET_ERR_CFG_SIZE;
+		return 1;
+	}
+
+	SetAiclkResetSafe(true);
+
+	RESET_UNIT_ETH_RESET_reg_u eth_reset = {.val = ReadReg(RESET_UNIT_ETH_RESET_REG_ADDR)};
+
+	/* Assert tile and risc reset */
+	eth_reset.f.eth_reset_n &= ~mask;
+	eth_reset.f.eth_risc_reset_n &= ~mask;
+	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+
+	/* Deassert tile reset */
+	eth_reset.f.eth_reset_n |= mask;
+	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+
+	/* Assert RISC soft reset via NOC for each tile. */
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (IS_BIT_SET(mask, eth_inst)) {
+			assert_eth_risc_soft_reset(eth_inst, ring);
+		}
+	}
+
+	/* Deassert risc reset */
+	eth_reset.f.eth_risc_reset_n |= mask;
+	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+
+	SetAiclkResetSafe(false);
+
+	/* Reload ERISC FW */
+	uint8_t buf[SCRATCHPAD_SIZE] __aligned(4);
+
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (!IS_BIT_SET(mask, eth_inst)) {
+			continue;
+		}
+
+		rc = LoadEthFw(eth_inst, ring, buf, sizeof(buf), fw_fd.spi_addr,
+			       fw_fd.flags.f.image_size);
+		if (rc < 0) {
+			rsp->data[1] = ETH_RESET_ERR_FW_LOAD;
+			return 1;
+		}
+
+		rc = LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled, cfg_fd.spi_addr,
+				  cfg_fd.flags.f.image_size);
+		if (rc < 0) {
+			rsp->data[1] = ETH_RESET_ERR_CFG_LOAD;
+			return 1;
+		}
+	}
+
+	/* Start ERISC FW */
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (!IS_BIT_SET(mask, eth_inst)) {
+			continue;
+		}
+
+		ReleaseEthReset(eth_inst, ring);
+		saved_heartbeat[eth_inst] = 0;
+	}
+
+	rsp->data[1] = mask;
+	return 0;
+}
+
+REGISTER_MESSAGE(TT_SMC_MSG_TOGGLE_ETH_RESET, toggle_eth_reset_handler);
 
 static int eth_init(void)
 {

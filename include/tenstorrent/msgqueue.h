@@ -570,6 +570,42 @@ enum gddr_reset_err {
 	GDDR_RESET_ERR_POWERDOWN = 6,
 };
 
+/** @brief Host request to reset and reinitialize one or more ETH tiles
+ *
+ * The handler performs the appropriate sequencing to reset and reinitialize the requested
+ * ethernet tiles.
+ *
+ * Request: @c eth_inst_mask is a bitmask of ETH instance indices (bit N selects ETH N).
+ * Bits for harvested instances are silently dropped. An empty effective mask returns success
+ * (no-op).
+ *
+ * On failure, response @c data[0] exit code is 1 @c data[1] contains @ref eth_reset_err.
+ * On success, response @c data[0] exit code is 0 and @c data[1] is the bitmask of the
+ * successfully reset tiles.
+ */
+struct eth_tile_reset_rqst {
+	/** @brief Command code @ref TT_SMC_MSG_TOGGLE_ETH_RESET */
+	uint8_t command_code;
+
+	/** @brief Padding */
+	uint8_t pad[3];
+
+	/** @brief Bitmask of ETH instances to reset (bit N -> ETH N) */
+	uint32_t eth_inst_mask;
+};
+
+/** @brief Error codes in response data[1] for @ref TT_SMC_MSG_TOGGLE_ETH_RESET */
+enum eth_reset_err {
+	ETH_RESET_ERR_INVALID_MASK = 1,
+	ETH_RESET_ERR_CABLE_FAULT = 2,
+	ETH_RESET_ERR_NO_FLASH = 3,
+	ETH_RESET_ERR_FW_LOOKUP = 4,
+	ETH_RESET_ERR_FW_LOAD = 5,
+	ETH_RESET_ERR_CFG_LOOKUP = 6,
+	ETH_RESET_ERR_CFG_SIZE = 7,
+	ETH_RESET_ERR_CFG_LOAD = 8,
+};
+
 /** @brief Host request to trigger a chip reset
  * @details Messages of this type are processed by @ref reset_dm_handler.
  *
@@ -928,6 +964,9 @@ union request {
 
 	/** @brief A GDDR reset request */
 	struct gddr_reset_rqst gddr_reset;
+
+	/** @brief An ETH tile reset request */
+	struct eth_tile_reset_rqst eth_tile_reset;
 
 	/** @brief A temperature sensor read request */
 	struct read_ts_rqst read_ts;
