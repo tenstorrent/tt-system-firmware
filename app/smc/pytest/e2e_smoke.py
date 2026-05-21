@@ -105,6 +105,10 @@ TT_SMC_MSG_SET_ASIC_HOST_FMAX = 0x23
 TT_SMC_MSG_CHARACTERISATION = 0xC6
 TT_SMC_MSG_COUNTER = 0x35
 TT_SMC_MSG_TOGGLE_GDDR_RESET = 0xB6
+TT_SMC_MSG_TOGGLE_ETH_RESET = 0xB0
+
+# ETH toggle reset (eth_tile_reset_rqst) — response[1] uses eth_reset_err from ARC
+ETH_RESET_ERR_INVALID_MASK = 1
 
 # Characterization submessage IDs
 TT_SUB_MSG_SET_HOST_REQUESTED_FMIN = 0x1
@@ -121,6 +125,8 @@ TAG_HOST_AICLK_LIMIT = 70
 NUM_PD = 16
 NUM_VM = 8
 NUM_TS = 8
+
+NUM_ETH = 14
 
 
 def read_telem(arc_chip, telem_idx):
@@ -1245,25 +1251,127 @@ def test_eth_live_status(arc_chip_dut, asic_id):
     """
     Validates that the Ethernet live status reflects correct heartbeat status.
 
-    Reads TAG_ETH_LIVE_STATUS from telemetry and checks that the heartbeat
-    bitmask (lower 16 bits) matches the enabled ETH bitmask (TAG_ENABLED_ETH),
-    since every enabled ETH tile should be posting a heartbeat.
+    Polls TAG_ETH_LIVE_STATUS every second until the heartbeat bitmask (lower 16
+    bits) matches TAG_ENABLED_ETH. Fails if the condition is not met within 75 s.
     """
+    # ETH FW can take up to 60 seconds to start its heartbeat.
+    # How long we actually have to wait depends on the board type and
+    # how long it has been since the ASIC was reset.
+    # Running this test before eth_toggle_reset_* tests reduces the amount of waiting time.
+    TIMEOUT_S = 75.0
+    POLL_INTERVAL_S = 1.0
+
     arc_chip = pyluwen.detect_chips()[asic_id]
-
-    eth_live_status = read_telem(arc_chip, TAG_ETH_LIVE_STATUS)
     eth_enabled = read_telem(arc_chip, TAG_ENABLED_ETH)
+    start = time.monotonic()
 
-    heartbeat_status = eth_live_status & 0xFFFF
+    while True:
+        elapsed = time.monotonic() - start
+        eth_live_status = read_telem(arc_chip, TAG_ETH_LIVE_STATUS)
+        heartbeat_status = eth_live_status & 0xFFFF
 
-    logger.info(
-        f"ETH enabled: {eth_enabled:#06x}, heartbeat status: {heartbeat_status:#06x}"
+        logger.debug(
+            f"[{elapsed:.1f}s] ETH enabled: {eth_enabled:#06x}, "
+            f"heartbeat status: {heartbeat_status:#06x}"
+        )
+
+        if heartbeat_status == eth_enabled:
+            logger.info(
+                f"Heartbeat matched eth_enabled after {elapsed:.1f}s "
+                f"({heartbeat_status:#06x})"
+            )
+            return
+
+        if elapsed >= TIMEOUT_S:
+            pytest.fail(
+                f"Heartbeat status {heartbeat_status:#06x} did not match "
+                f"eth_enabled {eth_enabled:#06x} within {TIMEOUT_S:.0f}s"
+            )
+
+        time.sleep(POLL_INTERVAL_S)
+
+
+def send_eth_toggle_reset(arc_chip, eth_inst_mask, no_fw_reload=False, timeout=None):
+    """Send TT_SMC_MSG_TOGGLE_ETH_RESET (eth_tile_reset_rqst).
+
+    eth_inst_mask: bit N selects ETH instance N.
+    no_fw_reload: when True, sets data[2] bit 0 to skip SPI FW reload and ReleaseEthReset.
+    """
+    msg = [
+        TT_SMC_MSG_TOGGLE_ETH_RESET,
+        eth_inst_mask,
+        1 if no_fw_reload else 0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    ]
+    if timeout is not None:
+        return arc_chip.as_bh().arc_msg_buf(msg, timeout=timeout)
+    return arc_chip.as_bh().arc_msg_buf(msg)
+
+
+def test_eth_toggle_reset_invalid_mask(arc_chip_dut, asic_id):
+    """Reject ETH reset bitmask with bits outside the supported instance range."""
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    bad_mask = 1 << 15
+    response = send_eth_toggle_reset(arc_chip, bad_mask)
+    assert response[0] != 0, "expected non-zero exit for invalid ETH instance mask"
+    assert response[1] == ETH_RESET_ERR_INVALID_MASK, (
+        f"expected ETH_RESET_ERR_INVALID_MASK ({ETH_RESET_ERR_INVALID_MASK}), got {response[1]}"
     )
 
-    assert heartbeat_status == eth_enabled, (
-        f"Heartbeat status {heartbeat_status:#06x} does not match "
-        f"eth_enabled {eth_enabled:#06x}"
+
+def test_eth_toggle_reset_noop_mask(arc_chip_dut, asic_id):
+    """Zero bitmask is a no-op and must return success."""
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    response = send_eth_toggle_reset(arc_chip, 0)
+    assert response[0] == 0, (
+        f"expected success, got status={response[0]} detail={response[1]}"
     )
+    assert response[1] == 0
+
+
+def test_eth_toggle_reset_individual(arc_chip_dut, asic_id):
+    """Reset all individual ETH instances."""
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    eth_enabled = arc_chip.get_telemetry().enabled_eth
+
+    logger.info("Individually reset each ETH instance without SPI FW reload")
+    for eth_inst in range(NUM_ETH):
+        response = send_eth_toggle_reset(arc_chip, 1 << eth_inst, no_fw_reload=True)
+        assert response[0] == 0, (
+            f"ETH {eth_inst}: expected success, got status={response[0]} detail={response[1]}"
+        )
+        assert response[1] == (1 << eth_inst) & eth_enabled
+
+    logger.info("Individually reset each ETH instance with SPI FW reload")
+    for eth_inst in range(NUM_ETH):
+        response = send_eth_toggle_reset(arc_chip, 1 << eth_inst)
+        assert response[0] == 0, (
+            f"ETH {eth_inst}: expected success, got status={response[0]} detail={response[1]}"
+        )
+        assert response[1] == (1 << eth_inst) & eth_enabled
+
+
+def test_eth_toggle_reset_all(arc_chip_dut, asic_id):
+    """Reset all ETH instances"""
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    eth_enabled = arc_chip.get_telemetry().enabled_eth
+    logger.info("Reset all ETH instances without SPI FW reload")
+    response = send_eth_toggle_reset(arc_chip, (1 << NUM_ETH) - 1, no_fw_reload=True)
+    assert response[0] == 0, (
+        f"expected success, got status={response[0]} detail={response[1]}"
+    )
+    assert response[1] == eth_enabled
+
+    logger.info("Reset all ETH instances with SPI FW reload")
+    response = send_eth_toggle_reset(arc_chip, (1 << NUM_ETH) - 1)
+    assert response[0] == 0, (
+        f"expected success, got status={response[0]} detail={response[1]}"
+    )
+    assert response[1] == eth_enabled
 
 
 def test_gddr_reset(arc_chip_dut, asic_id):
