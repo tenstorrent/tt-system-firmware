@@ -548,6 +548,7 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 	const uint32_t ring = 0;
 	const uint32_t valid_bits = (1U << MAX_ETH_INSTANCES) - 1U;
 	uint32_t requested = req->eth_tile_reset.eth_inst_mask;
+	const bool skip_fw = req->eth_tile_reset.no_fw_reload != 0;
 	int rc;
 
 	if (!IS_ENABLED(CONFIG_ARC)) {
@@ -571,29 +572,31 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 		return 1;
 	}
 
-	if (flash == NULL || !device_is_ready(flash)) {
-		rsp->data[1] = ETH_RESET_ERR_NO_FLASH;
-		return 1;
-	}
-
 	tt_boot_fs_fd fw_fd;
 	tt_boot_fs_fd cfg_fd;
 
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, &fw_fd);
-	if (rc < 0) {
-		rsp->data[1] = ETH_RESET_ERR_FW_LOOKUP;
-		return 1;
-	}
+	if (!skip_fw) {
+		if (flash == NULL || !device_is_ready(flash)) {
+			rsp->data[1] = ETH_RESET_ERR_NO_FLASH;
+			return 1;
+		}
 
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, &cfg_fd);
-	if (rc < 0) {
-		rsp->data[1] = ETH_RESET_ERR_CFG_LOOKUP;
-		return 1;
-	}
+		rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, &fw_fd);
+		if (rc < 0) {
+			rsp->data[1] = ETH_RESET_ERR_FW_LOOKUP;
+			return 1;
+		}
 
-	if (cfg_fd.flags.f.image_size > SCRATCHPAD_SIZE) {
-		rsp->data[1] = ETH_RESET_ERR_CFG_SIZE;
-		return 1;
+		rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, &cfg_fd);
+		if (rc < 0) {
+			rsp->data[1] = ETH_RESET_ERR_CFG_LOOKUP;
+			return 1;
+		}
+
+		if (cfg_fd.flags.f.image_size > SCRATCHPAD_SIZE) {
+			rsp->data[1] = ETH_RESET_ERR_CFG_SIZE;
+			return 1;
+		}
 	}
 
 	SetAiclkResetSafe(true);
@@ -622,37 +625,38 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 
 	SetAiclkResetSafe(false);
 
-	/* Reload ERISC FW */
-	uint8_t buf[SCRATCHPAD_SIZE] __aligned(4);
+	if (!skip_fw) {
+		uint8_t buf[SCRATCHPAD_SIZE] __aligned(4);
 
-	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
-		if (!IS_BIT_SET(mask, eth_inst)) {
-			continue;
+		for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+			if (!IS_BIT_SET(mask, eth_inst)) {
+				continue;
+			}
+
+			rc = LoadEthFw(eth_inst, ring, buf, sizeof(buf), fw_fd.spi_addr,
+				       fw_fd.flags.f.image_size);
+			if (rc < 0) {
+				rsp->data[1] = ETH_RESET_ERR_FW_LOAD;
+				return 1;
+			}
+
+			rc = LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled,
+					  cfg_fd.spi_addr, cfg_fd.flags.f.image_size);
+			if (rc < 0) {
+				rsp->data[1] = ETH_RESET_ERR_CFG_LOAD;
+				return 1;
+			}
 		}
 
-		rc = LoadEthFw(eth_inst, ring, buf, sizeof(buf), fw_fd.spi_addr,
-			       fw_fd.flags.f.image_size);
-		if (rc < 0) {
-			rsp->data[1] = ETH_RESET_ERR_FW_LOAD;
-			return 1;
-		}
+		/* Start ERISC FW */
+		for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+			if (!IS_BIT_SET(mask, eth_inst)) {
+				continue;
+			}
 
-		rc = LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled, cfg_fd.spi_addr,
-				  cfg_fd.flags.f.image_size);
-		if (rc < 0) {
-			rsp->data[1] = ETH_RESET_ERR_CFG_LOAD;
-			return 1;
+			ReleaseEthReset(eth_inst, ring);
+			saved_heartbeat[eth_inst] = 0;
 		}
-	}
-
-	/* Start ERISC FW */
-	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
-		if (!IS_BIT_SET(mask, eth_inst)) {
-			continue;
-		}
-
-		ReleaseEthReset(eth_inst, ring);
-		saved_heartbeat[eth_inst] = 0;
 	}
 
 	rsp->data[1] = mask;

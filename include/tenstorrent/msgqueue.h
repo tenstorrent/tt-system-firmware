@@ -572,12 +572,15 @@ enum gddr_reset_err {
 
 /** @brief Host request to reset and reinitialize one or more ETH tiles
  *
- * The handler performs the appropriate sequencing to reset and reinitialize the requested
- * ethernet tiles.
+ * The handler performs the appropriate sequencing to reset and (optionally)
+ * restart ERISC FW on the requested ethernet tiles.
  *
  * Request: @c eth_inst_mask is a bitmask of ETH instance indices (bit N selects ETH N).
  * Bits for harvested instances are silently dropped. An empty effective mask returns success
- * (no-op).
+ * (no-op). When @c no_fw_reload is 1, SPI FW/cfg reload and @c ReleaseEthReset are skipped.
+ *
+ * Wire layout as @c uint32_t data[8]: @c data[1] = @c eth_inst_mask; @c data[2] bit 0 =
+ * @c no_fw_reload.
  *
  * On failure, response @c data[0] exit code is 1 @c data[1] contains @ref eth_reset_err.
  * On success, response @c data[0] exit code is 0 and @c data[1] is the bitmask of the
@@ -592,6 +595,9 @@ struct eth_tile_reset_rqst {
 
 	/** @brief Bitmask of ETH instances to reset (bit N -> ETH N) */
 	uint32_t eth_inst_mask;
+
+	/** @brief If 1, tile/RISC reset only; skip SPI FW/cfg reload and ReleaseEthReset */
+	uint8_t no_fw_reload: 1;
 };
 
 /** @brief Error codes in response data[1] for @ref TT_SMC_MSG_TOGGLE_ETH_RESET */
