@@ -88,6 +88,10 @@ ARC_START_TIME_REG_ADDR = 0x80030440
 ARC_HANG_PC_REG_ADDR = 0x80030454
 TELEMETRY_DATA_REG_ADDR = 0x80030430
 
+# ETH tile registers
+# Using this as a scratch register to verify ETH tile reset
+TRISC0_RESET_PC_ADDR = 0xFFB12228
+
 # ARC messages
 TT_SMC_MSG_REINIT_TENSIX = 0x20
 TT_SMC_MSG_FORCE_AICLK = 0x33
@@ -1312,6 +1316,45 @@ def send_eth_toggle_reset(arc_chip, eth_inst_mask, no_fw_reload=False, timeout=N
     return arc_chip.as_bh().arc_msg_buf(msg)
 
 
+def eth_id_to_noc0_coords(eth_inst) -> tuple[int, int]:
+    PHYS_X_TO_NOC0 = [0, 1, 16, 2, 15, 3, 14, 4, 13, 5, 12, 6, 11, 7, 10, 8, 9]
+
+    x = PHYS_X_TO_NOC0[eth_inst + 1]
+    y = 1  # All ETH tiles are on the same row
+
+    return x, y
+
+
+def set_eth_scratch_pre_reset(arc_chip, eth_inst_mask):
+    """
+    Write a sentinel value to the scratch register for the given ETH instances.
+    This is used to verify that the ETH tile was reset.
+    Avoid writing to harvested ETH tiles, since that will hang the NOC.
+    """
+    for eth_inst in range(NUM_ETH):
+        if not (1 << eth_inst) & eth_inst_mask:
+            continue
+
+        x, y = eth_id_to_noc0_coords(eth_inst)
+        arc_chip.noc_write32(
+            noc_id=0, x=x, y=y, addr=TRISC0_RESET_PC_ADDR, data=0xA5A5A5A5
+        )
+
+
+def check_eth_scratch_post_reset(arc_chip, eth_inst_mask):
+    """
+    Verify that the scratch register for the given ETH instances was cleared after reset.
+    Avoid reading from harvested ETH tiles, since that will hang the NOC.
+    """
+    for eth_inst in range(NUM_ETH):
+        if not (1 << eth_inst) & eth_inst_mask:
+            continue
+
+        x, y = eth_id_to_noc0_coords(eth_inst)
+        scratch = arc_chip.noc_read32(noc_id=0, x=x, y=y, addr=TRISC0_RESET_PC_ADDR)
+        assert scratch == 0, f"ETH {eth_inst} scratch register not cleared after reset"
+
+
 def test_eth_toggle_reset_invalid_mask(arc_chip_dut, asic_id):
     """Reject ETH reset bitmask with bits outside the supported instance range."""
     arc_chip = pyluwen.detect_chips()[asic_id]
@@ -1340,19 +1383,23 @@ def test_eth_toggle_reset_individual(arc_chip_dut, asic_id):
 
     logger.info("Individually reset each ETH instance without SPI FW reload")
     for eth_inst in range(NUM_ETH):
+        set_eth_scratch_pre_reset(arc_chip, (1 << eth_inst) & eth_enabled)
         response = send_eth_toggle_reset(arc_chip, 1 << eth_inst, no_fw_reload=True)
         assert response[0] == 0, (
             f"ETH {eth_inst}: expected success, got status={response[0]} detail={response[1]}"
         )
         assert response[1] == (1 << eth_inst) & eth_enabled
+        check_eth_scratch_post_reset(arc_chip, (1 << eth_inst) & eth_enabled)
 
     logger.info("Individually reset each ETH instance with SPI FW reload")
     for eth_inst in range(NUM_ETH):
+        set_eth_scratch_pre_reset(arc_chip, (1 << eth_inst) & eth_enabled)
         response = send_eth_toggle_reset(arc_chip, 1 << eth_inst)
         assert response[0] == 0, (
             f"ETH {eth_inst}: expected success, got status={response[0]} detail={response[1]}"
         )
         assert response[1] == (1 << eth_inst) & eth_enabled
+        check_eth_scratch_post_reset(arc_chip, (1 << eth_inst) & eth_enabled)
 
 
 def test_eth_toggle_reset_all(arc_chip_dut, asic_id):
@@ -1360,18 +1407,22 @@ def test_eth_toggle_reset_all(arc_chip_dut, asic_id):
     arc_chip = pyluwen.detect_chips()[asic_id]
     eth_enabled = arc_chip.get_telemetry().enabled_eth
     logger.info("Reset all ETH instances without SPI FW reload")
+    set_eth_scratch_pre_reset(arc_chip, ((1 << NUM_ETH) - 1) & eth_enabled)
     response = send_eth_toggle_reset(arc_chip, (1 << NUM_ETH) - 1, no_fw_reload=True)
     assert response[0] == 0, (
         f"expected success, got status={response[0]} detail={response[1]}"
     )
     assert response[1] == eth_enabled
+    check_eth_scratch_post_reset(arc_chip, ((1 << NUM_ETH) - 1) & eth_enabled)
 
     logger.info("Reset all ETH instances with SPI FW reload")
+    set_eth_scratch_pre_reset(arc_chip, ((1 << NUM_ETH) - 1) & eth_enabled)
     response = send_eth_toggle_reset(arc_chip, (1 << NUM_ETH) - 1)
     assert response[0] == 0, (
         f"expected success, got status={response[0]} detail={response[1]}"
     )
     assert response[1] == eth_enabled
+    check_eth_scratch_post_reset(arc_chip, ((1 << NUM_ETH) - 1) & eth_enabled)
 
 
 def test_gddr_reset(arc_chip_dut, asic_id):
