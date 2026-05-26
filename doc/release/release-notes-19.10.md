@@ -23,6 +23,10 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+### New API
+
+  * Added [`TT_SMC_MSG_TOGGLE_ETH_RESET`](https://docs.tenstorrent.com/tt-system-firmware/doxygen/structeth__tile__reset__rqst.html) message to reset ethernet tiles (SYS-4228).
+
 ### Documentation
 
   * Autogenerate board-specific documentation from protobuf definitions.
