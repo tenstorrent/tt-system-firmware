@@ -12,10 +12,21 @@
 #include <tenstorrent/tt_boot_fs.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/crc.h>
+
+#ifdef CONFIG_BH_FWTABLE_CCFGOVR
+#include "ccfgovr.h"
+#include "fw_table_override.pb.h"
+
+#define CCFGOVR_DECODE_BODY_MAX 512U
+BUILD_ASSERT(CCFGOVR_DECODE_BODY_MAX <= CCFGOVR_MAX_BODY_LEN,
+	     "ccfgovr decode cap cannot exceed physical body capacity");
+#endif
 
 #define RESET_UNIT_STRAP_REGISTERS_L_REG_ADDR 0x80030D20
 
@@ -209,6 +220,172 @@ static int tt_bh_fwtable_load(const struct device *dev, enum bh_fwtable_e table)
 	return 0;
 }
 
+#ifdef CONFIG_BH_FWTABLE_CCFGOVR
+
+struct ccfgovr_bank_info {
+	const char *tag;
+	tt_boot_fs_fd fd;
+	struct ccfgovr_bank_hdr hdr;
+	bool header_valid;
+};
+
+static bool ccfgovr_header_is_plausible(const struct ccfgovr_bank_hdr *hdr)
+{
+	return hdr->magic == CCFGOVR_MAGIC && hdr->seq != CCFGOVR_SEQ_ERASED &&
+	       hdr->version == CCFGOVR_HDR_VERSION && (hdr->body_len % sizeof(uint32_t)) == 0 &&
+	       hdr->body_len <= CCFGOVR_DECODE_BODY_MAX;
+}
+
+static void ccfgovr_read_header(const struct device *flash, struct ccfgovr_bank_info *info)
+{
+	int rc;
+
+	info->header_valid = false;
+
+	rc = tt_boot_fs_find_fd_by_tag(flash, (const uint8_t *)info->tag, &info->fd);
+	if (rc != TT_BOOT_FS_OK) {
+		LOG_DBG("ccfgovr bank '%s' has no boot-fs entry (rc=%d)", info->tag, rc);
+		return;
+	}
+
+	if (info->fd.flags.f.image_size < sizeof(info->hdr)) {
+		LOG_WRN("ccfgovr bank '%s' image_size=%u smaller than header", info->tag,
+			info->fd.flags.f.image_size);
+		return;
+	}
+
+	rc = flash_read(flash, info->fd.spi_addr, &info->hdr, sizeof(info->hdr));
+	if (rc < 0) {
+		LOG_WRN("flash_read(%s hdr) failed: %d", info->tag, rc);
+		return;
+	}
+
+	info->header_valid = ccfgovr_header_is_plausible(&info->hdr);
+	if (!info->header_valid) {
+		LOG_DBG("ccfgovr bank '%s' header rejected (magic=0x%08x seq=0x%08x "
+			"body_len=%u version=%u)",
+			info->tag, info->hdr.magic, info->hdr.seq, info->hdr.body_len,
+			info->hdr.version);
+	}
+}
+
+static bool ccfgovr_load_and_verify_body(const struct device *flash,
+					 const struct ccfgovr_bank_info *info, uint8_t *body,
+					 size_t body_cap)
+{
+	uint32_t crc;
+	int rc;
+
+	if (info->hdr.body_len > body_cap) {
+		/* Already bounded by ccfgovr_header_is_plausible(); defensive. */
+		return false;
+	}
+
+	if (info->hdr.body_len > 0) {
+		rc = flash_read(flash, info->fd.spi_addr + sizeof(info->hdr), body,
+				info->hdr.body_len);
+		if (rc < 0) {
+			LOG_WRN("flash_read(%s body) failed: %d", info->tag, rc);
+			return false;
+		}
+	}
+
+	crc = crc32_ieee_update(0, (const uint8_t *)&info->hdr,
+				offsetof(struct ccfgovr_bank_hdr, cksum));
+	crc = crc32_ieee_update(crc, body, info->hdr.body_len);
+	if (crc != info->hdr.cksum) {
+		LOG_WRN("ccfgovr bank '%s' CRC mismatch: got 0x%08x expected 0x%08x", info->tag,
+			crc, info->hdr.cksum);
+		return false;
+	}
+
+	return true;
+}
+
+static bool ccfgovr_seq_is_newer(uint32_t a, uint32_t b)
+{
+	return ((int32_t)(a - b)) > 0;
+}
+
+void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
+{
+	struct bh_fwtable_data *data = dev->data;
+	const struct bh_fwtable_config *config = dev->config;
+	struct ccfgovr_bank_info banks[2] = {
+		{.tag = CCFGOVR_TAG_A},
+		{.tag = CCFGOVR_TAG_B},
+	};
+	uint8_t body[CCFGOVR_DECODE_BODY_MAX];
+
+	ccfgovr_read_header(config->flash, &banks[0]);
+	ccfgovr_read_header(config->flash, &banks[1]);
+
+	/*
+	 * Build an ordered list of plausible candidates with newest seq first and
+	 * try them sequentially.
+	 */
+	struct ccfgovr_bank_info *order[2] = {NULL, NULL};
+	size_t n_candidates = 0;
+
+	for (size_t i = 0; i < ARRAY_SIZE(banks); i++) {
+		if (banks[i].header_valid) {
+			order[n_candidates++] = &banks[i];
+		}
+	}
+
+	if (n_candidates == 2 && ccfgovr_seq_is_newer(order[1]->hdr.seq, order[0]->hdr.seq)) {
+		struct ccfgovr_bank_info *tmp = order[0];
+
+		order[0] = order[1];
+		order[1] = tmp;
+	}
+
+	for (size_t i = 0; i < n_candidates; i++) {
+		if (!ccfgovr_load_and_verify_body(config->flash, order[i], body, sizeof(body))) {
+			continue;
+		}
+
+		LOG_INF("Applying CCFGOVR bank '%s' seq=%u (%u override bytes)", order[i]->tag,
+			order[i]->hdr.seq, order[i]->hdr.body_len);
+
+		/* Valid empty override; nothing to decode. */
+		if (order[i]->hdr.body_len == 0) {
+			return;
+		}
+
+		/*
+		 * Tags that are `reserved` in fw_table_override.proto are unknown
+		 * to FwTableOverride_fields and get silently skipped.
+		 */
+		FwTableOverride ovr = FwTableOverride_init_zero;
+		pb_istream_t stream = pb_istream_from_buffer(body, order[i]->hdr.body_len);
+
+		if (!pb_decode_ex(&stream, FwTableOverride_fields, &ovr,
+				  PB_DECODE_NULLTERMINATED)) {
+			LOG_WRN("ccfgovr bank '%s' protobuf decode failed; trying next bank",
+				order[i]->tag);
+			continue;
+		}
+
+		/*
+		 * Allow-listed merge. Add one branch here for each field exposed
+		 * in fw_table_override.proto; keep this list in sync with the
+		 * `optional` declarations there.
+		 */
+		if (ovr.has_chip_limits && ovr.chip_limits.has_tdp_limit) {
+			LOG_INF("CCFGOVR override: chip_limits.tdp_limit = %u",
+				ovr.chip_limits.tdp_limit);
+			data->fw_table.chip_limits.tdp_limit = ovr.chip_limits.tdp_limit;
+		}
+
+		return;
+	}
+
+	LOG_DBG("No valid CCFGOVR bank found; using cmfwcfg as-is");
+}
+
+#endif /* CONFIG_BH_FWTABLE_CCFGOVR */
+
 static int tt_bh_fwtable_init(const struct device *dev)
 {
 	int rc;
@@ -236,6 +413,10 @@ static int tt_bh_fwtable_init(const struct device *dev)
 	if (rc < 0) {
 		return rc;
 	}
+
+#ifdef CONFIG_BH_FWTABLE_CCFGOVR
+	tt_bh_fwtable_apply_ccfgovr(dev);
+#endif
 
 	return 0;
 }

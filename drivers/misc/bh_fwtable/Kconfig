@@ -19,6 +19,12 @@ config BH_FWTABLE_INIT_PRIORITY
 
 		This priority should be selected so that bh_fwtable is initialized after the SPI EEPROM.
 
+config BH_FWTABLE_CCFGOVR
+	bool "Apply ccfgovr override of the cmfwcfg table"
+	default y
+	help
+		Apply ccfgovr override of the cmfwcfg table.
+
 module = BH_FWTABLE
 module-str = bh_fwtable
 source "subsys/logging/Kconfig.template.log_config"

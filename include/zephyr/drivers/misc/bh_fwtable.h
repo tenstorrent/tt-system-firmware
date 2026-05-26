@@ -49,6 +49,7 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev);
 uint8_t tt_bh_fwtable_get_board_type(const struct device *dev);
 bool tt_bh_fwtable_is_p300_left_chip(void);
 uint32_t tt_bh_fwtable_get_asic_location(const struct device *dev);
+void tt_bh_fwtable_apply_ccfgovr(const struct device *dev);
 
 #ifdef __cplusplus
 }

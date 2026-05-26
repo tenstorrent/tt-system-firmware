@@ -18,6 +18,7 @@ zephyr_library_link_libraries(nanopb)
 zephyr_nanopb_sources(bh_fwtable
     spirom_protobufs/flash_info.proto
     spirom_protobufs/fw_table.proto
+    spirom_protobufs/fw_table_override.proto
     spirom_protobufs/read_only.proto
 )
 
