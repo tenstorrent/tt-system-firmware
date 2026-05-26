@@ -111,9 +111,21 @@ partitions {
 		binary-path = "$BUILD_DIR/mcuboot-bl2/zephyr/zephyr.bin";
 	};
 
-	/* Leave a gap of 1 MB for future fixed partitions, if needed. */
+	/* Leave a gap for future fixed partitions, if needed. */
 
 	/* Partitions below here are expected to be updated in the field. */
+
+	ccfgovr_a: partition@1f5000 {
+		label = "ccfgovra";
+		reg = <0x1f5000 DT_SIZE_K(4)>;
+		binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/ccfgovr.bin";
+	};
+
+	ccfgovr_b: partition@1f6000 {
+		label = "ccfgovrb";
+		reg = <0x1f6000 DT_SIZE_K(4)>;
+		binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/ccfgovr.bin";
+	};
 
 	/* Firmware configuration blobs */
 	cmfwcfg: partition@1f7000 {
