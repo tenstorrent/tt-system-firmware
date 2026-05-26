@@ -46,4 +46,5 @@ RUN pip install west && \
     west init -m ${REPO_URL} --mr ${REPO_REV} /tt-zephyr && \
     cd /tt-zephyr/tt-system-firmware && \
     west update && \
-    west packages pip --install
+    west packages pip --install && \
+    pyocd pack install STM32G0B1CEUx
