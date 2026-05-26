@@ -6,12 +6,7 @@ config TT_BOOT_FS
 	help
 	  Library for interacting with the boot filesystem.
 
-if TT_BOOT_FS
-
 config TT_BOOT_FS_IMAGE_COUNT_MAX
-	int "Maximum number of filesystem images"
-	default 16
-	help
-	  Maximum number of filesystem images.
-
-endif
+	int "Maximum number of file descriptors"
+	default 32
+	depends on TT_BOOT_FS

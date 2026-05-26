@@ -17,7 +17,7 @@
 LOG_MODULE_REGISTER(tt_boot_fs, CONFIG_TT_APP_LOG_LEVEL);
 
 tt_boot_fs boot_fs_data;
-static tt_boot_fs_fd boot_fs_cache[16];
+static tt_boot_fs_fd boot_fs_cache[CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX];
 
 uint32_t tt_boot_fs_next(uint32_t last_fd_addr)
 {
