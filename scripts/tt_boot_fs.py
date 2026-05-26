@@ -526,6 +526,14 @@ class BootFs:
             if tag == "boardcfg":
                 # currently, the boardcfg checksum does not seem to be added correctly in images ignore for now.
                 pass
+            elif tag in ("ccfgovra", "ccfgovrb"):
+                # CCFGOVR banks are field-updatable via tt-mod, which rewrites
+                # the bank body but cannot update the FD's data_crc (the FD
+                # lives in the descriptor region, a different physical sector).
+                # The firmware ignores data_crc for these banks and instead
+                # validates them via the cksum word stored inside each bank's
+                # header. A mismatch is expected when tt-mod ran.
+                pass
             else:
                 raise ValueError(
                     f"{tag} image checksum 0x{actual_image_cksum:08x} does not match expected checksum 0x{expected_image_cksum:08x}"
