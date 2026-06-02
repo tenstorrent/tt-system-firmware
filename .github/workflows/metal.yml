@@ -103,14 +103,9 @@ jobs:
         run: |
           python -m venv .env
           source .env/bin/activate
-          pip install tt-flash==3.6.2
+          pip install tt-flash==3.7.0
           tt-flash $HOME/fw_pack-*.fwbundle --force
-          if [ "${{ matrix.config.board }}" == "galaxy" ]; then
-            # Use tt-smi galaxy reset, otherwise we may drop to Gen1 PCIe speeds
-            tt-smi -glx_reset
-          else
-            tt-smi -r
-          fi
+          tt-smi -r
       - name: Patch Test Command
         run: |
           # Patch whisper demo test to run with CI=false to skip the performance checks.
