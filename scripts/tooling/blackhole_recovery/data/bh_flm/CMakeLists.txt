@@ -3,11 +3,21 @@
 
 cmake_minimum_required(VERSION 3.13.1)
 
-# Use the zephyr SDK for building, since we just need ARM toolchain
-find_package(Zephyr-sdk)
-if(NOT Zephyr-sdk_FOUND)
-  error("Zephyr SDK required to build")
+# Locate the Zephyr base / west workspace the same way Zephyr does: prefer the
+# ZEPHYR_BASE environment variable that west exports, and only fall back to a
+# relative path for standalone (non-west) invocations of this CMake project.
+if(DEFINED ENV{ZEPHYR_BASE})
+  get_filename_component(ZEPHYR_BASE $ENV{ZEPHYR_BASE} ABSOLUTE)
+  get_filename_component(WORKSPACE_ROOT ${ZEPHYR_BASE} DIRECTORY)
+else()
+  get_filename_component(WORKSPACE_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../../../../.. ABSOLUTE)
+  set(ZEPHYR_BASE ${WORKSPACE_ROOT}/zephyr)
 endif()
+
+# Use Zephyr's SDK finder (version-aware) instead of CMake's config package search.
+# Matches west: FindHostTools.cmake calls find_package(Zephyr-sdk 1.0).
+list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/cmake/modules)
+find_package(Zephyr-sdk 1.0 MODULE REQUIRED)
 
 # Set the target compiler
 set(CMAKE_C_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc)
@@ -37,9 +47,6 @@ endforeach()
 # Set compile definitions for each SPI FLM target
 target_compile_definitions(spi1.flm PRIVATE USE_SPI1)
 target_compile_definitions(spi_combo.flm PRIVATE USE_SPI_COMBO)
-
-
-set(WORKSPACE_ROOT ${CMAKE_CURRENT_LIST_DIR}/../../../../../..)
 
 # Include STM32 HAL
 set(STM32_MODULE_DIR ${WORKSPACE_ROOT}/modules/hal/stm32)
