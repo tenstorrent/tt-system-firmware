@@ -57,7 +57,7 @@ pci0_property_table {
 }
 
 pci1_property_table {
-  max_pcie_speed: 0
+  max_pcie_speed: 4
   pcie_bar0_size: 512
   pcie_bar2_size: 1
   pcie_bar4_size: 32768
