@@ -83,14 +83,4 @@ typedef union {
 	STATUS_BOOT_STATUS0_reg_t f;
 } STATUS_BOOT_STATUS0_reg_u;
 
-typedef struct {
-	uint32_t regulator_init_error: 1;
-	uint32_t cable_fault: 1; /* No cable or improperly installed 12V-2x6 cable */
-} STATUS_ERROR_STATUS0_reg_t;
-
-typedef union {
-	uint32_t val;
-	STATUS_ERROR_STATUS0_reg_t f;
-} STATUS_ERROR_STATUS0_reg_u;
-
 #endif

@@ -48,7 +48,18 @@ static const struct device *const pll_devs[] = {DT_INST_FOREACH_STATUS_OKAY(PLL_
 LOG_MODULE_REGISTER(InitHW, CONFIG_TT_APP_LOG_LEVEL);
 
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
-STATUS_ERROR_STATUS0_reg_u error_status0;
+uint32_t error_status0;
+
+void record_init_failure(enum init_stage_id stage)
+{
+	if ((unsigned int)stage >= INIT_STAGE_COUNT) {
+		return;
+	}
+
+	error_status0 |= BIT(stage);
+
+	WriteReg(STATUS_ERROR_STATUS0_REG_ADDR, error_status0);
+}
 
 /* Cable fault mode: true when DMC reports 0W power limit (no cable or improper installation).
  * In this mode, all tiles except column 15 are clock-gated via NIU_CFG_0 TILE_CLK_OFF to minimize
@@ -333,7 +344,7 @@ static int DeassertTileResets(void)
 
 		if (cable_power_limit == 0) {
 			cable_fault_mode = true;
-			error_status0.f.cable_fault = 1;
+			record_init_failure(INIT_STAGE_CABLE_FAULT);
 			LOG_WRN("Cable fault detected (0W power limit). "
 				"Entering low-power mode - clock-gating all tiles except column 15 "
 				"(contains ARC).");
