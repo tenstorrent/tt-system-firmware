@@ -14,6 +14,9 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+### PCIe
+
+- For P300C boards, update PCIe speed to Gen4 to improve QB2 PCIe stability (SYS-4229).
 
 ## Grendel
 
