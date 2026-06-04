@@ -204,6 +204,34 @@ jobs:
           fi
           echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
 
+      # Build bh-mod to be used by ccfgovr tests
+      - name: Build bh-mod
+        shell: bash
+        env:
+          LUWEN_REPO: ${{ vars.LUWEN_REPO || 'https://github.com/tenstorrent/luwen.git' }}
+          LUWEN_REF: ${{ vars.LUWEN_REF || 'main' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v protoc >/dev/null 2>&1 || missing+=(protobuf-compiler)
+          command -v curl   >/dev/null 2>&1 || missing+=(curl ca-certificates)
+          if [ ${#missing[@]} -gt 0 ]; then
+            apt-get update && apt-get install -y --no-install-recommends "${missing[@]}"
+          fi
+          protoc --version
+          # Ensure a Rust toolchain is available
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo --version
+          rm -rf "$HOME/luwen"
+          git clone --depth 1 --branch "$LUWEN_REF" "$LUWEN_REPO" "$HOME/luwen"
+          cargo build --release -p bh-mod --manifest-path "$HOME/luwen/Cargo.toml"
+          install -m 0755 "$HOME/luwen/target/release/bh-mod" /usr/local/bin/bh-mod
+          bh-mod --help
+
       - name: run-e2e-tests
         run: |
           tt-system-firmware/scripts/ci/run-e2e.sh -k $SIGNATURE_KEY_FILE \

@@ -5,6 +5,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 import re
 import sys
@@ -1711,3 +1712,46 @@ def test_bindesc(arc_chip_dut, asic_id):
         f"Bindesc version mismatch: 0x{bindesc_version:08x} != expected 0x{smc_version:08x}"
     )
     logger.info(f"Bindesc version: 0x{bindesc_version:08x}")
+
+
+def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
+    """
+    Test bh-mod can correctly set TDP limit, and that it is not overriden
+    by tt-flash.
+    """
+    bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
+
+    # Get the TDP limit
+    chip = pyluwen.detect_chips()[asic_id]
+    baseline = chip.get_telemetry().tdp_limit_max
+    target = baseline - 5
+
+    # Set new TDP limit
+    result = subprocess.run(
+        [bh_mod, "--reset-timeout=60s", "set", f"chip_limits.tdp_limit={target}"],
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+
+    # Verify TDP limit has been set correctly by bh-mod
+    chip = pyluwen.detect_chips()[asic_id]
+    measured = chip.get_telemetry().tdp_limit_max
+    assert measured == target, f"expected tdp_limit_max={target}, got {measured}"
+
+    # Re-flash the firmware bundle and confirm the override survives.
+    unlaunched_dut.launch()
+    del chip  # force re-detection after the flash and reboot
+    chip = wait_arc_boot(asic_id, timeout=60)
+    measured_after_flash = chip.get_telemetry().tdp_limit_max
+    assert measured_after_flash == target, (
+        f"ccfgovr did not survive tt-flash: "
+        f"expected tdp_limit_max={target}, got {measured_after_flash}"
+    )
+
+    # Revert TDP limit back to original
+    subprocess.run(
+        [bh_mod, "set", f"chip_limits.tdp_limit={baseline}"],
+        capture_output=True,
+        check=False,
+    )
