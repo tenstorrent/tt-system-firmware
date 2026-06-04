@@ -501,7 +501,7 @@ static int pvt_tt_bh_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api pvt_tt_bh_driver_api = {
+static DEVICE_API(sensor, pvt_tt_bh_driver_api) = {
 	.attr_set = NULL,
 	.attr_get = pvt_tt_bh_attr_get,
 	.trigger_set = NULL,

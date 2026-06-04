@@ -324,7 +324,7 @@ static int32_t smbus_write_requested(struct i2c_target_config *config)
 	return 0;
 }
 
-static const struct i2c_target_driver_api api_funcs = {
+static DEVICE_API(i2c_target, api_funcs) = {
 	.driver_register = smbus_target_register,
 	.driver_unregister = smbus_target_unregister,
 };

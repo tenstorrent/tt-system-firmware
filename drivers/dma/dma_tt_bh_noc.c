@@ -517,7 +517,7 @@ static int tt_bh_dma_noc_stop(const struct device *dev, uint32_t channel)
 	return 0;
 }
 
-static const struct dma_driver_api tt_bh_dma_noc_api = {
+static DEVICE_API(dma, tt_bh_dma_noc_api) = {
 	.config = tt_bh_dma_noc_config,
 	.reload = NULL,
 	.start = tt_bh_dma_noc_start,

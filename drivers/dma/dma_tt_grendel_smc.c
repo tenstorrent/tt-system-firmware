@@ -208,7 +208,7 @@ static int dma_grendel_init(const struct device *dev)
 	return 0;
 }
 
-static const struct dma_driver_api dma_grendel_api = {
+static DEVICE_API(dma, dma_grendel_api) = {
 	.config = dma_grendel_config,
 	.reload = NULL,
 	.start = dma_grendel_start,

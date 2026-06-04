@@ -301,7 +301,7 @@ static int clock_control_tt_grendel_init(const struct device *dev)
 	return 0;
 }
 
-static const struct clock_control_driver_api clock_control_tt_grendel_api = {
+static DEVICE_API(clock_control, clock_control_tt_grendel_api) = {
 	.on = clock_control_tt_grendel_on,
 	.off = clock_control_tt_grendel_off,
 	.get_rate = clock_control_tt_grendel_get_rate,

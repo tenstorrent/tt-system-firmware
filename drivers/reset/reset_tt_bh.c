@@ -115,7 +115,7 @@ static int tt_bh_reset_init(const struct device *dev)
 	return 0;
 }
 
-static const struct reset_driver_api tt_bh_reset_api = {
+static DEVICE_API(reset, tt_bh_reset_api) = {
 	.status = tt_bh_reset_status,
 	.line_assert = tt_bh_reset_line_assert,
 	.line_deassert = tt_bh_reset_line_deassert,
