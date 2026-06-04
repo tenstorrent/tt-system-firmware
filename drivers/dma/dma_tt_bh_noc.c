@@ -7,8 +7,10 @@
 #define DT_DRV_COMPAT tenstorrent_noc_dma
 
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_tt_bh_noc.h>
+#include <zephyr/init.h>
 #include <zephyr/irq.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/sys_io.h>
@@ -64,6 +66,7 @@ struct tt_bh_dma_channel_resettable_data {
 	uint16_t block_index;
 	uint16_t block_count;
 	bool configured: 1;
+	bool coords_set: 1;
 };
 
 struct tt_bh_dma_channel_data {
@@ -230,10 +233,30 @@ static int noc_dma_transfer(uint32_t cmd, uint32_t ret_coord, uint64_t ret_addr,
 	return 0;
 }
 
-/*
- * Config the source and dest NOC coordinates, the source and dest addresses and
- * the size of data transfer.
- */
+int tt_bh_dma_noc_set_coords(const struct device *dev, uint32_t channel, uint8_t source_x,
+			     uint8_t source_y, uint8_t dest_x, uint8_t dest_y)
+{
+	struct tt_bh_dma_noc_data *dma_data = (struct tt_bh_dma_noc_data *)dev->data;
+	const struct tt_bh_dma_noc_config *dma_cfg =
+		(const struct tt_bh_dma_noc_config *)dev->config;
+
+	if (channel >= dma_cfg->num_channels) {
+		return -EINVAL;
+	}
+
+	k_spinlock_key_t key = k_spin_lock(&dma_data->lock);
+
+	dma_cfg->channels[channel].coords.source_x = source_x;
+	dma_cfg->channels[channel].coords.source_y = source_y;
+	dma_cfg->channels[channel].coords.dest_x = dest_x;
+	dma_cfg->channels[channel].coords.dest_y = dest_y;
+	dma_cfg->channels[channel].state.coords_set = true;
+
+	k_spin_unlock(&dma_data->lock, key);
+
+	return 0;
+}
+
 static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
 				struct dma_config *config)
 {
@@ -249,7 +272,7 @@ static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
 		LOG_ERR("Too many blocks: %u > %u", config->block_count, DMA_MAX_TRANSFER_BLOCKS);
 		return -EINVAL;
 	}
-	if (channel > dma_cfg->num_channels) {
+	if (channel >= dma_cfg->num_channels) {
 		LOG_ERR("Invalid channel %u", channel);
 		return -EINVAL;
 	}
@@ -277,14 +300,6 @@ static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
 	chan_data->state.configured = true;
 	chan_data->state.last_noc_cmd = 0;
 	chan_data->state.last_expected_acks = 0;
-
-	if (config->user_data) {
-		chan_data->coords = *(struct tt_bh_dma_noc_coords *)config->user_data;
-	} else {
-		GetEnabledTensix(&chan_data->coords.source_x, &chan_data->coords.source_y);
-		chan_data->coords.dest_x = 8;
-		chan_data->coords.dest_y = 0;
-	}
 
 	k_spin_unlock(&dma_data->lock, key);
 
@@ -366,6 +381,11 @@ static int tt_bh_dma_noc_start(const struct device *dev, uint32_t channel)
 	struct tt_bh_dma_channel_data *chan_data = &cfg->channels[channel];
 
 	if (!chan_data->state.configured) {
+		LOG_ERR("Channel %u not configured", channel);
+		return -EINVAL;
+	}
+
+	if (!chan_data->state.coords_set) {
 		LOG_ERR("Channel %u not configured", channel);
 		return -EINVAL;
 	}
@@ -489,6 +509,46 @@ static int tt_bh_dma_noc_init(const struct device *dev)
 {
 	return 0;
 }
+
+#if defined(CONFIG_DMA_TT_BH_NOC_ZTEST_COORDS_INIT)
+
+#define ARC_NOC0_X 8
+#define ARC_NOC0_Y 0
+
+static int tt_bh_dma_noc_ztest_coords_init(void)
+{
+	if (!IS_ENABLED(CONFIG_ARC)) {
+		return 0;
+	}
+
+	const struct device *dev = DEVICE_DT_GET_ONE(tenstorrent_noc_dma);
+
+	if (!device_is_ready(dev)) {
+		LOG_WRN("DMA NOC device is not ready for ztest coordinate init");
+		return 0;
+	}
+
+	const struct tt_bh_dma_noc_config *cfg = (const struct tt_bh_dma_noc_config *)dev->config;
+	uint8_t source_x;
+	uint8_t source_y;
+
+	GetEnabledTensix(&source_x, &source_y);
+
+	for (uint32_t channel = 0; channel < cfg->num_channels; channel++) {
+		int ret = tt_bh_dma_noc_set_coords(dev, channel, source_x, source_y, ARC_NOC0_X,
+						   ARC_NOC0_Y);
+
+		if (ret != 0) {
+			LOG_WRN("Failed to seed DMA channel %u coordinates (ret=%d)", channel, ret);
+		}
+	}
+
+	return 0;
+}
+
+#define DMA_TT_BH_NOC_ZTEST_COORDS_INIT_PRIO 114
+SYS_INIT(tt_bh_dma_noc_ztest_coords_init, POST_KERNEL, DMA_TT_BH_NOC_ZTEST_COORDS_INIT_PRIO);
+#endif
 
 static int tt_bh_dma_noc_get_status(const struct device *dev, uint32_t channel,
 				    struct dma_status *status)

@@ -323,8 +323,6 @@ static void wipe_l1(void)
 
 	GetEnabledTensix(&tensix_x, &tensix_y);
 
-	struct tt_bh_dma_noc_coords coords = tt_bh_dma_noc_coords_init(tensix_x, tensix_y, 0, 0);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = addr,
@@ -339,7 +337,6 @@ static void wipe_l1(void)
 		.dest_burst_length = 1,
 		.block_count = 1,
 		.head_block = &block,
-		.user_data = &coords,
 	};
 
 	for (uint32_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
@@ -350,8 +347,11 @@ static void wipe_l1(void)
 
 				GetGddrNocCoords(gddr_inst, noc2axi_port, noc_id, &x, &y);
 
-				coords.dest_x = x;
-				coords.dest_y = y;
+				if (tt_bh_dma_noc_set_coords(dma_noc, 1, tensix_x, tensix_y, x,
+							     y) != 0) {
+					LOG_ERR("Failed to set DMA NOC coordinates");
+					continue;
+				}
 
 				/* AXI enable must not be set, using MRISC address 0 */
 				dma_config(dma_noc, 1, &config);

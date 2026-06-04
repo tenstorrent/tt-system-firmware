@@ -7,3 +7,12 @@ config DMA_TT_BH_NOC
 	depends on DT_HAS_TENSTORRENT_NOC_DMA_ENABLED
 	help
 		Enable the Tenstorrent Blackhole NOC DMA driver.
+
+config DMA_TT_BH_NOC_ZTEST_COORDS_INIT
+	bool "Set test DMA coords during ztest boot"
+	depends on DMA_TT_BH_NOC && ZTEST
+	default n
+	help
+		Enable a test-only init hook in the DMA driver that sets source/destination
+		NOC coordinates on all DMA channels at boot. Routes from enabled Tensix
+		back to ARC NOC0 (8,0).

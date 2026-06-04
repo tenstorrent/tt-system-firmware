@@ -442,8 +442,6 @@ static void wipe_l1(void)
 
 	GetEnabledTensix(&tensix_x, &tensix_y);
 
-	struct tt_bh_dma_noc_coords coords = tt_bh_dma_noc_coords_init(tensix_x, tensix_y, 0, 0);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = addr,
@@ -458,7 +456,6 @@ static void wipe_l1(void)
 		.dest_burst_length = 1,
 		.block_count = 1,
 		.head_block = &block,
-		.user_data = &coords,
 	};
 
 	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
@@ -467,8 +464,10 @@ static void wipe_l1(void)
 
 			GetEthNocCoords(eth_inst, noc_id, &x, &y);
 
-			coords.dest_x = x;
-			coords.dest_y = y;
+			if (tt_bh_dma_noc_set_coords(dma_noc, 1, tensix_x, tensix_y, x, y) != 0) {
+				LOG_ERR("Failed to set DMA NOC coordinates");
+				continue;
+			}
 
 			dma_config(dma_noc, 1, &config);
 			dma_start(dma_noc, 1);

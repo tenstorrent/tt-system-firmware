@@ -138,9 +138,6 @@ static void wipe_l1(void)
 	/* wipe SCRATCHPAD_SIZE of the chosen tensix */
 	memset(sram_buffer, 0, sizeof(sram_buffer));
 
-	struct tt_bh_dma_noc_coords coords =
-		tt_bh_dma_noc_coords_init(tensix_x, tensix_y, ARC_NOC0_X, ARC_NOC0_Y);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = (uintptr_t)sram_buffer,
@@ -155,8 +152,12 @@ static void wipe_l1(void)
 		.dest_burst_length = 1,
 		.block_count = 1,
 		.head_block = &block,
-		.user_data = &coords,
 	};
+
+	if (tt_bh_dma_noc_set_coords(dma_noc, 1, tensix_x, tensix_y, ARC_NOC0_X, ARC_NOC0_Y) != 0) {
+		LOG_ERR("Failed to set DMA NOC coordinates");
+		return;
+	}
 
 	dma_config(dma_noc, 1, &config);
 	dma_start(dma_noc, 1);
@@ -168,8 +169,12 @@ static void wipe_l1(void)
 		uint32_t size = MIN(offset, TENSIX_L1_SIZE - offset);
 
 		config.channel_direction = PERIPHERAL_TO_MEMORY;
-		coords.dest_x = tensix_x;
-		coords.dest_y = tensix_y;
+
+		if (tt_bh_dma_noc_set_coords(dma_noc, 1, tensix_x, tensix_y, tensix_x, tensix_y) !=
+		    0) {
+			LOG_ERR("Failed to set DMA NOC coordinates");
+			return;
+		}
 		block.dest_address = offset;
 		block.block_size = size;
 
