@@ -82,6 +82,7 @@ REFCLK_HZ = 50_000_000
 ARC_STATUS = 0x80030060
 ARC_MISC_CTRL = 0x80030100
 BOOT_STATUS = 0x80030408
+ERROR_STATUS0 = 0x80030410
 PCIE_INIT_CPL_TIME_REG_ADDR = 0x80030438
 CMFW_START_TIME_REG_ADDR = 0x8003043C
 ARC_START_TIME_REG_ADDR = 0x80030440
@@ -533,11 +534,12 @@ def test_boot_status(arc_chip_dut, asic_id):
     """
     Validates the boot status of the ARC firmware
     """
-    # Read the boot status register and validate that it is correct
     arc_chip = pyluwen.detect_chips()[asic_id]
     status = arc_chip.axi_read32(BOOT_STATUS)
+    err = arc_chip.axi_read32(ERROR_STATUS0)
+
     assert (status >> 1) & 0x3 == 0x2, "SMC HW boot status is not valid"
-    logger.info('SMC boot status "%d"', status)
+    assert err == 0, "FW Init error"
 
 
 def test_smbus_status(arc_chip_dut, asic_id):
