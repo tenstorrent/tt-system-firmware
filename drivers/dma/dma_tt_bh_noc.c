@@ -235,7 +235,7 @@ static int noc_dma_transfer(uint32_t cmd, uint32_t ret_coord, uint64_t ret_addr,
  * the size of data transfer.
  */
 static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
-				struct dma_config *config)
+				struct dma_config *config, struct tt_bh_dma_noc_coords *coords)
 {
 	struct tt_bh_dma_noc_data *dma_data = (struct tt_bh_dma_noc_data *)dev->data;
 	const struct tt_bh_dma_noc_config *dma_cfg =
@@ -249,7 +249,7 @@ static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
 		LOG_ERR("Too many blocks: %u > %u", config->block_count, DMA_MAX_TRANSFER_BLOCKS);
 		return -EINVAL;
 	}
-	if (channel > dma_cfg->num_channels) {
+	if (channel >= dma_cfg->num_channels) {
 		LOG_ERR("Invalid channel %u", channel);
 		return -EINVAL;
 	}
@@ -278,17 +278,23 @@ static int tt_bh_dma_noc_config(const struct device *dev, uint32_t channel,
 	chan_data->state.last_noc_cmd = 0;
 	chan_data->state.last_expected_acks = 0;
 
-	if (config->user_data) {
-		chan_data->coords = *(struct tt_bh_dma_noc_coords *)config->user_data;
-	} else {
-		GetEnabledTensix(&chan_data->coords.source_x, &chan_data->coords.source_y);
-		chan_data->coords.dest_x = 8;
-		chan_data->coords.dest_y = 0;
-	}
+	chan_data->coords = *coords;
 
 	k_spin_unlock(&dma_data->lock, key);
 
 	return 0;
+}
+
+static int tt_bh_dma_noc_base_config(const struct device *dev, uint32_t channel,
+				     struct dma_config *config)
+{
+	/* Set NOC to ARC*/
+	struct tt_bh_dma_noc_coords coords = {
+		.dest_x = 8U, /*ARC_X*/
+		.dest_y = 0U, /*ARC_Y*/
+	};
+	GetEnabledTensix(&coords.source_x, &coords.source_y);
+	return tt_bh_dma_noc_config(dev, channel, config, &coords);
 }
 
 static int noc_dma_write_multicast(uint8_t local_x, uint8_t local_y, uint64_t local_addr,
@@ -517,17 +523,18 @@ static int tt_bh_dma_noc_stop(const struct device *dev, uint32_t channel)
 	return 0;
 }
 
-static DEVICE_API(dma, tt_bh_dma_noc_api) = {
+static DEVICE_API(tt_bh_dma_noc, tt_bh_dma_noc_api) = {
+	.dma_api.config = tt_bh_dma_noc_base_config,
+	.dma_api.reload = NULL,
+	.dma_api.start = tt_bh_dma_noc_start,
+	.dma_api.stop = tt_bh_dma_noc_stop,
+	.dma_api.suspend = NULL,
+	.dma_api.resume = NULL,
+	.dma_api.get_status = tt_bh_dma_noc_get_status,
+	.dma_api.get_attribute = NULL,
+	.dma_api.chan_filter = NULL,
+	.dma_api.chan_release = NULL,
 	.config = tt_bh_dma_noc_config,
-	.reload = NULL,
-	.start = tt_bh_dma_noc_start,
-	.stop = tt_bh_dma_noc_stop,
-	.suspend = NULL,
-	.resume = NULL,
-	.get_status = tt_bh_dma_noc_get_status,
-	.get_attribute = NULL,
-	.chan_filter = NULL,
-	.chan_release = NULL,
 };
 
 #define TT_BH_DMA_NOC_INIT(inst)                                                                   \

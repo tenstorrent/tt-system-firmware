@@ -442,8 +442,6 @@ static void wipe_l1(void)
 
 	GetEnabledTensix(&tensix_x, &tensix_y);
 
-	struct tt_bh_dma_noc_coords coords = tt_bh_dma_noc_coords_init(tensix_x, tensix_y, 0, 0);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = addr,
@@ -458,19 +456,15 @@ static void wipe_l1(void)
 		.dest_burst_length = 1,
 		.block_count = 1,
 		.head_block = &block,
-		.user_data = &coords,
 	};
+
+	struct tt_bh_dma_noc_coords coords = {.source_x = tensix_x, .source_y = tensix_y};
 
 	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
 		if (IS_BIT_SET(tile_enable.eth_enabled, eth_inst)) {
-			uint8_t x, y;
+			GetEthNocCoords(eth_inst, noc_id, &coords.dest_x, &coords.dest_y);
 
-			GetEthNocCoords(eth_inst, noc_id, &x, &y);
-
-			coords.dest_x = x;
-			coords.dest_y = y;
-
-			dma_config(dma_noc, 1, &config);
+			tt_dma_config(dma_noc, 1, &config, &coords);
 			dma_start(dma_noc, 1);
 		}
 	}

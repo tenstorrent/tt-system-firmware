@@ -323,38 +323,31 @@ static void wipe_l1(void)
 
 	GetEnabledTensix(&tensix_x, &tensix_y);
 
-	struct tt_bh_dma_noc_coords coords = tt_bh_dma_noc_coords_init(tensix_x, tensix_y, 0, 0);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = addr,
 		.block_size = MRISC_L1_SIZE,
 	};
 
-	struct dma_config config = {
-		.channel_direction = PERIPHERAL_TO_MEMORY,
-		.source_data_size = 1,
-		.dest_data_size = 1,
-		.source_burst_length = 1,
-		.dest_burst_length = 1,
-		.block_count = 1,
-		.head_block = &block,
-		.user_data = &coords,
-	};
+	struct dma_config config = {.channel_direction = PERIPHERAL_TO_MEMORY,
+				    .source_data_size = 1,
+				    .dest_data_size = 1,
+				    .source_burst_length = 1,
+				    .dest_burst_length = 1,
+				    .block_count = 1,
+				    .head_block = &block};
+
+	struct tt_bh_dma_noc_coords coords = {.source_x = tensix_x, .source_y = tensix_y};
 
 	for (uint32_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
 		if (IS_BIT_SET(dram_mask, gddr_inst)) {
 			for (uint32_t noc2axi_port = 0; noc2axi_port < NUM_MRISC_NOC2AXI_PORT;
 			     noc2axi_port++) {
-				uint8_t x, y;
-
-				GetGddrNocCoords(gddr_inst, noc2axi_port, noc_id, &x, &y);
-
-				coords.dest_x = x;
-				coords.dest_y = y;
+				GetGddrNocCoords(gddr_inst, noc2axi_port, noc_id, &coords.dest_x,
+						 &coords.dest_y);
 
 				/* AXI enable must not be set, using MRISC address 0 */
-				dma_config(dma_noc, 1, &config);
+				tt_dma_config(dma_noc, 1, &config, &coords);
 				dma_start(dma_noc, 1);
 			}
 		}

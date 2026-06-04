@@ -138,27 +138,26 @@ static void wipe_l1(void)
 	/* wipe SCRATCHPAD_SIZE of the chosen tensix */
 	memset(sram_buffer, 0, sizeof(sram_buffer));
 
-	struct tt_bh_dma_noc_coords coords =
-		tt_bh_dma_noc_coords_init(tensix_x, tensix_y, ARC_NOC0_X, ARC_NOC0_Y);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = (uintptr_t)sram_buffer,
 		.block_size = sizeof(sram_buffer),
 	};
 
-	struct dma_config config = {
-		.channel_direction = MEMORY_TO_PERIPHERAL,
-		.source_data_size = 1,
-		.dest_data_size = 1,
-		.source_burst_length = 1,
-		.dest_burst_length = 1,
-		.block_count = 1,
-		.head_block = &block,
-		.user_data = &coords,
-	};
+	struct dma_config config = {.channel_direction = MEMORY_TO_PERIPHERAL,
+				    .source_data_size = 1,
+				    .dest_data_size = 1,
+				    .source_burst_length = 1,
+				    .dest_burst_length = 1,
+				    .block_count = 1,
+				    .head_block = &block};
 
-	dma_config(dma_noc, 1, &config);
+	struct tt_bh_dma_noc_coords coords = {.source_x = tensix_x,
+					      .source_y = tensix_y,
+					      .dest_x = ARC_NOC0_X,
+					      .dest_y = ARC_NOC0_Y};
+
+	tt_dma_config(dma_noc, 1, &config, &coords);
 	dma_start(dma_noc, 1);
 
 	/* wipe entire L1 of the chosen tensix */
@@ -173,7 +172,7 @@ static void wipe_l1(void)
 		block.dest_address = offset;
 		block.block_size = size;
 
-		dma_config(dma_noc, 1, &config);
+		tt_dma_config(dma_noc, 1, &config, &coords);
 		dma_start(dma_noc, 1);
 
 		offset += offset;
@@ -185,7 +184,7 @@ static void wipe_l1(void)
 	block.dest_address = addr;
 	block.block_size = TENSIX_L1_SIZE;
 
-	dma_config(dma_noc, 1, &config);
+	tt_dma_config(dma_noc, 1, &config, &coords);
 	dma_start(dma_noc, 1);
 }
 
