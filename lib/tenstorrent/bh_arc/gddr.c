@@ -12,6 +12,7 @@
 #include "noc_init.h"
 #include "noc2axi.h"
 #include "reg.h"
+#include "status_reg.h"
 
 #include <tenstorrent/bh_power.h>
 #include <tenstorrent/msgqueue.h>
@@ -397,6 +398,7 @@ static int InitMrisc(void)
 	rc = tt_boot_fs_find_fd_by_tag(flash, MRISC_FW_TAG, &tag_fd);
 	if (rc < 0) {
 		LOG_ERR("%s (%s) failed: %d", "tt_boot_fs_find_fd_by_tag", MRISC_FW_TAG, rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 	image_size = tag_fd.flags.f.image_size;
@@ -406,6 +408,7 @@ static int InitMrisc(void)
 		if (IS_BIT_SET(dram_mask, gddr_inst)) {
 			if (LoadMriscFw(gddr_inst, buf, SCRATCHPAD_SIZE, spi_address, image_size)) {
 				LOG_ERR("%s(%d) failed: %d", "LoadMriscFw", gddr_inst, -EIO);
+				record_init_failure(INIT_STAGE_MRISC_LOAD);
 				return -EIO;
 			}
 		}
@@ -414,6 +417,7 @@ static int InitMrisc(void)
 	rc = tt_boot_fs_find_fd_by_tag(flash, MRISC_FW_CFG_TAG, &tag_fd);
 	if (rc < 0) {
 		LOG_ERR("%s (%s) failed: %d", "tt_boot_fs_find_fd_by_tag", MRISC_FW_CFG_TAG, rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 	image_size = tag_fd.flags.f.image_size;
@@ -427,6 +431,7 @@ static int InitMrisc(void)
 	rc = flash_read(flash, spi_address, buf, image_size);
 	if (rc < 0) {
 		LOG_ERR("%s() failed: %d", "flash_read", rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 
@@ -441,6 +446,7 @@ static int InitMrisc(void)
 		    pll_dev_3, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_GDDRMEMCLK,
 		    (clock_control_subsys_rate_t)(gddr_speed / GDDR_SPEED_TO_MEMCLK_RATIO))) {
 		LOG_ERR("%s(%d) failed: %d", "SetGddrMemClk", gddr_speed, -EIO);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return -EIO;
 	}
 
@@ -449,6 +455,7 @@ static int InitMrisc(void)
 			if (LoadMriscFwCfg(gddr_inst, buf, SCRATCHPAD_SIZE, spi_address,
 					   image_size)) {
 				LOG_ERR("%s(%d) failed: %d", "LoadMriscFwCfg", gddr_inst, -EIO);
+				record_init_failure(INIT_STAGE_MRISC_LOAD);
 				return -EIO;
 			}
 			MriscRegWrite32(gddr_inst, MRISC_INIT_STATUS, MRISC_INIT_BEFORE);
@@ -562,8 +569,11 @@ static int gddr_training(void)
 		/* this is needed to securely wipe DRAM */
 		if (CheckGddrHwTest() < 0) {
 			LOG_ERR("GDDR HW test failed");
+			record_init_failure(INIT_STAGE_GDDR_TRAIN);
 			return -EIO;
 		}
+	} else {
+		record_init_failure(INIT_STAGE_GDDR_TRAIN);
 	}
 
 	return 0;

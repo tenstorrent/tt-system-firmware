@@ -5,6 +5,7 @@
  */
 
 #include "bh_reset.h"
+#include "init.h"
 #include "noc2axi.h"
 #include "noc_init.h"
 #include "harvesting.h"
@@ -367,6 +368,7 @@ static int tensix_init(void)
 
 	if (rc_wipe_dest < 0) {
 		LOG_ERR("%s: wipe_dest failed: %d", __func__, rc_wipe_dest);
+		record_init_failure(INIT_STAGE_TENSIX);
 		return rc_wipe_dest;
 	}
 

@@ -6,6 +6,7 @@
 
 #include "avs.h"
 #include "dw_apb_i2c.h"
+#include "init.h"
 #include "regulator.h"
 #include "regulator_config.h"
 #include "status_reg.h"
@@ -377,8 +378,6 @@ static int regulator_init(void)
 {
 	int ret;
 
-	extern STATUS_ERROR_STATUS0_reg_u error_status0;
-
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ARC_INIT_STEPC);
 
 	if (IS_ENABLED(CONFIG_TT_SMC_RECOVERY) || !IS_ENABLED(CONFIG_ARC)) {
@@ -387,7 +386,7 @@ static int regulator_init(void)
 
 	ret = (int)RegulatorInit(tt_bh_fwtable_get_pcb_type(fwtable_dev));
 	if (ret != 0) {
-		error_status0.f.regulator_init_error = 1;
+		record_init_failure(INIT_STAGE_REGULATOR);
 		return -EIO;
 	}
 

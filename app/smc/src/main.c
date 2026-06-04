@@ -41,10 +41,9 @@ int main(void)
 
 	if (!IS_ENABLED(CONFIG_TT_SMC_RECOVERY)) {
 		if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.aiclk_ppm_en) {
-			STATUS_ERROR_STATUS0_reg_u error_status0 = {
-				.val = ReadReg(STATUS_ERROR_STATUS0_REG_ADDR)};
+			uint32_t err0 = ReadReg(STATUS_ERROR_STATUS0_REG_ADDR);
 
-			if (error_status0.f.regulator_init_error) {
+			if (err0 & BIT(INIT_STAGE_REGULATOR)) {
 				LOG_ERR("Not enabling AICLK PPM due to regulator init error");
 			} else {
 				/* DVFS should get enabled if AICLK PPM or L2CPUCLK PPM is enabled
@@ -137,8 +136,6 @@ static int bh_arc_init_start(void)
 }
 SYS_INIT_APP(bh_arc_init_start);
 
-int tt_init_status;
-
 static int bh_arc_init_end(void)
 {
 	STATUS_BOOT_STATUS0_reg_u boot_status0 = {0};
@@ -151,9 +148,10 @@ static int bh_arc_init_end(void)
 	} else {
 		boot_status0.f.fw_id = FW_ID_SMC_NORMAL;
 	}
-	boot_status0.f.hw_init_status = (tt_init_status == 0) ? kHwInitDone : kHwInitError;
+
+	boot_status0.f.hw_init_status = (error_status0 != 0) ? kHwInitError : kHwInitDone;
 	WriteReg(STATUS_BOOT_STATUS0_REG_ADDR, boot_status0.val);
-	WriteReg(STATUS_ERROR_STATUS0_REG_ADDR, error_status0.val);
+	WriteReg(STATUS_ERROR_STATUS0_REG_ADDR, error_status0);
 
 	return 0;
 }
