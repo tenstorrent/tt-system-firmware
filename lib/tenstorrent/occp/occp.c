@@ -20,7 +20,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(occp, CONFIG_OCCP_LOG_LEVEL);
 
-uint8_t occp_rw_buffer[OCCP_MAX_MSG_SIZE];
+uint8_t occp_rw_buffer[OCCP_MAX_MSG_SIZE + sizeof(struct occp_header) + 4];
 
 static void fill_cmd_header(uint8_t app_id, uint8_t msg_id, uint16_t length,
 			    struct occp_header *hdr)
@@ -157,10 +157,6 @@ int occp_write_data(const struct occp_backend *backend, uint64_t address, const 
 		write_req.address_low = write_addr & GENMASK(31, 0);
 		write_req.address_high = (write_addr >> 32);
 		write_req.length = write_length;
-		if (sizeof(write_req) + write_length > OCCP_MAX_MSG_SIZE) {
-			LOG_ERR("OCCP write would overflow buffer");
-			return -EINVAL;
-		}
 		memcpy(occp_rw_buffer, &write_req, sizeof(write_req));
 		memcpy(occp_rw_buffer + sizeof(write_req), data, write_length);
 		LOG_DBG("Sending OCCP WRITE_DATA command: addr=0x%llx, length=%zu, remaining=%zu",
@@ -207,7 +203,7 @@ int occp_read_data(const struct occp_backend *backend, uint64_t address, uint8_t
 	}
 
 	while (length > 0) {
-		read_length = MIN(length, OCCP_MAX_MSG_SIZE - sizeof(struct occp_header) - 4);
+		read_length = MIN(length, OCCP_MAX_MSG_SIZE);
 		read_length = ROUND_DOWN(read_length, 4); /* Align to 4 bytes */
 		/*
 		 * Calculate CRC len, as OCCP response includes it.
