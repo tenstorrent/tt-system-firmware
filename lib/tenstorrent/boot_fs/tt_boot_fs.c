@@ -181,39 +181,56 @@ int tt_boot_fs_get_file(const tt_boot_fs *tt_boot_fs, const uint8_t *tag, uint8_
 	return TT_BOOT_FS_OK;
 }
 
+/**
+ * @brief Reads and validates the descriptor at slot @p index
+ *
+ * @retval 0 If @p fd is populated with a valid descriptor
+ * @retval 1 If end of table sentinel; caller should stop iterating
+ * @retval -EIO Flash read failure
+ * @retval -ENXIO Checksum failure
+ */
+static int read_and_validate_fd(const struct device *dev, size_t index, tt_boot_fs_fd *fd)
+{
+	int ret = flash_read(dev, TT_BOOT_FS_FD_HEAD_ADDR + index * sizeof(*fd), fd, sizeof(*fd));
+
+	if (ret < 0) {
+		LOG_ERR("%s() failed: %d", "flash_read", ret);
+		return -EIO;
+	}
+
+	if (fd->flags.f.invalid) {
+		return 1;
+	}
+
+	if (calculate_and_compare_checksum((uint8_t *)fd, sizeof(*fd) - sizeof(uint32_t),
+					   fd->fd_crc, false) != TT_BOOT_FS_CHK_OK) {
+		return -ENXIO;
+	}
+
+	return 0;
+}
+
 int tt_boot_fs_ls(const struct device *dev, tt_boot_fs_fd *fds, size_t nfds, size_t offset)
 {
 	if (!dev || !device_is_ready(dev)) {
 		return -ENXIO;
 	}
 
-	int ret;
-
 	if (nfds == 0) {
 		return 0;
 	}
 
 	size_t found = 0;
-	size_t i = 0;
-	size_t addr = TT_BOOT_FS_FD_HEAD_ADDR;
 
-	while (1) {
+	for (size_t i = 0; /* terminated via end-of-table sentinel */; i++) {
 		tt_boot_fs_fd fd;
+		int ret = read_and_validate_fd(dev, i, &fd);
 
-		ret = flash_read(dev, addr, &fd, sizeof(tt_boot_fs_fd));
 		if (ret < 0) {
-			LOG_ERR("%s() failed: %d", "flash_read", ret);
-			return -EIO;
+			return ret;
 		}
-
-		if (fd.flags.f.invalid) {
+		if (ret == 1) {
 			break;
-		}
-
-		ret = calculate_and_compare_checksum(
-			(uint8_t *)&fd, sizeof(tt_boot_fs_fd) - sizeof(uint32_t), fd.fd_crc, false);
-		if (ret != TT_BOOT_FS_CHK_OK) {
-			return -ENXIO;
 		}
 
 		if (i >= offset) {
@@ -225,8 +242,6 @@ int tt_boot_fs_ls(const struct device *dev, tt_boot_fs_fd *fds, size_t nfds, siz
 				break;
 			}
 		}
-		i++;
-		addr += sizeof(tt_boot_fs_fd);
 	}
 
 	return found;
@@ -238,27 +253,28 @@ int tt_boot_fs_find_fd_by_tag(const struct device *flash_dev, const uint8_t *tag
 		return -EINVAL;
 	}
 
-	int ret;
-
-	tt_boot_fs_fd fds[CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX];
-
-	ret = tt_boot_fs_ls(flash_dev, fds, ARRAY_SIZE(fds), 0);
-
-	if (ret < 0) {
-		return ret;
+	if (!flash_dev || !device_is_ready(flash_dev)) {
+		return -ENXIO;
 	}
 
-	ARRAY_FOR_EACH(fds, i) {
-		if (i >= ret) {
+	for (size_t i = 0; i < CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX; i++) {
+		tt_boot_fs_fd cur;
+		int ret = read_and_validate_fd(flash_dev, i, &cur);
+
+		if (ret < 0) {
+			return ret;
+		}
+		if (ret == 1) {
 			break;
 		}
 
-		if (strncmp(tag, fds[i].image_tag, sizeof(fds[i].image_tag)) == 0) {
+		if (strncmp(tag, cur.image_tag, sizeof(cur.image_tag)) == 0) {
 			if (fd != NULL) {
-				*fd = fds[i];
+				*fd = cur;
 			}
 			return 0;
 		}
 	}
+
 	return -ENOENT;
 }
