@@ -71,16 +71,19 @@ static int fake_send(const struct occp_backend *backend, const uint8_t *data, si
 		size_t rlen = req->length;
 
 		crc_len = (rlen > 13) ? 4 : 1;
+		if ((sizeof(resp_hdr) + rlen + crc_len) > sizeof(fake_resp_buf)) {
+			return -EINVAL;
+		}
+
 		build_resp_header(OCCP_APP_BASE, OCCP_BASE_MSG_READ_DATA, rlen, &resp_hdr);
 		memcpy(fake_resp_buf, &resp_hdr, sizeof(resp_hdr));
-		if (addr + rlen <= FAKE_MEM_SIZE) {
+		if (addr < FAKE_MEM_SIZE && rlen <= (size_t)(FAKE_MEM_SIZE - addr)) {
 			memcpy(fake_resp_buf + sizeof(resp_hdr), fake_mem + addr, rlen);
 		} else {
 			memset(fake_resp_buf + sizeof(resp_hdr), 0, rlen);
 		}
 		memset(fake_resp_buf + sizeof(resp_hdr) + rlen, 0, crc_len);
 		fake_resp_len = sizeof(resp_hdr) + rlen + crc_len;
-		break;
 	}
 	default:
 		return -ENOTSUP;
