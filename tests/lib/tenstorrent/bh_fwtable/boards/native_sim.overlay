@@ -1,0 +1,16 @@
+/ {
+    fwtable: fwtable {
+        compatible = "tenstorrent,bh-fwtable";
+        status = "okay";
+        flash-dev = <&flashcontroller0>;
+    };
+};
+
+/* Grow the simulated flash to 16 MiB; default is 2 MiB. */
+&flashcontroller0 {
+    reg = <0x00000000 DT_SIZE_M(16)>;
+};
+
+&flash0 {
+    reg = <0x00000000 DT_SIZE_M(16)>;
+};
