@@ -1720,6 +1720,8 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
     by tt-flash.
     """
     bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
+    if not os.path.isfile(bh_mod):
+        pytest.skip("bh-mod not found (PATH or ~/bh-mod)")
 
     # Get the TDP limit
     chip = pyluwen.detect_chips()[asic_id]
