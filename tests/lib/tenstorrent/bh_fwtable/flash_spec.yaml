@@ -1,0 +1,23 @@
+name: SIM-1
+product_name: SIM
+gen_name: SIM
+
+alignment:
+  flash_device_size: 0x1000000   # 16 MiB — must match the overlay above
+  flash_block_size: 4096
+
+images:
+  - name: boardcfg
+    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/read_only.bin
+
+  - name: cmfwcfg
+    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/fw_table.bin
+
+  - name: flshinfo
+    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/flash_info.bin
+
+# tt_boot_fs.py requires a failover entry. Use any small file as a dummy.
+fail_over_image:
+  name: failover
+  binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/flash_info.bin
+  offset: 0x10000000

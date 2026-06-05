@@ -1,0 +1,9 @@
+common:
+  platform_allow:
+    - native_sim
+  tags:
+    - drivers
+    - bh_fwtable
+
+tests:
+  drivers.misc.bh_fwtable.sim: {}
