@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "cat.h"
 #include "cm2dm_msg.h"
 #include "dvfs.h"
 #include "fan_ctrl.h"
@@ -72,6 +73,7 @@ int main(void)
 		if (dvfs_enabled) {
 			StartDVFSTimer();
 		}
+		StartGddrThermTripMonitor();
 	}
 
 	Dm2CmReadyRequest();

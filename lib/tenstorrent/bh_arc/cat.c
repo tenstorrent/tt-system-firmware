@@ -6,12 +6,14 @@
 
 #include "cat.h"
 #include "reg.h"
+#include "telemetry.h"
 #include "timer.h"
 
 #include <stdbool.h>
 
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/init.h>
@@ -48,6 +50,8 @@ typedef union {
 } RESET_UNIT_CATMON_THERM_TRIP_CNTL_reg_u;
 
 #ifndef CONFIG_TT_SMC_RECOVERY
+
+static const int gddr_therm_trip_interval = 100;
 
 static const struct device *const pvt = DEVICE_DT_GET(DT_NODELABEL(pvt));
 
@@ -200,4 +204,72 @@ static int CATInit(void)
 	return 0;
 }
 SYS_INIT_APP(CATInit);
+
+static void TriggerThermTrip(void)
+{
+	if (!IS_ENABLED(CONFIG_ARC)) {
+		return;
+	}
+
+	/* Configure catmon to trip at lowest temperature threshold (-56C) */
+	EnableCAT(TempToTrimCode(-56), true);
+}
+
+int MonitorGddrThermTrip(int64_t now, int max_temp)
+{
+	static bool tracking;
+	static int64_t over_temp_start_time;
+
+	if (max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP) {
+		LOG_ERR("Max GDDR temp %dC >= %dC, will trigger thermal trip", max_temp,
+			CAT_GDDR_THERM_TRIP_CRITICAL_TEMP);
+		tracking = false;
+		return max_temp;
+	}
+
+	if (max_temp < CAT_GDDR_THERM_TRIP_TEMP) {
+		tracking = false;
+		return 0;
+	}
+
+	if (!tracking) {
+		tracking = true;
+		over_temp_start_time = now;
+	} else if (now - over_temp_start_time >= CAT_GDDR_THERM_TRIP_DURATION_MS) {
+		LOG_ERR("Max GDDR temp %dC >= %dC for >= %d ms, will trigger thermal trip",
+			max_temp, CAT_GDDR_THERM_TRIP_TEMP, CAT_GDDR_THERM_TRIP_DURATION_MS);
+		tracking = false;
+		return max_temp;
+	}
+
+	return 0;
+}
+
+static void gddr_therm_trip_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	int max_temp = MonitorGddrThermTrip(k_uptime_get(), GetTelemetryTag(TAG_MAX_GDDR_TEMP));
+
+	if (max_temp) {
+		TriggerThermTrip();
+	}
+}
+
+static K_WORK_DEFINE(gddr_therm_trip_worker, gddr_therm_trip_work_handler);
+
+static void gddr_therm_trip_timer_handler(struct k_timer *timer)
+{
+	ARG_UNUSED(timer);
+
+	k_work_submit(&gddr_therm_trip_worker);
+}
+
+static K_TIMER_DEFINE(gddr_therm_trip_timer, gddr_therm_trip_timer_handler, NULL);
+
+void StartGddrThermTripMonitor(void)
+{
+	k_timer_start(&gddr_therm_trip_timer, K_MSEC(gddr_therm_trip_interval),
+		      K_MSEC(gddr_therm_trip_interval));
+}
 #endif
