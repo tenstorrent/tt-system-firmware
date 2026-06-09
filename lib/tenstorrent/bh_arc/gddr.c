@@ -49,7 +49,7 @@ static const struct device *dma_noc = DEVICE_DT_GET(DT_NODELABEL(dma1));
  * gddr0 runs its MRISC FW on noc2axi port 2 (NoC 0-11) instead of the default
  * port 0 (NoC 0-0); all other GDDR instances stay on the default port.
  */
-static inline uint8_t MriscFwNoc2AxiPort(uint8_t gddr_inst)
+uint8_t get_gddr_mrisc_noc2axi_port(uint8_t gddr_inst)
 {
 	return (gddr_inst == 0) ? 2 : MRISC_FW_NOC2AXI_PORT;
 }
@@ -86,7 +86,7 @@ static uint32_t GetGddrSpeedFromCfg(uint8_t *fw_cfg_image)
 
 static void GetGddrMriscNocCoords(uint8_t gddr_inst, uint8_t noc_id, uint8_t *x, uint8_t *y)
 {
-	GetGddrNocCoords(gddr_inst, MriscFwNoc2AxiPort(gddr_inst), noc_id, x, y);
+	GetGddrNocCoords(gddr_inst, get_gddr_mrisc_noc2axi_port(gddr_inst), noc_id, x, y);
 }
 
 static volatile void *SetupMriscL1Tlb(uint8_t gddr_inst)

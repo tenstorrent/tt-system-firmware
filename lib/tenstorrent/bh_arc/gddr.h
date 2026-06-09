@@ -75,6 +75,14 @@ struct gddr_temps {
  */
 int get_gddr_temps(struct gddr_temps *temps);
 
+/**
+ * @brief Get the noc2axi port MRISC FW is loaded on for a GDDR instance.
+ *
+ * @param [in] gddr_inst GDDR controller instance (0 - @ref NUM_GDDR - 1).
+ * @return noc2axi port index (0, 1 or 2).
+ */
+uint8_t get_gddr_mrisc_noc2axi_port(uint8_t gddr_inst);
+
 /** @brief BIST status bitmasks (one bit per GDDR instance). */
 struct gddr_bist_info {
 	uint8_t complete;

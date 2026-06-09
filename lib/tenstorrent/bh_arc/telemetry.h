@@ -345,12 +345,22 @@
 /** @brief Number of SMBUS target errors observed. */
 #define TAG_SMBUS_ERRORS 71
 
+/**
+ * @brief noc2axi port MRISC FW is loaded on for each GDDR instance.
+ *
+ * Each nibble represents the noc2axi port (0, 1 or 2) that MRISC FW is loaded on
+ * for a GDDR instance. Nibble i corresponds to GDDR instance i, with instance 0
+ * in the least significant nibble. A nibble value of 0xF indicates the instance is
+ * disabled/harvested.
+ */
+#define TAG_GDDR_MRISC_NOC2AXI_PORT 72
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 72
+#define TAG_COUNT 73
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)

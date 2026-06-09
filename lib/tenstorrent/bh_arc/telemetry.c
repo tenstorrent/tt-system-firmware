@@ -174,6 +174,7 @@ static struct telemetry_table telemetry_table = {
 		[64] = {TAG_AICLK_PPM_INFO, TELEM_OFFSET(TAG_AICLK_PPM_INFO)},
 		[65] = {TAG_HOST_AICLK_LIMIT, TELEM_OFFSET(TAG_HOST_AICLK_LIMIT)},
 		[66] = {TAG_SMBUS_ERRORS, TELEM_OFFSET(TAG_SMBUS_ERRORS)},
+		[67] = {TAG_GDDR_MRISC_NOC2AXI_PORT, TELEM_OFFSET(TAG_GDDR_MRISC_NOC2AXI_PORT)},
 	},
 };
 /* clang-format on */
@@ -311,6 +312,23 @@ static void pack_gddr_temps(const struct gddr_temps *temps, uint32_t *packed)
 	}
 }
 
+static uint32_t get_gddr_mrisc_endpoints(void)
+{
+	uint32_t packed = 0U;
+
+	for (uint8_t i = 0; i < NUM_GDDR; i++) {
+		uint8_t port = 0xF; /* Default to disabled/harvested */
+
+		if (IS_BIT_SET(tile_enable.gddr_enabled, i)) {
+			port = get_gddr_mrisc_noc2axi_port(i);
+		}
+
+		packed |= (uint32_t)port << (i * 4);
+	}
+
+	return packed;
+}
+
 static void write_static_telemetry(uint32_t app_version)
 {
 	telemetry_table.version = TELEMETRY_VERSION; /* v0.1.0 - Only update when redefining the
@@ -377,6 +395,8 @@ static void write_static_telemetry(uint32_t app_version)
 	 */
 
 	telemetry[TAG_ASIC_LOCATION] = tt_bh_fwtable_get_asic_location(fwtable_dev);
+
+	telemetry[TAG_GDDR_MRISC_NOC2AXI_PORT] = get_gddr_mrisc_endpoints();
 }
 
 static void update_telemetry(void)
