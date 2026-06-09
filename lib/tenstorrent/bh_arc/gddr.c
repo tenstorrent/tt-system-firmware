@@ -42,8 +42,18 @@ static const struct device *const arc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELAB
 #endif
 static const struct device *dma_noc = DEVICE_DT_GET(DT_NODELABEL(dma1));
 
-/* This is the noc2axi instance we want to run the MRISC FW on */
+/* This is the default noc2axi instance we want to run the MRISC FW on */
 #define MRISC_FW_NOC2AXI_PORT 0
+
+/*
+ * gddr0 runs its MRISC FW on noc2axi port 2 (NoC 0-11) instead of the default
+ * port 0 (NoC 0-0); all other GDDR instances stay on the default port.
+ */
+static inline uint8_t MriscFwNoc2AxiPort(uint8_t gddr_inst)
+{
+	return (gddr_inst == 0) ? 2 : MRISC_FW_NOC2AXI_PORT;
+}
+
 #define MRISC_SETUP_TLB       13
 #define MRISC_L1_ADDR         (1ULL << 37)
 #define MRISC_REG_ADDR        (1ULL << 40)
@@ -74,11 +84,16 @@ static uint32_t GetGddrSpeedFromCfg(uint8_t *fw_cfg_image)
 	return fw_cfg_dw[1];
 }
 
+static void GetGddrMriscNocCoords(uint8_t gddr_inst, uint8_t noc_id, uint8_t *x, uint8_t *y)
+{
+	GetGddrNocCoords(gddr_inst, MriscFwNoc2AxiPort(gddr_inst), noc_id, x, y);
+}
+
 static volatile void *SetupMriscL1Tlb(uint8_t gddr_inst)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	return GetTlbWindowAddr(0, MRISC_SETUP_TLB, MRISC_L1_ADDR);
 }
@@ -87,7 +102,7 @@ static uint32_t MriscL1Read32(uint8_t gddr_inst, uint32_t addr)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	return NOC2AXIRead32(0, MRISC_SETUP_TLB, MRISC_L1_ADDR + addr);
 }
@@ -96,7 +111,7 @@ static void MriscL1Write32(uint8_t gddr_inst, uint32_t addr, uint32_t val)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	NOC2AXIWrite32(0, MRISC_SETUP_TLB, MRISC_L1_ADDR + addr, val);
 }
@@ -105,7 +120,7 @@ static uint32_t MriscRegRead32(uint8_t gddr_inst, uint32_t addr)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_REG_ADDR + addr);
 	return NOC2AXIRead32(0, MRISC_SETUP_TLB, MRISC_REG_ADDR + addr);
 }
@@ -114,7 +129,7 @@ static void MriscRegWrite32(uint8_t gddr_inst, uint32_t addr, uint32_t val)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_REG_ADDR + addr);
 	NOC2AXIWrite32(0, MRISC_SETUP_TLB, MRISC_REG_ADDR + addr, val);
 }
@@ -152,7 +167,7 @@ static void ReleaseMriscReset(uint8_t gddr_inst)
 	const uint32_t kSoftReset0Addr = 0xFFB121B0;
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, kSoftReset0Addr);
 
 	volatile uint32_t *soft_reset_0 = GetTlbWindowAddr(0, MRISC_SETUP_TLB, kSoftReset0Addr);
