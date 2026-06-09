@@ -31,29 +31,29 @@ static bool power_state[BH_POWER_DOMAIN_COUNT] = {
 
 int32_t bh_set_l2cpu_enable(bool enable)
 {
-	int32_t ret = 0;
+	int32_t result = 0;
 
 	if (enable) {
-		ret = clock_control_on(
+		result = clock_control_on(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0);
-		ret = clock_control_on(
+		result = clock_control_on(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_1);
-		ret = clock_control_on(
+		result = clock_control_on(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_2);
-		ret = clock_control_on(
+		result = clock_control_on(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_3);
 	} else {
-		ret = clock_control_off(
+		result = clock_control_off(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0);
-		ret = clock_control_off(
+		result = clock_control_off(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_1);
-		ret = clock_control_off(
+		result = clock_control_off(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_2);
-		ret = clock_control_off(
+		result = clock_control_off(
 			pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_3);
 	}
 
-	return ret;
+	return result;
 }
 
 int bh_power_state_get(enum bh_power_domain domain, bool *state)
