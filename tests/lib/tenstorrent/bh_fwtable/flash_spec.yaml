@@ -8,16 +8,16 @@ alignment:
 
 images:
   - name: boardcfg
-    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/read_only.bin
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/read_only.bin
 
   - name: cmfwcfg
-    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/fw_table.bin
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/fw_table.bin
 
   - name: flshinfo
-    binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/flash_info.bin
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
 
-# tt_boot_fs.py requires a failover entry. Use any small file as a dummy.
+# tt_boot_fs.py requires a failover entry. Reuse flash_info.bin as a dummy.
 fail_over_image:
   name: failover
-  binary: /home/kaiqihu/tt-system-firmware-work/tt-system-firmware/build/smc/generated_board_cfg/P150B/flash_info.bin
+  binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
   offset: 0x10000000
