@@ -37,6 +37,44 @@ jobs:
         with:
           app-path: tt-system-firmware
 
+      # Cache the per-board protobuf .bin payloads produced by the SMC build.
+      # The key is hashed against the board's spirom_data_tables/*.txt sources
+      # AND the .proto schemas — when any of those change the hash changes,
+      # so we get a cache miss and the SMC rebuilds. Otherwise every PR
+      # reuses the previous job's outputs.
+      - uses: actions/cache@v4
+        id: smc-bins-cache
+        with:
+          path: tt-system-firmware/build_p150b/smc/generated_board_cfg
+          key: smc-bins-p150b-${{ hashFiles(
+            'tt-system-firmware/boards/tenstorrent/tt_blackhole/spirom_data_tables/P150B/**',
+            'tt-system-firmware/drivers/misc/bh_fwtable/spirom_protobufs/**'
+            ) }}
+
+      # Generate fixtures (flash.bin) for tests that need a populated fw_table.
+      # If the cache restored the SMC outputs, skip the SMC build entirely
+      # (~3 min saved). Otherwise build SMC once, then in either case run
+      # mkfs against the .bins to produce a flash.bin per test directory.
+      - id: gen-test-fixtures
+        shell: bash
+        working-directory: tt-system-firmware
+        run: |
+          if [ ! -d build_p150b/smc/generated_board_cfg/P150B ]; then
+            echo "Cache miss — building SMC for P150B (this takes a few minutes)"
+            west build -d build_p150b \
+              -b tt_blackhole@p150b/tt_blackhole/smc app/smc --sysbuild
+          else
+            echo "Cache hit — reusing SMC .bin payloads from previous CI run"
+            ls -la build_p150b/smc/generated_board_cfg/P150B/
+          fi
+
+          for spec in tests/lib/tenstorrent/*/flash_spec.yaml; do
+            out="$(dirname "$spec")/flash.bin"
+            echo "Generating $out from $spec"
+            python3 scripts/tt_boot_fs.py mkfs --build-dir build_p150b \
+              "$spec" "$out"
+          done
+
       - id: build
         shell: bash
         run: |

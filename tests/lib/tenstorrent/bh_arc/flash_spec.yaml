@@ -1,0 +1,39 @@
+# Spec for tt_boot_fs.py mkfs to build the simulated flash blob used by
+# tests/lib/tenstorrent/bh_arc.
+#
+# Example invocation from the repo root:
+#   python3 scripts/tt_boot_fs.py mkfs \
+#       tests/lib/tenstorrent/bh_arc/flash_spec.yaml \
+#       tests/lib/tenstorrent/bh_arc/flash.bin
+#
+# The referenced .bin files are produced by a normal SMC build at
+#   build/smc/generated_board_cfg/<board>/{read_only,fw_table,flash_info}.bin
+# Change the board folder below if you build a different variant.
+#
+# flash_device_size is 2 MiB to match the bh_arc test's overlay (which does
+# NOT resize flashcontroller0, so the native_sim default applies). Payloads
+# land at 0x14000-0x17000 which fits comfortably inside this envelope.
+
+name: SIM-BHARC
+product_name: SIM
+gen_name: SIM
+
+alignment:
+  flash_device_size: 0x200000   # 2 MiB — matches native_sim default flash size
+  flash_block_size: 4096
+
+images:
+  - name: boardcfg
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/read_only.bin
+
+  - name: cmfwcfg
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/fw_table.bin
+
+  - name: flshinfo
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
+
+# tt_boot_fs.py requires a failover entry. Reuse flash_info.bin as a dummy.
+fail_over_image:
+  name: failover
+  binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
+  offset: 0x10000000
