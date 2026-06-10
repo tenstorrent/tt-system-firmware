@@ -2,7 +2,7 @@
 # Includes python dependencies, a built recovery bundle, and
 # necessary recovery scripts
 
-ARG ZEP_CONTAINER=v0.28.2
+ARG ZEP_CONTAINER=v0.29.1
 FROM ghcr.io/zephyrproject-rtos/zephyr-build:${ZEP_CONTAINER} AS build-image
 
 USER root
