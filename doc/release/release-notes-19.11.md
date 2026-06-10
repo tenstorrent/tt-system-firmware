@@ -4,6 +4,10 @@ We are pleased to announce the release of TT System Firmware version 19.11.0 ðŸ¥
 
 ---
 
+## General
+
+- Update to Zephyr 4.4.0 for Blackhole and Grendel
+
 ## Blackhole
 
 ### Firmware Init Error Reporting
