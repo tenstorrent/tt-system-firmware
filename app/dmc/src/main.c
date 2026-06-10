@@ -217,6 +217,25 @@ static bool process_led_blink_request(struct bh_chip *chip, uint8_t msg_id, uint
 	return false;
 }
 
+static bool process_gddr_therm_trip(struct bh_chip *chip, uint8_t msg_id, uint32_t msg_data)
+{
+	switch (msg_data) {
+	case kGddrThermTripReasonInstantaneous:
+		LOG_ERR("GDDR thermal trip: instantaneous temp >= %dC",
+			GDDR_THERM_TRIP_CRITICAL_TEMP);
+		break;
+	case kGddrThermTripReasonSustained:
+		LOG_ERR("GDDR thermal trip: sustained temp >= %dC for %d minute(s)",
+			GDDR_THERM_TRIP_TEMP, GDDR_THERM_TRIP_DURATION_MIN);
+		break;
+	default:
+		LOG_ERR("GDDR thermal trip: unknown reason %u", msg_data);
+		break;
+	}
+
+	return false;
+}
+
 void process_cm2dm_message(struct bh_chip *chip)
 {
 	typedef bool (*msg_processor_t)(struct bh_chip *chip, uint8_t msg_id, uint32_t msg_data);
@@ -230,6 +249,7 @@ void process_cm2dm_message(struct bh_chip *chip)
 		[kCm2DmMsgIdAutoResetTimeoutUpdate] = process_auto_reset_timeout_update,
 		[kCm2DmMsgTelemHeartbeatUpdate] = process_heartbeat_update,
 		[kCm2DmMsgIdLedBlink] = process_led_blink_request,
+		[kCm2DmMsgIdGddrThermTrip] = process_gddr_therm_trip,
 	};
 
 	for (uint32_t i = 0U; i < kCm2DmMsgCount; i++) {

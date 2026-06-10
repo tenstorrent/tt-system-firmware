@@ -172,6 +172,11 @@ void RequestLedBlink(uint32_t blink_mode)
 	PostCm2DmMsg(kCm2DmMsgIdLedBlink, blink_mode);
 }
 
+void ReportGddrThermTrip(GddrThermTripReason reason)
+{
+	PostCm2DmMsg(kCm2DmMsgIdGddrThermTrip, (uint32_t)reason);
+}
+
 void reset_request_handler(struct k_timer *timer)
 {
 	ARG_UNUSED(timer);

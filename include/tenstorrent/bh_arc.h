@@ -22,6 +22,7 @@ typedef enum {
 	kCm2DmMsgTelemHeartbeatUpdate = 6,
 	kCm2DmMsgIdForcedFanSpeedUpdate = 7,
 	kCm2DmMsgIdLedBlink = 8,
+	kCm2DmMsgIdGddrThermTrip = 9,
 	kCm2DmMsgCount
 } Cm2DmMsgId;
 
@@ -30,6 +31,12 @@ typedef enum {
 	kCm2DmResetLevelAsic = 0,
 	kCm2DmResetLevelDmc = 3,
 } Cm2DmResetLevel;
+
+/* Payload for kCm2DmMsgIdGddrThermTrip. */
+typedef enum {
+	kGddrThermTripReasonSustained = 0,
+	kGddrThermTripReasonInstantaneous = 1,
+} GddrThermTripReason;
 
 /* GDDR thermal trip thresholds */
 #define GDDR_THERM_TRIP_TEMP          95  /* sustained over-temp threshold, degrees Celsius */

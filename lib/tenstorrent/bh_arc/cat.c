@@ -5,6 +5,7 @@
  */
 
 #include "cat.h"
+#include "cm2dm_msg.h"
 #include "reg.h"
 #include "telemetry.h"
 #include "timer.h"
@@ -35,6 +36,8 @@ LOG_MODULE_REGISTER(cat);
 #define DEFAULT_CALIBRATION (CAT_EARLY_TRIP_TEMP - T_J_SHUTDOWN)
 
 #define TRIM_CODE_BITS 6
+
+#define GDDR_THERM_TRIP_DMC_NOTIFY_MS 50
 
 typedef struct {
 	uint32_t trim_code: TRIM_CODE_BITS;
@@ -245,14 +248,34 @@ int MonitorGddrThermTrip(int64_t now, int max_temp)
 	return 0;
 }
 
+static void gddr_therm_trip_trigger_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	TriggerThermTrip();
+}
+
+static K_WORK_DELAYABLE_DEFINE(gddr_therm_trip_trigger_work, gddr_therm_trip_trigger_handler);
+
 static void gddr_therm_trip_work_handler(struct k_work *work)
 {
 	ARG_UNUSED(work);
+	static bool trip_pending;
+
+	if (trip_pending) {
+		return;
+	}
 
 	int max_temp = MonitorGddrThermTrip(k_uptime_get(), GetTelemetryTag(TAG_MAX_GDDR_TEMP));
 
 	if (max_temp) {
-		TriggerThermTrip();
+		/* Notify DMC, then trigger therm trip after delay so DMC can read the message */
+		trip_pending = true;
+		ReportGddrThermTrip(max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP
+					    ? kGddrThermTripReasonInstantaneous
+					    : kGddrThermTripReasonSustained);
+		k_work_schedule(&gddr_therm_trip_trigger_work,
+				K_MSEC(GDDR_THERM_TRIP_DMC_NOTIFY_MS));
 	}
 }
 

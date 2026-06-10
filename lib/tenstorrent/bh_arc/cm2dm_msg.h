@@ -21,6 +21,7 @@ void Dm2CmReadyRequest(void);
 void UpdateAutoResetTimeoutRequest(uint32_t timeout);
 void UpdateTelemHeartbeatRequest(uint32_t heartbeat);
 void RequestLedBlink(uint32_t blink_mode);
+void ReportGddrThermTrip(GddrThermTripReason reason);
 
 int32_t Dm2CmSendDataHandler(const uint8_t *data, uint8_t size);
 int32_t Dm2CmPingHandler(const uint8_t *data, uint8_t size);
