@@ -170,6 +170,8 @@ static struct telemetry_table telemetry_table = {
 		[63] = {TAG_ENABLED_MAX_ARB, TELEM_OFFSET(TAG_ENABLED_MAX_ARB)},
 		[64] = {TAG_AICLK_PPM_INFO, TELEM_OFFSET(TAG_AICLK_PPM_INFO)},
 		[65] = {TAG_HOST_AICLK_LIMIT, TELEM_OFFSET(TAG_HOST_AICLK_LIMIT)},
+		[66] = {TAG_GDDR_IO_WEST_CURRENT, TELEM_OFFSET(TAG_GDDR_IO_WEST_CURRENT)},
+		[67] = {TAG_GDDR_IO_EAST_CURRENT, TELEM_OFFSET(TAG_GDDR_IO_EAST_CURRENT)},
 	},
 };
 /* clang-format on */
@@ -405,8 +407,12 @@ static void update_telemetry(void)
 		telemetry_internal_data.asic_temperature); /* ASIC temperature - reported in
 							    * signed int 16.16 format
 							    */
-	telemetry[TAG_VREG_TEMPERATURE] = 0x000000;        /* VREG temperature - need I2C line */
-	telemetry[TAG_BOARD_TEMPERATURE] = 0x000000;       /* Board temperature - need I2C line */
+	telemetry[TAG_GDDR_IO_WEST_CURRENT] =
+		ConvertFloatToTelemetry(telemetry_internal_data.gddr_io_west_current);
+	telemetry[TAG_GDDR_IO_EAST_CURRENT] =
+		ConvertFloatToTelemetry(telemetry_internal_data.gddr_io_east_current);
+	telemetry[TAG_VREG_TEMPERATURE] = 0x000000;  /* VREG temperature - need I2C line */
+	telemetry[TAG_BOARD_TEMPERATURE] = 0x000000; /* Board temperature - need I2C line */
 	clock_control_get_rate(pll_dev_0, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_AICLK,
 			       &telemetry[TAG_AICLK]);
 	/* first 16 bits - MAX ASIC FREQ (Not Available yet), lower 16 bits - current AICLK */

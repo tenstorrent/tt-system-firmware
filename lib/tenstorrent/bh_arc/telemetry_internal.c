@@ -53,7 +53,8 @@ void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data)
 		internal_data.vcore_power =
 			internal_data.vcore_current * internal_data.vcore_voltage * 0.001f;
 		internal_data.asic_temperature = avg_tmp;
-		internal_data.gddr_io_current = getVddioCurrent();
+		internal_data.gddr_io_west_current = getVddioCurrent(GDDRIO_WEST_ADDR);
+		internal_data.gddr_io_east_current = getVddioCurrent(GDDRIO_EAST_ADDR);
 
 		/* reftime was updated to the current uptime by the k_uptime_delta() call */
 		last_update_time = reftime;

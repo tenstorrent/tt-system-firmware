@@ -314,12 +314,15 @@
  */
 #define TAG_HOST_AICLK_LIMIT 70
 
+#define TAG_GDDR_IO_WEST_CURRENT 71
+#define TAG_GDDR_IO_EAST_CURRENT 72
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 71
+#define TAG_COUNT 73
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
