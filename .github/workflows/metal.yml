@@ -153,11 +153,11 @@ jobs:
           # Keep the network alive by periodically pulling tenstorrent.com.
           # This prevents a bug in the container runtime where the network interface can
           # drop after a period of inactivity, which would cause our tests to fail.
-          echo "while true; do curl -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
+          echo "while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
           chmod +x /tmp/network-keepalive
           /tmp/network-keepalive &
           echo "Network keepalive started."
-          dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh ${{ matrix.config.metal-target }} > /tmp/container_test_output.log 2>&1
+          dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh ${{ matrix.config.metal-target }} 2>&1 | tee /tmp/container_test_output.log
 
       - name: Upload Test Output
         if: ${{ always() }}
