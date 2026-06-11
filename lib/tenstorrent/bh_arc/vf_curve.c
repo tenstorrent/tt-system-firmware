@@ -65,7 +65,11 @@ void InitVFCurve(void)
 
 	uint8_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
 
-	use_process_vf_curve = (process_RO != 0) && (board_type != BOARDTYPE_P300C);
+	if (board_type == BOARDTYPE_P300C && process_RO == 0U) {
+		process_RO = (uint32_t)RO_NORM_MEAN;
+	}
+
+	use_process_vf_curve = (process_RO != 0U);
 	process_is_ss = process_RO < RO_SS_THRESHOLD;
 
 	if (use_process_vf_curve) {
