@@ -63,6 +63,7 @@ union cm2dmAckWire {
 struct bh_arc {
 	const struct smbus_dt_spec smbus;
 	const struct gpio_dt_spec enable;
+	const struct device *i2c_dev;
 };
 
 typedef struct cm2dmMessageRet {
@@ -85,6 +86,7 @@ int bharc_disable_i2cbus(const struct bh_arc *dev);
 
 #define BH_ARC_INIT(n)                                                                             \
 	{.smbus = SMBUS_DT_SPEC_GET(n),                                                            \
+	 .i2c_dev = DEVICE_DT_GET(DT_PHANDLE(DT_BUS(n), i2c)),                                     \
 	 .enable = COND_CODE_1(DT_PROP_HAS_IDX(n, gpios, 0),	({	\
 			.port = DEVICE_DT_GET(DT_GPIO_CTLR_BY_IDX(n, gpios, 0)),                   \
 			.pin = DT_GPIO_PIN_BY_IDX(n, gpios, 0),                                    \

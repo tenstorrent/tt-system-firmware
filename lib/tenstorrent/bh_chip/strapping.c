@@ -27,7 +27,7 @@ void bh_chip_set_straps(struct bh_chip *chip)
 			if (ret < 0) {
 				printk("Failed to configure strap %s: %d", strap_ptr->port->name,
 				       ret);
-				i2c_recover_bus(chip->config.arc.smbus.bus);
+				i2c_recover_bus(chip->config.arc.i2c_dev);
 				ret = gpio_pin_configure_dt(strap_ptr, GPIO_OUTPUT_ACTIVE);
 				if (ret < 0) {
 					printk("Failed to configure strap after i2c recover %s: "

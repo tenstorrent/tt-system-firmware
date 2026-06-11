@@ -67,7 +67,7 @@ cm2dmMessageRet bh_chip_get_cm2dm_message(struct bh_chip *chip)
 		if (output.ret == -EIO && sys_timepoint_expired(recover_ratelimit)) {
 			recover_ratelimit = sys_timepoint_calc(K_MSEC(250));
 
-			i2c_recover_bus(chip->config.arc.smbus.bus);
+			i2c_recover_bus(chip->config.arc.i2c_dev);
 			smbus_uncancel(chip->config.arc.smbus.bus);
 		}
 	}
