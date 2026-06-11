@@ -94,7 +94,19 @@ float GetVcoreCurrent(void)
 		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
 	return ConvertLinear11ToFloat(iout);
 }
+float getVddioCurrent(void)
+{
+	I2CInit(I2CMst, GDDRIO_WEST_ADDR, I2CFastMode, PMBUS_MST_ID);
+	uint16_t iout;
 
+	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
+		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
+	
+	uint16_t cleaned_bits_iout = iout & (0x3FFF);
+	float iout_amps = cleaned_bits_iout * .0625f;
+
+	return iout_amps;
+}
 /* The function returns the core power in W. */
 float GetVcorePower(void)
 {
@@ -118,6 +130,8 @@ static void set_max20730(uint32_t slave_addr, uint32_t voltage_in_mv, float rfb1
 	/* delay to flush i2c transaction and voltage change */
 	WaitUs(250);
 }
+
+
 
 static void set_mpm3695(uint32_t slave_addr, uint32_t voltage_in_mv, float rfb1, float rfb2)
 {
