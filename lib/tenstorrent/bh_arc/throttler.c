@@ -19,7 +19,7 @@
 #include "noc2axi.h"
 #include "tensix_state_msg.h"
 
-static uint32_t power_limit;
+static uint32_t input_power_limit;
 
 static bool doppler;
 static bool doppler_slow;
@@ -165,6 +165,7 @@ static void BroadcastKernelThrottleState(void)
 	const uint8_t kNocTlb = 1;
 
 	if (tensixes_enabled) {
+		sys_trace_named_event("doppler_ena", throttle_counter % 2, 0);
 		NOC2AXITensixBroadcastTlbSetup(kNocRing, kNocTlb, kKernelThrottleAddress,
 					       kNoc2AxiOrderingStrict);
 		NOC2AXIWrite32(kNocRing, kNocTlb, kKernelThrottleAddress, throttle_counter);
@@ -289,12 +290,12 @@ static uint16_t UpdateMovingAveragePower(uint16_t current_power)
 
 static bool DopplerActive(void)
 {
-	return doppler && power_limit > 0;
+	return doppler && input_power_limit > 0;
 }
 
-static void UpdateDoppler(const TelemetryInternalData *telemetry)
+static void UpdateDoppler(const TelemetryInternalData *telemetry, uint16_t current_power,
+			  uint32_t power_limit)
 {
-	uint16_t current_power = GetInputPower();
 	uint16_t average_power = UpdateMovingAveragePower(current_power);
 
 	UpdateThrottler(kThrottlerDopplerSlow, average_power);
@@ -349,12 +350,17 @@ void CalculateThrottlers(void)
 	ReadTelemetryInternal(1, &telemetry_internal_data);
 
 	if (DopplerActive()) {
-		UpdateDoppler(&telemetry_internal_data);
+		UpdateDoppler(&telemetry_internal_data, GetInputPower(), input_power_limit);
+
 	} else {
 		UpdateThrottler(kThrottlerTDP, telemetry_internal_data.vcore_power);
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerBoardPower, GetInputPower());
+
+		UpdateDoppler(&telemetry_internal_data,
+			      (uint16_t)telemetry_internal_data.vcore_power,
+			      throttler[kThrottlerTDP].limit);
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
@@ -371,16 +377,17 @@ int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size)
 		return -1;
 	}
 
-	power_limit = sys_get_le16(data);
+	input_power_limit = sys_get_le16(data);
 
-	LOG_INF("Cable Power Limit: %u", power_limit);
-	power_limit = MIN(power_limit,
-			  tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.board_power_limit);
+	LOG_INF("Cable Power Limit: %u", input_power_limit);
+	input_power_limit =
+		MIN(input_power_limit,
+		    tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.board_power_limit);
 
-	SetThrottlerLimit(kThrottlerBoardPower, power_limit);
-	SetThrottlerLimit(kThrottlerDopplerSlow, power_limit);
+	SetThrottlerLimit(kThrottlerBoardPower, input_power_limit);
+	SetThrottlerLimit(kThrottlerDopplerSlow, input_power_limit);
 
-	UpdateTelemetryBoardPowerLimit(power_limit);
+	UpdateTelemetryBoardPowerLimit(input_power_limit);
 
 	return 0;
 }
