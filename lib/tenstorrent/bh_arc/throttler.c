@@ -345,6 +345,7 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
 void CalculateThrottlers(void)
 {
 	TelemetryInternalData telemetry_internal_data;
+	enum aiclk_arb_min arb;
 
 	ReadTelemetryInternal(1, &telemetry_internal_data);
 
@@ -355,6 +356,20 @@ void CalculateThrottlers(void)
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerBoardPower, GetInputPower());
+
+		float current_power = telemetry_internal_data.vcore_power;
+		float tdp_limit = throttler[kThrottlerTDP].limit;
+
+		bool start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
+		bool stop_nops = GetAiclkTarg() == get_aiclk_effective_arb_min(&arb) &&
+				 current_power < tdp_limit;
+
+		bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
+
+		if (new_kernel_nops_enabled != kernel_nops_enabled) {
+			kernel_nops_enabled = new_kernel_nops_enabled;
+			SendKernelThrottlingMessage(kernel_nops_enabled);
+		}
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
