@@ -209,8 +209,7 @@ def check_card_status():
 def flash_spi(spi, fw_bin, adapter_id, no_prompt):
     """Erase, program, and reset the M3 for one SPI flash."""
     pyocd_config = SPI_CONFIGS[spi]
-    session = pyocd_utils.get_session(pyocd_config, adapter_id, no_prompt, PYOCD_TARGET)
-    session.open()
+    session = pyocd_utils.open_session(pyocd_config, adapter_id, no_prompt, PYOCD_TARGET)
     try:
         FileProgrammer(session).program(str(fw_bin), file_format="hex")
         session.board.target.reset_and_halt()

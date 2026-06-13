@@ -350,10 +350,9 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
         if command != "flash":
             raise ValueError(f"Unsupported command: {command}")
         for flash_op in self.flash_data:
-            session = pyocd_utils.get_session(
+            session = pyocd_utils.open_session(
                 flash_op.pyocd_config, self.adapter_id, self.no_prompt
             )
-            session.open()
             target = session.board.target
             # Program the flash with the provided data
             with tempfile.TemporaryDirectory() as dir_name:

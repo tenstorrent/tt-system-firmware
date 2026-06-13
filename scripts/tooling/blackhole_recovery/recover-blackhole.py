@@ -168,10 +168,9 @@ def main():
         for idx in range(len(BOARD_ID_MAP[args.board])):
             asic = BOARD_ID_MAP[args.board][idx]
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
-            session = pyocd_utils.get_session(
+            session = pyocd_utils.open_session(
                 pyocd_config, args.adapter_id, args.no_prompt
             )
-            session.open()
             # First, reset the DMC and see if we can reach the card
             session.board.target.reset_and_halt()
             session.board.target.resume()
@@ -188,10 +187,9 @@ def main():
         for idx in range(len(BOARD_ID_MAP[args.board])):
             asic = BOARD_ID_MAP[args.board][idx]
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
-            session = pyocd_utils.get_session(
+            session = pyocd_utils.open_session(
                 pyocd_config, args.adapter_id, args.no_prompt
             )
-            session.open()
             # Erase the flash
             print(f"Erasing flash on ASIC {idx}...")
             FlashEraser(session, FlashEraser.Mode.CHIP).erase()
@@ -215,10 +213,9 @@ def main():
                 str(recovery_hex), asic["protobuf-name"], board_id
             )
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
-            session = pyocd_utils.get_session(
+            session = pyocd_utils.open_session(
                 pyocd_config, args.adapter_id, args.no_prompt
             )
-            session.open()
             # Program the recovery hex
             print(f"Flashing {recovery_hex} to ASIC {idx}...")
             FileProgrammer(session).program(str(recovery_hex), file_format="hex")

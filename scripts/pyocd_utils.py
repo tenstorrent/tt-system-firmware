@@ -13,6 +13,7 @@ recover-blackhole.py, recover-wormhole.py, tt_bootstrap.py, and set-p300-jtag.py
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -122,3 +123,50 @@ def get_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None
         logger.warning("Error connecting to probe, will attempt USB reset: %s", e)
         recover_stlink()
         return create_session(pyocd_config, adapter_id, no_prompt, target)
+
+
+def open_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None):
+    """Create and open a pyocd session, retrying once on USB errors.
+
+    Some runners share a USB bus across concurrent jobs. When a previous
+    job's container releases the ST-Link just as the next job starts,
+    ``session.open()`` can raise ``usb.core.USBError: [Errno 16] Resource
+    busy`` even though the probe enumerated successfully.  This wrapper
+    catches that error, performs a USB-level ST-Link reset, and retries
+    the full create+open sequence once.
+
+    Args:
+        pyocd_config: Path to a pyocd user-script (e.g. a FLM config).
+        adapter_id:   ST-Link serial / unique ID.  ``None`` = auto-select.
+        no_prompt:    When *True* pick the first available probe without
+                      prompting.
+        target:       pyocd target override string.
+
+    Returns:
+        An opened pyocd ``Session`` object.
+
+    Raises:
+        usb.core.USBError: if the interface is still busy after retrying.
+        RuntimeError: if no probe could be found.
+    """
+    session = get_session(pyocd_config, adapter_id, no_prompt, target)
+    try:
+        session.open()
+        return session
+    except usb.core.USBError as e:
+        if e.errno != 16:  # EBUSY
+            raise
+        logger.warning(
+            "USB interface busy when opening ST-Link session, "
+            "will attempt USB reset and retry: %s",
+            e,
+        )
+        try:
+            session.close()
+        except Exception:
+            pass
+        recover_stlink()
+        time.sleep(2)
+        session = get_session(pyocd_config, adapter_id, no_prompt, target)
+        session.open()
+        return session
