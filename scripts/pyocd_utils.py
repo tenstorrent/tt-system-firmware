@@ -129,7 +129,7 @@ def get_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None
 
 
 def open_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None):
-    """Create and open a pyocd session, retrying once on USB errors.
+    """Create and open a pyocd session, retrying once on `USBError` EBUSY.
 
     Some runners share a USB bus across concurrent jobs. When a previous
     job's container releases the ST-Link just as the next job starts,
@@ -157,19 +157,29 @@ def open_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=Non
         session.open()
         return session
     except usb.core.USBError as e:
+        # Ensure we don't leave a partially-open session holding USB resources.
+        try:
+            session.close()
+        except Exception:
+            pass
+
         if e.errno != errno.EBUSY:
             raise
+
         logger.warning(
             "USB interface busy when opening ST-Link session, "
             "will attempt USB reset and retry: %s",
             e,
         )
-        try:
-            session.close()
-        except Exception:
-            pass
         recover_stlink()
         time.sleep(_USB_RESET_WAIT_S)
         session = get_session(pyocd_config, adapter_id, no_prompt, target)
-        session.open()
-        return session
+        try:
+            session.open()
+            return session
+        except Exception:
+            try:
+                session.close()
+            except Exception:
+                pass
+            raise

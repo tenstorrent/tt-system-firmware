@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-IMAGE_TAG=${IMAGE_TAG:-"v80.18.0"}
+IMAGE_TAG=${IMAGE_TAG:-"v18.12.2"}
 
 # Tags v19.6.0 and earlier were published as ghcr.io/tenstorrent/tt-zephyr-platforms/recovery-image
 # with scripts under /tt-zephyr-platforms; newer releases replace "tt-zephyr-platforms"
