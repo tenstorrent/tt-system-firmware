@@ -10,6 +10,7 @@ metadata loading that were previously duplicated across spi_flash.py,
 recover-blackhole.py, recover-wormhole.py, tt_bootstrap.py, and set-p300-jtag.py.
 """
 
+import errno
 import logging
 import os
 import sys
@@ -36,6 +37,8 @@ logger = logging.getLogger(__name__)
 PYOCD_TARGET_BH = "STM32G0B1CEUx"
 PYOCD_FLM_PATH = Path(__file__).parent / "tooling/blackhole_recovery/data/bh_flm"
 BOARD_METADATA_PATH = Path(__file__).parent / "board_metadata.yaml"
+# Seconds to wait after resetting the ST-Link USB device before retrying
+_USB_RESET_WAIT_S = 2
 
 
 def load_board_metadata(path=None):
@@ -154,7 +157,7 @@ def open_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=Non
         session.open()
         return session
     except usb.core.USBError as e:
-        if e.errno != 16:  # EBUSY
+        if e.errno != errno.EBUSY:
             raise
         logger.warning(
             "USB interface busy when opening ST-Link session, "
@@ -166,7 +169,7 @@ def open_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=Non
         except Exception:
             pass
         recover_stlink()
-        time.sleep(2)
+        time.sleep(_USB_RESET_WAIT_S)
         session = get_session(pyocd_config, adapter_id, no_prompt, target)
         session.open()
         return session
