@@ -14,6 +14,7 @@
 #include <tenstorrent/msgqueue.h>
 #include "cm2dm_msg.h"
 #include <zephyr/drivers/misc/bh_fwtable.h>
+#include <zephyr/tracing/tracing.h>
 #include "telemetry_internal.h"
 #include "telemetry.h"
 #include "noc2axi.h"
@@ -165,6 +166,7 @@ static void BroadcastKernelThrottleState(void)
 	const uint8_t kNocTlb = 1;
 
 	if (tensixes_enabled) {
+		sys_trace_named_event("kernel_throttle", throttle_counter & 1, 0);
 		NOC2AXITensixBroadcastTlbSetup(kNocRing, kNocTlb, kKernelThrottleAddress,
 					       kNoc2AxiOrderingStrict);
 		NOC2AXIWrite32(kNocRing, kNocTlb, kKernelThrottleAddress, throttle_counter);
