@@ -42,6 +42,17 @@ We are pleased to announce the release of TT System Firmware version 19.11.0 ðŸ¥
   - Added MACPCS/SerDes reset-deassert timestamps to boot results
   - ETH msg PORT_STATUS_CLEAR: clear accumulated live status counts in L1
 
+### GDDR
+
+- Update MRISC FW to 2.16
+  - Parameter Sweeping
+    - Enable parameter sweeping by configuring yaml file
+    - A predetermined range of values for any cntrl cnfg reg can be swept
+    - Eye height info is stored in the training struct
+  - Updated CA ODT and vrefc per controller
+  - Updated DRAM DFE for controller 4 to maximize eye height
+  - Periodically exit powerdown when idle to allow temperature to update
+
 ---
 
 ## Grendel
