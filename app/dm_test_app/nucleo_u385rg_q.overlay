@@ -17,3 +17,27 @@
 		scan-limit = <7>;
 	};
 };
+
+&i3c1 {
+	pinctrl-0 = <&i3c1_scl_pb2 &i3c1_sda_pc1>;
+	pinctrl-names = "default";
+	status = "okay";
+	i3c-scl-hz = <1000000>;   /* 1 MHz I3C frequency */
+	i2c-scl-hz = <400000>;    /* 400 kHz I2C Fast Mode */
+	target-mode;
+	mipi-instance = <0x8>;
+};
+
+&i3c2 {
+	pinctrl-0 = <&i3c2_scl_pb10 &i3c2_sda_pb14>;
+	pinctrl-names = "default";
+	status = "okay";
+	i3c-scl-hz = <1000000>;   /* 1 MHz I3C frequency */
+	i2c-scl-hz = <400000>;    /* 400 kHz I2C Fast Mode */
+
+	i3c2_smc_remoteproc: smc_remoteproc@20813818000 {
+		compatible = "tenstorrent,smc-remoteproc";
+		reg = <0x0000 0x0208 0x13818000>;
+		status = "okay";
+	};
+};
