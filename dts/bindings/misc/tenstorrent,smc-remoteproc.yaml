@@ -11,6 +11,7 @@ include: [i3c-device.yaml]
 properties:
   boot-gpios:
     type: phandle-array
-    required: true
     description: |
-      GPIOs used to boot the remote processor.
+      Optional GPIO used to signal when the remote processor ROM is ready.
+      If omitted, the driver skips GPIO wait and does not perform an
+      additional DAA during initialization.
