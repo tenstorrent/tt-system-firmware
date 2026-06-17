@@ -1,0 +1,27 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_OCCP_I3C
+	bool "Tenstorrent OCCP I3C device driver"
+	depends on I3C
+	depends on OCCP_BACKEND_I3C
+	help
+	  Enable Tenstorrent OCCP I3C device driver.
+
+	  This driver provides basic I3C device functionality and can be
+	  extended to support OCCP (Open Compute Control Protocol) features.
+
+if TT_OCCP_I3C
+
+config TT_OCCP_I3C_INIT_PRIORITY
+	int "TT OCCP I3C driver initialization priority"
+	default 80
+	help
+	  Initialization priority for the TT OCCP I3C driver.
+	  Must be greater than I3C controller initialization priority.
+
+module = TT_OCCP_I3C
+module-str = tt_occp_i3c
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_OCCP_I3C

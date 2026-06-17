@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent OCCP I3C Device
+
+compatible: "tenstorrent,tt-occp-i3c"
+
+include: [i3c-device.yaml]
+
+properties:
+  reg:
+    required: true
+    description: |
+      I3C device 96-bit address as required by the I3C specification.
+
+      The reg property has 3 elements:
+      - Static address (can be 0 for dynamic assignment)
+      - Upper 16-bit of Provisioned ID (manufacturer ID << 1)
+      - Lower 32-bit of Provisioned ID (part ID << 16 | instance ID << 12)
