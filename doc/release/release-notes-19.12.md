@@ -12,6 +12,9 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+### Power & Performance Improvements
+- Enable process based V/F curve for p300c
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->
