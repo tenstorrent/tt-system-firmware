@@ -40,7 +40,8 @@
 
 LOG_MODULE_REGISTER(main, CONFIG_TT_APP_LOG_LEVEL);
 
-BUILD_ASSERT(PARTITION_EXISTS(bmfw), "bmfw fixed-partition does not exist");
+BUILD_ASSERT(IS_ENABLED(CONFIG_TT_BH_ARC_EMUL) || PARTITION_EXISTS(bmfw),
+	     "bmfw fixed-partition does not exist");
 
 struct bh_chip BH_CHIPS[BH_CHIP_COUNT] = {DT_FOREACH_PROP_ELEM(DT_PATH(chips), chips, INIT_CHIP)};
 

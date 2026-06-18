@@ -17,6 +17,14 @@ config TT_BH_ARC
 
 if TT_BH_ARC
 
+config TT_BH_ARC_EMUL
+	bool "BH ARC emulation"
+	default y if BOARD_NATIVE_SIM
+	help
+	  Generic flag that BH ARC is emulated.
+	  Enabled by default on native_sim and can be enabled on other
+	  boards that need emulated ARC behavior.
+
 config TT_BH_ARC_NUM_MSG_CODES
 	int "Number of message codes"
 	default 199

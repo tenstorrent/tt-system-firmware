@@ -62,9 +62,9 @@ typedef union {
 #define RING0_TLB_REG_OFFSET     0x1000
 #define AXI2NOC_RING_SEL_BIT     15
 
-#ifdef CONFIG_BOARD_NATIVE_SIM
+#ifdef CONFIG_TT_BH_ARC_EMUL
 #define NIU0_A_REG_SPACE_SIZE 0x10000
-/* Running within simulation. Fake out TLB register space */
+/* Running with emulated ARC behavior. Fake out TLB register space */
 static uint8_t fake_niu_reg_space[NIU0_A_REG_SPACE_SIZE];
 #define NIU_0_A_REG_MAP_BASE_ADDR ((uintptr_t)fake_niu_reg_space)
 #else

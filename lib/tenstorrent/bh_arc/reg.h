@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-#if CONFIG_BOARD_NATIVE_SIM
+#if CONFIG_TT_BH_ARC_EMUL
 uint32_t ReadReg(uint32_t addr);
 void WriteReg(uint32_t addr, uint32_t val);
 #else
