@@ -39,7 +39,7 @@
 #define FF_LOW_FREQ_MARGIN_MV  0.0F
 #define FF_HIGH_FREQ_MARGIN_MV 20.0F
 
-/* Legacy VF curve coefficients (fallback for P300C / missing efuse) */
+/* Legacy VF curve coefficients (fallback for missing efuse) */
 #define VF_QUADRATIC_COEFF 0.00031395F
 #define VF_LINEAR_COEFF    -0.43953F
 #define VF_CONSTANT        828.83F
@@ -63,9 +63,7 @@ void InitVFCurve(void)
 {
 	process_RO = READ_FUNCTIONAL_EFUSE(PROCESS_RO);
 
-	uint8_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
-
-	use_process_vf_curve = (process_RO != 0) && (board_type != BOARDTYPE_P300C);
+	use_process_vf_curve = (process_RO != 0);
 	process_is_ss = process_RO < RO_SS_THRESHOLD;
 
 	if (use_process_vf_curve) {
