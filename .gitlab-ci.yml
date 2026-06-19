@@ -10,7 +10,7 @@ variables:
 
 build-job:
   stage: build
-  image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.7.0
+  image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
   script:
     - cd /tt-zephyr/tt-system-firmware
     # Pull repo revision to run CI on
