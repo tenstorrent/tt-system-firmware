@@ -48,7 +48,6 @@ zephyr_library_sources(
   harvesting.c
   led.c
   log.c
-  msgqueue.c
   noc.c
   noc2axi.c
   noc_init.c
@@ -64,6 +63,7 @@ zephyr_library_sources(
 # zephyr-keep-sorted-stop
 )
 
+zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_MSGQUEUE msgqueue.c)
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_EMUL reg_stub.c)
 
 zephyr_library_add_dependencies(nanopb_generated_headers)

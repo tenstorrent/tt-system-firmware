@@ -31,6 +31,12 @@ config TT_BH_ARC_NUM_MSG_CODES
 	help
 	  The number of message codes
 
+config TT_BH_ARC_MSGQUEUE
+	bool "Enable BH ARC message queue"
+	default y
+	help
+	  Enable the BH ARC message queue implementation.
+
 config TT_SHELL
 	bool "Tenstorrent Blackhole shell driver"
 	depends on SHELL

@@ -33,7 +33,8 @@
 #define InitNocTranslationFromHarvesting_PRIO 110
 #define gddr_training_PRIO                    111
 #define CATInit_PRIO                          112
-#define bh_arc_init_end_PRIO                  113
+#define init_msgqueue_PRIO                    113
+#define bh_arc_init_end_PRIO                  114
 
 #define SYS_INIT_APP(func) SYS_INIT(func, POST_KERNEL, func##_PRIO)
 

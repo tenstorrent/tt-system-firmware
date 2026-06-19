@@ -17,7 +17,6 @@
 #include <stdint.h>
 
 #include <app_version.h>
-#include <tenstorrent/msgqueue.h>
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
 #include <zephyr/init.h>
@@ -55,8 +54,6 @@ int main(void)
 			}
 		}
 	}
-
-	init_msgqueue();
 
 	if (!IS_ENABLED(CONFIG_TT_SMC_RECOVERY)) {
 		init_telemetry(APPVERSION);
