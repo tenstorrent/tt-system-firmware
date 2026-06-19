@@ -14,6 +14,7 @@ Major enhancements with this release include:
 
 ### Power & Performance Improvements
 - Enable process based V/F curve for p300c
+- Read GDDR temperatures more frequently as part of internal telemetry
 
 ## Grendel
 
