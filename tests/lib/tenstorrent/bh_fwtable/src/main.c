@@ -160,7 +160,7 @@ static bool suite_predicate(const void *state)
 static void *suite_setup(void)
 {
 	const struct device *dev = FWTABLE_DEV;
-	const ReadOnly *ro = tt_bh_fwtable_get_read_only_table(dev);
+	const struct _ReadOnly *ro = tt_bh_fwtable_get_read_only_table(dev);
 	uint8_t board_type = (uint8_t)((ro->board_id >> 36) & 0xFF);
 
 	expected = expected_for_board_type(board_type);
@@ -172,7 +172,7 @@ ZTEST(bh_fwtable_sim, test_read_only_loaded)
 	zassert_not_null(expected, "no expected-values table for this board; "
 				   "add a case in expected_for_board_type()");
 
-	const ReadOnly *ro = tt_bh_fwtable_get_read_only_table(FWTABLE_DEV);
+	const struct _ReadOnly *ro = tt_bh_fwtable_get_read_only_table(FWTABLE_DEV);
 
 	zassert_not_null(ro, "read_only table pointer is NULL");
 	zassert_equal(ro->vendor_id, expected->vendor_id, "[%s] vendor_id: expected 0x%x, got 0x%x",
@@ -189,7 +189,7 @@ ZTEST(bh_fwtable_sim, test_fw_table_loaded)
 	zassert_not_null(expected, "no expected-values table for this board; "
 				   "add a case in expected_for_board_type()");
 
-	const FwTable *fw = tt_bh_fwtable_get_fw_table(FWTABLE_DEV);
+	const struct _FwTable *fw = tt_bh_fwtable_get_fw_table(FWTABLE_DEV);
 
 	zassert_not_null(fw, "fw_table pointer is NULL");
 	zassert_equal(fw->chip_limits.asic_fmax, expected->asic_fmax,
@@ -215,7 +215,7 @@ ZTEST(bh_fwtable_sim, test_fw_table_loaded)
 
 ZTEST(bh_fwtable_sim, test_flash_info_loaded)
 {
-	const FlashInfoTable *fi = tt_bh_fwtable_get_flash_info_table(FWTABLE_DEV);
+	const struct _FlashInfoTable *fi = tt_bh_fwtable_get_flash_info_table(FWTABLE_DEV);
 
 	zassert_not_null(fi, "flash_info pointer is NULL");
 	TC_PRINT("reprogrammed_count = %u\n", fi->reprogrammed_count);
