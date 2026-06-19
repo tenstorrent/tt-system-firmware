@@ -1,0 +1,10 @@
+/*
+ * Copyright (c) 2024 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#define DMC_VUART uart0
+#define DMC_FLASH_DEV <&flashcontroller0>
+
+#include "dmc_common.dtsi"

@@ -1,0 +1,167 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+
+/ {
+	aliases {
+		dmc-vuart = &DMC_VUART;
+	};
+
+	fwtable: fwtable {
+		compatible = "tenstorrent,bh-fwtable";
+		status = "okay";
+		flash-dev = DMC_FLASH_DEV;
+	};
+
+	pll0: pll0 {
+		compatible = "tenstorrent,clock-control-emul";
+		status = "okay";
+	};
+
+	pll4: pll4 {
+		compatible = "tenstorrent,clock-control-emul";
+		status = "okay";
+	};
+
+	dma1: noc_dma {
+		status = "okay";
+	};
+
+	pvt: pvt@80030700 {
+		compatible = "tenstorrent,bh-pvt";
+		reg = <0x80030700 0x4>;
+		num_pd = <16>;
+		num_vm = <8>;
+		num_ts = <8>;
+		status = "okay";
+	};
+
+	wdt0: wdt0 {
+		compatible = "tenstorrent,bh-watchdog";
+		status = "okay";
+	};
+
+	chip0: chip0 {
+		compatible = "tenstorrent,bh-chip";
+
+		jtag0: jtag {
+			compatible = "zephyr,jtag-gpio";
+			status = "okay";
+			tck-gpios = <&emul_gpio 9 GPIO_ACTIVE_HIGH>;
+			trst-gpios = <&emul_gpio 10 GPIO_ACTIVE_LOW>;
+			tms-gpios = <&emul_gpio 11 GPIO_ACTIVE_HIGH>;
+			tdo-gpios = <&emul_gpio 12 GPIO_PULL_UP>;
+			tdi-gpios = <&emul_gpio 13 GPIO_ACTIVE_HIGH>;
+			port-write-cycles = <2>;
+		};
+
+		asic_reset {
+			compatible = "zephyr,gpio-line";
+			label = "Line to asic reset";
+			gpios = <&emul_gpio 0 GPIO_ACTIVE_LOW>;
+		};
+
+		spi_reset {
+			compatible = "zephyr,gpio-line";
+			label = "Line to spi reset";
+			gpios = <&emul_gpio 1 GPIO_ACTIVE_LOW>;
+		};
+
+		pgood {
+			compatible = "zephyr,gpio-line";
+			label = "Power good indicator";
+			gpios = <&emul_gpio 3 GPIO_PULL_DOWN>;
+		};
+
+		therm_trip {
+			compatible = "zephyr,gpio-line";
+			label = "Thermal trip indicator";
+			gpios = <&emul_gpio 2 GPIO_ACTIVE_HIGH>;
+		};
+
+		spi_mux {
+			compatible = "zephyr,gpio-line";
+			label = "Line to spi mux";
+			gpios = <&emul_gpio 4 GPIO_ACTIVE_LOW>;
+		};
+
+		arc = <&chip0_arc>;
+	};
+
+	chips {
+		compatible = "tenstorrent,bh-chips";
+		chips = <&chip0>;
+		primary = <0>;
+	};
+
+	preset_trigger {
+		compatible = "zephyr,gpio-line";
+		label = "Input from PCIe card edge triggering an asic reset";
+		gpios = <&emul_gpio 5 GPIO_ACTIVE_LOW>;
+	};
+
+	psu_sense0 {
+		compatible = "zephyr,gpio-line";
+		label = "PSU Sense 0 from 12V-2x6 connector";
+		gpios = <&emul_gpio 6 GPIO_ACTIVE_HIGH>;
+	};
+
+	psu_sense1 {
+		compatible = "zephyr,gpio-line";
+		label = "PSU Sense 1 from 12V-2x6 connector";
+		gpios = <&emul_gpio 7 GPIO_ACTIVE_HIGH>;
+	};
+
+	board_fault_led {
+		compatible = "zephyr,gpio-line";
+		label = "LED Output to board fault indicator";
+		gpios = <&emul_gpio 8 GPIO_ACTIVE_HIGH>;
+	};
+
+	emul_gpio: emul_gpio {
+		compatible = "zephyr,gpio-emul";
+		status = "okay";
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		rising-edge;
+		falling-edge;
+		high-level;
+		low-level;
+	};
+
+	emul_i2c: i2c@100 {
+		compatible = "zephyr,i2c-emul-controller";
+		status = "okay";
+		clock-frequency = <I2C_BITRATE_STANDARD>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		reg = <0x100 0x4>;
+	};
+
+	smbus0: smbus0 {
+		compatible = "zephyr,smbus-emul";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&emul_i2c>;
+		status = "okay";
+
+		chip0_arc: bh_arc@a {
+			compatible = "tenstorrent,bh-arc";
+			reg = <0xa>;
+		};
+	};
+};
+
+&emul_i2c {
+	smbus_target0: smbus@a {
+		compatible = "zephyr,smbus_target";
+		reg = <0xa>;
+		status = "okay";
+	};
+};
