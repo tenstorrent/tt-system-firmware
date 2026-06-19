@@ -6,4 +6,4 @@ common:
     - bh_fwtable
 
 tests:
-  drivers.misc.bh_fwtable.sim: {}
+  lib.tenstorrent.bh_fw_table: {}
