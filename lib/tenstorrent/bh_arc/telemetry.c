@@ -231,7 +231,6 @@ static void UpdateEthTelemetry(void)
 
 static void UpdateGddrTelemetry(void)
 {
-	uint32_t temperature[NUM_GDDR / 2] = {0};
 	uint32_t corr_errs[NUM_GDDR / 2] = {0};
 	uint32_t uncorr_errs = 0;
 	uint32_t status = 0;
@@ -249,17 +248,7 @@ static void UpdateGddrTelemetry(void)
 			status |= (gddr_telemetry.training_complete << (i * 2)) |
 				  (gddr_telemetry.gddr_error << (i * 2 + 1));
 
-			/* DDR_x_y_TEMP:
-			 * [31:24] GDDR y top
-			 * [23:16] GDDR y bottom
-			 * [15:8]  GDDR x top
-			 * [7:0]   GDDR x bottom
-			 */
 			int shift_val = (i % 2) * 16;
-
-			temperature[i / 2] |=
-				((gddr_telemetry.dram_temperature_top & 0xff) << (8 + shift_val)) |
-				((gddr_telemetry.dram_temperature_bottom & 0xff) << shift_val);
 
 			/* GDDR_x_y_CORR_ERRS:
 			 * [31:24] GDDR y Corrected Write EDC errors
@@ -293,7 +282,6 @@ static void UpdateGddrTelemetry(void)
 
 	/* Update telemetry atomically after accumulation. */
 	for (int i = 0; i < NUM_GDDR / 2; i++) {
-		telemetry[TAG_GDDR_0_1_TEMP + i] = temperature[i];
 		telemetry[TAG_GDDR_0_1_CORR_ERRS + i] = corr_errs[i];
 	}
 	telemetry[TAG_GDDR_UNCORR_ERRS] = uncorr_errs;
@@ -301,19 +289,22 @@ static void UpdateGddrTelemetry(void)
 	telemetry[TAG_GDDR_SPEED] = speed;
 }
 
-int GetMaxGDDRTemp(void)
+/* Pack per-instance GDDR die temperatures into the host telemetry wire format. Each word holds
+ * one GDDR pair, with each die temperature stored as an 8-bit value using the same bit layout as
+ * TAG_GDDR_X_Y_TEMP.
+ */
+static void pack_gddr_temps(const struct gddr_temps *temps, uint32_t *packed)
 {
-	int max_gddr_temp = 0;
+	for (int i = 0; i < NUM_GDDR / 2; i++) {
+		packed[i] = 0;
+	}
 
 	for (int i = 0; i < NUM_GDDR; i++) {
 		int shift_val = (i % 2) * 16;
-		int gddr_temp = telemetry[TAG_GDDR_0_1_TEMP + i / 2];
 
-		max_gddr_temp = MAX(max_gddr_temp, (gddr_temp >> shift_val) & 0xFF);
-		max_gddr_temp = MAX(max_gddr_temp, (gddr_temp >> (shift_val + 8)) & 0xFF);
+		packed[i / 2] |= ((uint32_t)temps->inst[i].top << (8 + shift_val)) |
+				 ((uint32_t)temps->inst[i].bottom << shift_val);
 	}
-
-	return max_gddr_temp;
 }
 
 static void write_static_telemetry(uint32_t app_version)
@@ -462,7 +453,13 @@ static void update_telemetry(void)
 	telemetry[TAG_FAN_RPM] = fan_ctrl_en ? GetFanRPM() : 0xFFFFFFFFU;
 	UpdateEthTelemetry();
 	UpdateGddrTelemetry();
-	telemetry[TAG_MAX_GDDR_TEMP] = GetMaxGDDRTemp();
+	uint32_t gddr_packed[NUM_GDDR / 2];
+
+	pack_gddr_temps(&telemetry_internal_data.gddr_temps, gddr_packed);
+	for (int i = 0; i < NUM_GDDR / 2; i++) {
+		telemetry[TAG_GDDR_0_1_TEMP + i] = gddr_packed[i];
+	}
+	telemetry[TAG_MAX_GDDR_TEMP] = telemetry_internal_data.gddr_temps.max_temp;
 	telemetry[TAG_INPUT_POWER] = GetInputPower(); /* Input power - reported in W */
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);

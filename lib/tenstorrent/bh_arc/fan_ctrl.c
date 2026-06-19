@@ -103,7 +103,8 @@ static void update_fan_speed(void)
 		alpha * telemetry_internal_data.asic_temperature + (1 - alpha) * max_asic_temp;
 
 	if (IS_ENABLED(CONFIG_TT_BH_ARC_FAN_CTRL_GDDR_TEMP)) {
-		max_gddr_temp = alpha * GetMaxGDDRTemp() + (1 - alpha) * max_gddr_temp;
+		max_gddr_temp = alpha * telemetry_internal_data.gddr_temps.max_temp +
+				(1 - alpha) * max_gddr_temp;
 	} else {
 		max_gddr_temp = 0;
 	}

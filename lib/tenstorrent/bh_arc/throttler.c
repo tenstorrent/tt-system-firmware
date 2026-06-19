@@ -375,7 +375,7 @@ void CalculateThrottlers(void)
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
-	UpdateThrottler(kThrottlerGDDRThm, GetMaxGDDRTemp());
+	UpdateThrottler(kThrottlerGDDRThm, telemetry_internal_data.gddr_temps.max_temp);
 
 	for (ThrottlerId i = 0; i < kThrottlerCount; i++) {
 		UpdateThrottlerArb(i);

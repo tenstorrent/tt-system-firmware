@@ -14,6 +14,8 @@
 #include "reg.h"
 #include "status_reg.h"
 
+#include <stddef.h>
+
 #include <tenstorrent/bh_power.h>
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/post_code.h>
@@ -58,6 +60,7 @@ LOG_MODULE_REGISTER(gddr, CONFIG_TT_APP_LOG_LEVEL);
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static struct gddr_bist_info gddr_bist;
+static uint8_t gddr_telemetry_version_ok;
 
 struct gddr_bist_info get_gddr_bist_info(void)
 {
@@ -221,6 +224,57 @@ static uint32_t GetDramMask(void)
 		dram_mask &= tt_bh_fwtable_get_fw_table(fwtable_dev)->dram_table.dram_mask;
 	}
 	return dram_mask;
+}
+
+/* Read the top and bottom DRAM die temperatures (degrees Celsius) for a single GDDR instance. */
+static int read_gddr_temperature(uint8_t gddr_inst, struct gddr_inst_temp *temp)
+{
+	if (gddr_inst >= NUM_GDDR || temp == NULL) {
+		return -EINVAL;
+	}
+	if (!IS_BIT_SET(gddr_telemetry_version_ok, gddr_inst)) {
+		return -ENOTSUP;
+	}
+	/* dram_temperature_top and dram_temperature_bottom are adjacent uint16_t fields that */
+	/* share a single 32-bit word: [15:0] = top, [31:16] = bottom */
+	uint32_t temps = MriscL1Read32(
+		gddr_inst,
+		GDDR_TELEMETRY_TABLE_ADDR + offsetof(gddr_telemetry_table_t, dram_temperature_top));
+	temp->top = temps & 0xff;
+	temp->bottom = (temps >> 16) & 0xff;
+	return 0;
+}
+
+int get_gddr_temps(struct gddr_temps *temps)
+{
+	if (temps == NULL) {
+		return -EINVAL;
+	}
+
+	*temps = (struct gddr_temps){0};
+	uint32_t dram_mask = GetDramMask();
+
+	int ret = 0;
+
+	for (int i = 0; i < NUM_GDDR; i++) {
+		if (!IS_BIT_SET(dram_mask, i)) {
+			continue;
+		}
+
+		int rc = read_gddr_temperature(i, &temps->inst[i]);
+
+		if (rc < 0) {
+			LOG_WRN_ONCE("Failed to read GDDR %d temperature while updating telemetry",
+				     i);
+			ret = rc;
+			continue;
+		}
+
+		temps->max_temp =
+			MAX(temps->max_temp, MAX(temps->inst[i].top, temps->inst[i].bottom));
+	}
+
+	return ret;
 }
 
 static int check_mrisc_busy(uint8_t gddr_inst)
@@ -462,10 +516,24 @@ SYS_INIT_APP(InitMrisc);
 
 static int CheckGddrTraining(uint8_t gddr_inst, k_timepoint_t timeout)
 {
+	gddr_telemetry_version_ok &= ~BIT(gddr_inst);
+
 	do {
 		uint32_t poll_val = MriscRegRead32(gddr_inst, MRISC_INIT_STATUS);
 
 		if (poll_val == MRISC_INIT_FINISHED) {
+			uint32_t version =
+				MriscL1Read32(gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
+								 offsetof(gddr_telemetry_table_t,
+									  telemetry_table_version));
+
+			if (version != GDDR_TELEMETRY_TABLE_T_VERSION) {
+				LOG_ERR("%s[%d]: version mismatch: %d (expected %d)",
+					"GDDR telemetry table", gddr_inst, version,
+					GDDR_TELEMETRY_TABLE_T_VERSION);
+				return -ENOTSUP;
+			}
+			gddr_telemetry_version_ok |= BIT(gddr_inst);
 			return 0;
 		}
 		if (poll_val == MRISC_INIT_FAILED) {

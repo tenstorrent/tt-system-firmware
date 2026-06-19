@@ -5,6 +5,7 @@
  */
 
 #include "avs.h"
+#include "gddr.h"
 #include "telemetry_internal.h"
 #include "regulator.h"
 
@@ -53,6 +54,8 @@ void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data)
 		internal_data.vcore_power =
 			internal_data.vcore_current * internal_data.vcore_voltage * 0.001f;
 		internal_data.asic_temperature = avg_tmp;
+
+		(void)get_gddr_temps(&internal_data.gddr_temps);
 
 		/* reftime was updated to the current uptime by the k_uptime_delta() call */
 		last_update_time = reftime;

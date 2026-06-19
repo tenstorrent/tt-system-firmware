@@ -51,6 +51,30 @@
 
 int read_gddr_telemetry_table(uint8_t gddr_inst, gddr_telemetry_table_t *gddr_telemetry);
 
+/** @brief Top and bottom DRAM die temperatures for a single GDDR instance (degrees Celsius). */
+struct gddr_inst_temp {
+	uint8_t top;
+	uint8_t bottom;
+};
+
+/** @brief Per-instance GDDR die temperatures plus the max across all dies. */
+struct gddr_temps {
+	uint32_t max_temp;                    /* degC, max across all read dies */
+	struct gddr_inst_temp inst[NUM_GDDR]; /* per-instance top/bottom die temps */
+};
+
+/**
+ * @brief Read the DRAM die temperatures for all enabled GDDR instances.
+ *
+ * Disabled instances are left zeroed. Reads that fail are logged and skipped, leaving the
+ * corresponding entry zeroed while the remaining instances are still read.
+ *
+ * @param [out] temps Destination struct. Fully overwritten on entry.
+ * @return 0 if all enabled instances were read successfully. If one or more reads failed,
+ *         the last error code encountered is returned (the rest are still read).
+ */
+int get_gddr_temps(struct gddr_temps *temps);
+
 /** @brief BIST status bitmasks (one bit per GDDR instance). */
 struct gddr_bist_info {
 	uint8_t complete;

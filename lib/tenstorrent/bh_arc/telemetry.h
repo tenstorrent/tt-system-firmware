@@ -175,16 +175,44 @@
 /** @brief Fan RPM. 0xFFFFFFFF if fan control disabled. */
 #define TAG_FAN_RPM 41
 
-/** @brief GDDR 0 and 1 temperature. */
+/** @brief GDDR 0 and 1 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 1 top die
+ * - [23:16] GDDR 1 bottom die
+ * - [15:8]  GDDR 0 top die
+ * - [7:0]   GDDR 0 bottom die
+ */
 #define TAG_GDDR_0_1_TEMP 42
 
-/** @brief GDDR 2 and 3 temperature. */
+/** @brief GDDR 2 and 3 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 3 top die
+ * - [23:16] GDDR 3 bottom die
+ * - [15:8]  GDDR 2 top die
+ * - [7:0]   GDDR 2 bottom die
+ */
 #define TAG_GDDR_2_3_TEMP 43
 
-/** @brief GDDR 4 and 5 temperature. */
+/** @brief GDDR 4 and 5 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 5 top die
+ * - [23:16] GDDR 5 bottom die
+ * - [15:8]  GDDR 4 top die
+ * - [7:0]   GDDR 4 bottom die
+ */
 #define TAG_GDDR_4_5_TEMP 44
 
-/** @brief GDDR 6 and 7 temperature. */
+/** @brief GDDR 6 and 7 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 7 top die
+ * - [23:16] GDDR 7 bottom die
+ * - [15:8]  GDDR 6 top die
+ * - [7:0]   GDDR 6 bottom die
+ */
 #define TAG_GDDR_6_7_TEMP 45
 
 /** @brief GDDR 0 and 1 corrected errors. */
@@ -327,7 +355,6 @@
 void init_telemetry(uint32_t app_version);
 uint32_t ConvertFloatToTelemetry(float value);
 float ConvertTelemetryToFloat(int32_t value);
-int GetMaxGDDRTemp(void);
 void StartTelemetryTimer(void);
 void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version);
 void UpdateTelemetryNocTranslation(bool translation_enabled);
