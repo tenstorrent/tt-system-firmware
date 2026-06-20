@@ -16,3 +16,12 @@ tests:
     extra_configs:
       - CONFIG_DMC_RUN_SMBUS_TESTS=y
     tags: e2e
+  sample.app.native_sim_build:
+    platform_allow:
+      - native_sim
+    sysbuild: false
+    build_only: true
+    tags:
+      - build
+      - native_sim
+      - build-ci
