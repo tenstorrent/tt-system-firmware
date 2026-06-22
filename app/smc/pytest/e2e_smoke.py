@@ -1757,3 +1757,42 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
         capture_output=True,
         check=False,
     )
+
+
+def test_heartbeat_telemetry(arc_chip_dut, asic_id):
+    """
+    Polls the heartbeat telemetry every 100ms and verifies that it's incrementing.
+    Runs for 2 seconds to collect multiple heartbeat samples.
+    """
+    arc_chip = pyluwen.detect_chips()[asic_id]
+
+    # Collect heartbeat samples every 100ms
+    heartbeat_samples = []
+    poll_interval = 0.1  # 100ms in seconds
+    duration = 2.0  # 2 seconds total
+    end_time = time.time() + duration
+
+    logger.info("Starting heartbeat telemetry polling (100ms intervals for 2 seconds)")
+
+    while time.time() < end_time:
+        telemetry = arc_chip.get_telemetry()
+        heartbeat = telemetry.timer_heartbeat
+        heartbeat_samples.append(heartbeat)
+        logger.info(f"Heartbeat: {heartbeat}")
+        time.sleep(poll_interval)
+
+    # Verify we collected samples
+    assert len(heartbeat_samples) > 0, "No heartbeat samples collected"
+    logger.info(f"Collected {len(heartbeat_samples)} heartbeat samples")
+
+    # Verify heartbeat is incrementing
+    prev_heartbeat = heartbeat_samples[0]
+    for i, heartbeat in enumerate(heartbeat_samples[1:], 1):
+        assert heartbeat > prev_heartbeat, (
+            f"Heartbeat did not increment: sample {i - 1} ({prev_heartbeat}) >= sample {i} ({heartbeat})"
+        )
+        prev_heartbeat = heartbeat
+
+    logger.info(
+        f"Heartbeat telemetry incrementing correctly: {heartbeat_samples[0]} -> {heartbeat_samples[-1]}"
+    )
