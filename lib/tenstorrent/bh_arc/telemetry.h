@@ -314,12 +314,15 @@
  */
 #define TAG_HOST_AICLK_LIMIT 70
 
+/** @brief Number of SMBUS target errors observed. */
+#define TAG_SMBUS_ERRORS 71
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 71
+#define TAG_COUNT 72
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)

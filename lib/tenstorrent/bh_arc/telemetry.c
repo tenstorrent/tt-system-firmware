@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include <tenstorrent/post_code.h>
+#include <tenstorrent/smbus_target.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/device.h>
@@ -39,6 +40,8 @@ static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtab
 static const struct device *const pll_dev_0 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll0));
 static const struct device *const pll_dev_1 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll1));
 static const struct device *const pll_dev_4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
+static const struct device *const smbus_target_dev =
+	DEVICE_DT_GET_OR_NULL(DT_NODELABEL(smbus_target0));
 
 /**
  * @defgroup telemetry_table Telemetry Table
@@ -170,6 +173,7 @@ static struct telemetry_table telemetry_table = {
 		[63] = {TAG_ENABLED_MAX_ARB, TELEM_OFFSET(TAG_ENABLED_MAX_ARB)},
 		[64] = {TAG_AICLK_PPM_INFO, TELEM_OFFSET(TAG_AICLK_PPM_INFO)},
 		[65] = {TAG_HOST_AICLK_LIMIT, TELEM_OFFSET(TAG_HOST_AICLK_LIMIT)},
+		[66] = {TAG_SMBUS_ERRORS, TELEM_OFFSET(TAG_SMBUS_ERRORS)},
 	},
 };
 /* clang-format on */
@@ -464,6 +468,7 @@ static void update_telemetry(void)
 	UpdateGddrTelemetry();
 	telemetry[TAG_MAX_GDDR_TEMP] = GetMaxGDDRTemp();
 	telemetry[TAG_INPUT_POWER] = GetInputPower(); /* Input power - reported in W */
+	telemetry[TAG_SMBUS_ERRORS] = smbus_target_get_error_count(smbus_target_dev);
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);
 }

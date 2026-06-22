@@ -55,4 +55,11 @@ struct SmbusCmdDef {
  */
 int32_t smbus_target_register_cmd(const struct device *dev, uint8_t cmd_id,
 				  const struct SmbusCmdDef *smbus_cmd);
+
+/**
+ * @brief Get total number of SMBUS target errors
+ * @param dev The SMBUS target device instance.
+ * @return Number of errors that went through the SMBUS ratelimited error macro.
+ */
+uint32_t smbus_target_get_error_count(const struct device *dev);
 #endif

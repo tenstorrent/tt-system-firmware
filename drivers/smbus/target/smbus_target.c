@@ -11,11 +11,18 @@
 #include <errno.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/crc.h>
+#include <zephyr/sys/atomic.h>
 #include <tenstorrent/smbus_target.h>
 
 #define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(i2c_target);
+
+#define SMBUS_LOG_ERR_RATELIMIT(data, fmt, ...)                                                    \
+	do {                                                                                       \
+		atomic_inc(&(data)->error_count);                                                  \
+		LOG_ERR_RATELIMIT(fmt, ##__VA_ARGS__);                                             \
+	} while (0)
 
 typedef enum {
 	kSmbusStateIdle,
@@ -30,6 +37,7 @@ typedef enum {
 struct smbus_target_data {
 	struct i2c_target_config config;
 	const struct SmbusCmdDef *cmd_defs[256];
+	atomic_t error_count;
 	SmbusState state;
 	uint8_t command;
 	uint8_t blocksize_r;
@@ -83,6 +91,8 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 		curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
 		if (!curr_cmd) {
 			/* Command not implemented */
+			SMBUS_LOG_ERR_RATELIMIT(smbus_data, "SMBUS: command 0x%02x not implemented",
+						val);
 			smbus_data->state = kSmbusStateWaitIdle;
 			return -1;
 		}
@@ -94,7 +104,10 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 		case kSmbusTransBlockWriteBlockRead:
 			smbus_data->blocksize_w = val;
 			if (smbus_data->blocksize_w > CONFIG_SMBUS_MAX_MSG_SIZE) {
-				LOG_ERR("Oversized SMBUS block write: %d", smbus_data->blocksize_w);
+				SMBUS_LOG_ERR_RATELIMIT(
+					smbus_data,
+					"SMBUS: oversized block write: %d bytes (max %d)",
+					smbus_data->blocksize_w, CONFIG_SMBUS_MAX_MSG_SIZE);
 				/* block size too big */
 				smbus_data->state = kSmbusStateWaitIdle;
 				ret = -1;
@@ -122,6 +135,9 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 			break;
 		default:
 			/* Error, invalid command for write */
+			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+						"SMBUS: invalid transaction type %d for write",
+						curr_cmd->trans_type);
 			smbus_data->state = kSmbusStateWaitIdle;
 			ret = -1;
 		}
@@ -138,6 +154,12 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 				if (ret == 0 &&
 				    curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
 					smbus_data->state = kSmbusStateCmd;
+				} else if (ret != 0) {
+					SMBUS_LOG_ERR_RATELIMIT(
+						smbus_data,
+						"SMBUS: receive handler error (cmd 0x%02x)",
+						smbus_data->command);
+					smbus_data->state = kSmbusStateWaitIdle;
 				} else {
 					smbus_data->state = kSmbusStateWaitIdle;
 				}
@@ -161,20 +183,30 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 		}
 
 		if (pec != rcv_pec) {
-			smbus_data->blocksize_w = kSmbusStateWaitIdle;
+			SMBUS_LOG_ERR_RATELIMIT(
+				smbus_data,
+				"SMBUS: PEC mismatch (cmd 0x%02x): expected 0x%02x, got 0x%02x",
+				smbus_data->command, pec, rcv_pec);
+			smbus_data->state = kSmbusStateWaitIdle;
 			return -1;
 		}
 		ret = curr_cmd->rcv_handler(smbus_data->received_data, smbus_data->blocksize_w);
 
 		if (ret == 0 && curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
 			smbus_data->state = kSmbusStateCmd;
+		} else if (ret != 0) {
+			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+						"SMBUS: PEC receive handler error (cmd 0x%02x)",
+						smbus_data->command);
+			smbus_data->state = kSmbusStateWaitIdle;
 		} else {
 			smbus_data->state = kSmbusStateWaitIdle;
 		}
 	} else {
-		/* Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR,
-		 * 0xc2de0000 | ReadReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR));
-		 */
+		/* Invalid state for write handler */
+		SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+					"SMBUS: write handler called in invalid state %d",
+					smbus_data->state);
 		smbus_data->state = kSmbusStateWaitIdle;
 		ret = -1;
 	}
@@ -200,16 +232,19 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 			break;
 		default:
 			/* Error, invalid command for read */
+			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+						"SMBUS: invalid transaction type %d for read",
+						curr_cmd->trans_type);
 			smbus_data->state = kSmbusStateWaitIdle;
 			*val = 0xFF;
 			return -1;
 		}
 		/* Call the send handler to get the data */
 		if (curr_cmd->send_handler(smbus_data->send_data, &smbus_data->blocksize_r)) {
-			/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR,
-			 * 0xc0de0020);
-			 */
 			/* Send handler returned error */
+			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+						"SMBUS: send handler error (cmd 0x%02x)",
+						smbus_data->command);
 			smbus_data->state = kSmbusStateWaitIdle;
 			*val = 0xFF;
 			return -1;
@@ -234,10 +269,10 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 			smbus_data->state = kSmbusStateSendData;
 			break;
 		default:
-			/* Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR,
-			 * 0xc0de0040);
-			 */
 			/* Error, invalid command for read */
+			SMBUS_LOG_ERR_RATELIMIT(
+				smbus_data, "SMBUS: invalid transaction type %d for read response",
+				curr_cmd->trans_type);
 			smbus_data->state = kSmbusStateWaitIdle;
 			*val = 0xFF;
 			return -1;
@@ -284,14 +319,26 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 		*val = pec;
 		smbus_data->state = kSmbusStateWaitIdle;
 	} else {
-		/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR,
-		 *	 0xc1de0000 | ReadReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR));
-		 */
+		/* Invalid state for read handler */
+		SMBUS_LOG_ERR_RATELIMIT(smbus_data,
+					"SMBUS: read handler called in invalid state %d",
+					smbus_data->state);
 		smbus_data->state = kSmbusStateWaitIdle;
 		*val = 0xFF;
 		return -1;
 	}
 	return 0;
+}
+
+uint32_t smbus_target_get_error_count(const struct device *dev)
+{
+	if (dev == NULL || dev->data == NULL) {
+		return 0;
+	}
+
+	struct smbus_target_data *data = dev->data;
+
+	return (uint32_t)atomic_get(&data->error_count);
 }
 
 static void reset_state_machine(struct smbus_target_data *smbus_data)
@@ -347,6 +394,7 @@ static int32_t smbus_target_init(const struct device *dev)
 
 	data->config.address = cfg->bus.addr;
 	data->config.callbacks = &smbus_target_cb_impl;
+	atomic_set(&data->error_count, 0);
 
 	return 0;
 }
