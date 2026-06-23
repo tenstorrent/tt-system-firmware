@@ -66,6 +66,21 @@
 #define I2C0_TARGET_DEBUG_STATE_REG_ADDR     RESET_UNIT_SCRATCH_RAM_REG_ADDR(19)
 #define I2C0_TARGET_DEBUG_STATE_2_REG_ADDR   RESET_UNIT_SCRATCH_RAM_REG_ADDR(20)
 #define ARC_HANG_PC                          RESET_UNIT_SCRATCH_RAM_REG_ADDR(21)
+/**
+ * @brief Register address of the Metal runtime telemetry buffer.
+ *
+ * Holds the CSM address of tt_runtime_telemetry. Written once during init
+ * and not updated until the next chip reset. Fixed at link time for a
+ * given CMFW build.
+ */
+#define RUNTIME_TELEMETRY_ADDR_REG_ADDR      RESET_UNIT_SCRATCH_RAM_REG_ADDR(22)
+/**
+ * @brief Register holding the size in bytes of the Metal runtime telemetry buffer.
+ *
+ * Written once during init and not updated until the next chip reset.
+ * Fixed at compile time for a given CMFW build.
+ */
+#define RUNTIME_TELEMETRY_SIZE_REG_ADDR      RESET_UNIT_SCRATCH_RAM_REG_ADDR(23)
 
 #define STATUS_FW_VUART_REG_ADDR(n) RESET_UNIT_SCRATCH_RAM_REG_ADDR(40 + (n))
 /* SCRATCH_RAM_40 - SCRATCH_RAM_41 reserved for virtual uarts */

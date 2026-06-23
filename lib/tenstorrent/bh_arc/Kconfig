@@ -92,6 +92,17 @@ config TT_BH_ARC_SCRATCHPAD_SIZE
 	  Size of scratchpad memory in bytes. This is mainly used as a temporary buffer for
 	  loading images from SPI flash.
 
+config TT_BH_ARC_RUNTIME_TELEMETRY_SIZE
+	int "Runtime telemetry reserved BSS size in bytes"
+	default 1024
+	range 0 65536
+	help
+	  Bytes carved from BSS for host runtime telemetry use. Must be a multiple
+	  of 32. Set to 0 to disable runtime telemetry.
+
+config TT_BH_ARC_RUNTIME_TELEMETRY
+	def_bool TT_BH_ARC_RUNTIME_TELEMETRY_SIZE > 0
+
 config TT_BH_ARC_DMFW_PING_TIMEOUT
 	int "Timeout for DMFW ping in milliseconds"
 	default 200
