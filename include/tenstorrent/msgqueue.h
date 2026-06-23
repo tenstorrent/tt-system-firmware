@@ -776,10 +776,34 @@ struct characterisation_set_fmin_submsg {
 	uint32_t value;
 };
 
+/** @brief Submessage for enabling/disabling kernel throttler at AICLK floor
+ * @details Payload is a single uint32_t:
+ * - Value == 0: Disable kernel throttler at AICLK floor
+ * - Value == 1: Enable kernel throttler at AICLK floor
+ */
+struct char_throttle_enabled_submsg {
+	/** @brief 0 to disable, 1 to enable */
+	uint32_t enabled;
+};
+
+/** @brief Submessage for setting kernel throttler stop NOPs frequency
+ * @details Payload is a single uint32_t with two interpretations:
+ * - Value == 0: Restore the FW-controlled stop limit
+ * - Value in [200, 1400]: Stop NOPs at this frequency in MHz
+ */
+struct char_throttle_stop_freq_submsg {
+	/** @brief 0 to restore FW control, or frequency in MHz where NOPs stop (200-1400) */
+	uint32_t frequency;
+};
+
 /** @brief Union of all possible characterization submessage payloads */
 union characterisation_submsg_data {
 	/** @brief Set host-requested minimum frequency floor */
 	struct characterisation_set_fmin_submsg fmin_value;
+	/** @brief Enable/disable kernel throttler at AICLK floor */
+	struct char_throttle_enabled_submsg throttler_enabled;
+	/** @brief Set frequency limit for stopping kernel throttler */
+	struct char_throttle_stop_freq_submsg throttler_stop_freq;
 	/* add to this union to define more sub-message payloads */
 	/** @brief Generic fallback for raw access */
 	uint8_t raw_data[4];

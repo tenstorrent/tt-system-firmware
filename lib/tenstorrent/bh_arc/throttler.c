@@ -28,6 +28,9 @@ static bool doppler_t2;
 static bool doppler_t3;
 static const bool thermal_throttling = true;
 
+static bool kernel_throttler_at_aiclk_floor_enabled = true;
+static uint32_t kernel_throttler_stop_nops_freq;
+
 #define kThrottlerAiclkScaleFactor 500.0F
 #define DEFAULT_BOARD_POWER_LIMIT  150
 
@@ -344,10 +347,41 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
 	EnableArbMax(aiclk_arb_max_doppler_critical, critical_throttling);
 }
 
+/** @brief Update kernel throttler NOPs state based on power
+ * @param[in] current_power Current vcore power in watts
+ * @param[in] tdp_limit TDP throttler limit in watts
+ */
+static void UpdateKernelThrottler(float current_power, float tdp_limit)
+{
+	/* Kernel throttler at aiclk floor is only active if enabled */
+	bool start_nops = false;
+	bool stop_nops = false;
+	enum aiclk_arb_min arb;
+
+	if (kernel_throttler_at_aiclk_floor_enabled) {
+		start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
+
+		/* Determine stop frequency: use configured value or fall back to effective min */
+		uint32_t stop_freq = kernel_throttler_stop_nops_freq;
+
+		if (stop_freq == 0U) {
+			stop_freq = get_aiclk_effective_arb_min(&arb);
+		}
+
+		stop_nops = GetAiclkTarg() >= stop_freq && current_power < tdp_limit;
+	}
+
+	bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
+
+	if (new_kernel_nops_enabled != kernel_nops_enabled) {
+		kernel_nops_enabled = new_kernel_nops_enabled;
+		SendKernelThrottlingMessage(kernel_nops_enabled);
+	}
+}
+
 void CalculateThrottlers(void)
 {
 	TelemetryInternalData telemetry_internal_data;
-	enum aiclk_arb_min arb;
 
 	ReadTelemetryInternal(1, &telemetry_internal_data);
 
@@ -362,16 +396,7 @@ void CalculateThrottlers(void)
 		float current_power = telemetry_internal_data.vcore_power;
 		float tdp_limit = throttler[kThrottlerTDP].limit;
 
-		bool start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
-		bool stop_nops = GetAiclkTarg() == get_aiclk_effective_arb_min(&arb) &&
-				 current_power < tdp_limit;
-
-		bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
-
-		if (new_kernel_nops_enabled != kernel_nops_enabled) {
-			kernel_nops_enabled = new_kernel_nops_enabled;
-			SendKernelThrottlingMessage(kernel_nops_enabled);
-		}
+		UpdateKernelThrottler(current_power, tdp_limit);
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
@@ -380,6 +405,43 @@ void CalculateThrottlers(void)
 	for (ThrottlerId i = 0; i < kThrottlerCount; i++) {
 		UpdateThrottlerArb(i);
 	}
+}
+
+uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled)
+{
+	if (enabled > 1) {
+		return 1;
+	}
+
+	kernel_throttler_at_aiclk_floor_enabled = (bool)enabled;
+	LOG_INF("kernel throttler at aiclk floor %s", enabled ? "enabled" : "disabled");
+
+	/* Release NOPs immediately if the feature is being disabled while active. */
+	if (!enabled && kernel_nops_enabled) {
+		kernel_nops_enabled = false;
+		SendKernelThrottlingMessage(false);
+	}
+
+	return 0;
+}
+
+uint8_t ThrottlerSetKernelThrottlerStopFreq(uint32_t frequency)
+{
+	/* 0 means use default behavior (get_aiclk_effective_arb_min) */
+	if (frequency == 0) {
+		kernel_throttler_stop_nops_freq = 0;
+		LOG_INF("kernel throttler stop nops frequency reset to default");
+		return 0;
+	}
+
+	/* Reject if outside valid range [AICLK_FMIN_MIN, AICLK_FMIN_MAX] */
+	if (frequency > (uint32_t)AICLK_FMIN_MAX || frequency < (uint32_t)AICLK_FMIN_MIN) {
+		return 1;
+	}
+
+	kernel_throttler_stop_nops_freq = frequency;
+	LOG_INF("kernel throttler stop nops frequency set to %u MHz", frequency);
+	return 0;
 }
 
 int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size)

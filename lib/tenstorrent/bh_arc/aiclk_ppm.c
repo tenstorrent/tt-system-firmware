@@ -7,6 +7,7 @@
 #include "aiclk_ppm.h"
 #include "dvfs.h"
 #include "telemetry.h"
+#include "throttler.h"
 #include "voltage.h"
 #include "vf_curve.h"
 
@@ -29,13 +30,6 @@
 LOG_MODULE_REGISTER(aiclk_ppm, CONFIG_TT_APP_LOG_LEVEL);
 
 static const struct device *const pll_dev_0 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll0));
-
-/* Bounds checks for FMAX and FMIN (in MHz) */
-#define AICLK_FMAX_MAX        1400.0F
-#define AICLK_FMAX_MIN        800.0F
-#define AICLK_FMIN_MAX        1400.0F
-#define AICLK_FMIN_MIN        200.0F
-#define AICLK_RESET_SAFE_FREQ 250.0F
 
 /* aiclk control mode */
 typedef enum {
@@ -534,6 +528,14 @@ static uint8_t characterisation_handler(const union request *request, struct res
 	case TT_SUB_MSG_SET_HOST_REQUESTED_FMIN:
 		return handle_char_set_host_fmin(
 			request->characterisation_msg.submsg_data.fmin_value, response);
+
+	case TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED:
+		return ThrottlerSetKernelThrottlerEnabled(
+			request->characterisation_msg.submsg_data.throttler_enabled.enabled);
+
+	case TT_SUB_MSG_SET_KERNEL_THROTTLER_STOP_NOPS_FREQ:
+		return ThrottlerSetKernelThrottlerStopFreq(
+			request->characterisation_msg.submsg_data.throttler_stop_freq.frequency);
 
 	default:
 		LOG_WRN("Unknown characterization submessage ID: 0x%02x",

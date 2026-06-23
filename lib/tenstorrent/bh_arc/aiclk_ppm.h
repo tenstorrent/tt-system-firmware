@@ -9,6 +9,13 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* Bounds checks for FMAX and FMIN (in MHz) */
+#define AICLK_FMAX_MAX        1400.0F
+#define AICLK_FMAX_MIN        800.0F
+#define AICLK_FMIN_MAX        1400.0F
+#define AICLK_FMIN_MIN        200.0F
+#define AICLK_RESET_SAFE_FREQ 250.0F
+
 /**
  * @brief AICLK maximum frequency arbiters
  *

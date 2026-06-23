@@ -171,6 +171,10 @@ enum tt_smc_msg {
 enum char_submsg_ids {
 	/** @brief Set host-requested minimum frequency (AICLK) */
 	TT_SUB_MSG_SET_HOST_REQUESTED_FMIN = 0x1,
+	/** @brief Enable/disable kernel throttler at AICLK floor */
+	TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED = 0x2,
+	/** @brief Set frequency limit for stopping kernel throttler */
+	TT_SUB_MSG_SET_KERNEL_THROTTLER_STOP_NOPS_FREQ = 0x3,
 };
 
 /** @} */
