@@ -294,11 +294,8 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 	return 0;
 }
 
-static int32_t smbus_stop_handler(struct i2c_target_config *config)
+static void reset_state_machine(struct smbus_target_data *smbus_data)
 {
-	struct smbus_target_data *smbus_data =
-		CONTAINER_OF(config, struct smbus_target_data, config);
-
 	smbus_data->state = kSmbusStateIdle;
 	smbus_data->command = 0;
 	smbus_data->blocksize_r = 0;
@@ -306,11 +303,12 @@ static int32_t smbus_stop_handler(struct i2c_target_config *config)
 	smbus_data->rcv_index = 0;
 	smbus_data->send_index = 0;
 
-	/* Log something like */
-	/* WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, */
-	/* 0xc3de0000 | ReadReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR)); */
-
 	/* Don't erase data buffers for efficiency */
+}
+
+static int32_t smbus_stop_handler(struct i2c_target_config *config)
+{
+	reset_state_machine(CONTAINER_OF(config, struct smbus_target_data, config));
 	return 0;
 }
 
@@ -320,7 +318,7 @@ static int32_t smbus_stop_handler(struct i2c_target_config *config)
  */
 static int32_t smbus_write_requested(struct i2c_target_config *config)
 {
-	(void)config;
+	reset_state_machine(CONTAINER_OF(config, struct smbus_target_data, config));
 	return 0;
 }
 
