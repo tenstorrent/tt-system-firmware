@@ -119,7 +119,8 @@ static int AssertSoftResets(void)
 	for (uint8_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
 		/* Skip harvested GDDR tiles */
 		if (tile_enable.gddr_enabled & BIT(gddr_inst)) {
-			for (uint8_t noc_node_inst = 0; noc_node_inst < 3; noc_node_inst++) {
+			for (uint8_t noc_node_inst = 0; noc_node_inst < NUM_MRISC_NOC2AXI_PORT;
+			     noc_node_inst++) {
 				uint8_t x, y;
 
 				GetGddrNocCoords(gddr_inst, noc_node_inst, kNocRing, &x, &y);

@@ -443,7 +443,8 @@ static int InitMrisc(void)
 	/* Load MRISC (DRAM RISC) FW to all DRAMs in the middle NOC node */
 
 	for (uint8_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
-		for (uint8_t noc2axi_port = 0; noc2axi_port < 3; noc2axi_port++) {
+		for (uint8_t noc2axi_port = 0; noc2axi_port < NUM_MRISC_NOC2AXI_PORT;
+		     noc2axi_port++) {
 			SetAxiEnable(gddr_inst, noc2axi_port, true);
 		}
 	}
