@@ -9,3 +9,4 @@ Firmware Services
    binary_descriptors/index.rst
    tracing/index.rst
    telemetry/index.rst
+   runtime_telemetry/index.rst
