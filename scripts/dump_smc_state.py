@@ -45,6 +45,8 @@ SCRATCH_REGS = {
     "I2C target state 0": 0x4C,
     "I2C target state 1": 0x50,
     "ARC hang pc": 0x54,
+    "Runtime telemetry address": 0x58,
+    "Runtime telemetry size": 0x5C,
     "VUART 0 address": 0xA0,
     "VUART 1 address": 0xA4,
     "VUART 2 address": 0xA8,
