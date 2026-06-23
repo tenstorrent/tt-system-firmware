@@ -48,18 +48,20 @@ static const uint8_t tt_i2c_addr = 0xA;
 /* Build-time-resolved handle for the bh_fwtable device. */
 #define FWTABLE_DEV DEVICE_DT_GET(DT_NODELABEL(fwtable))
 
-/* Skip cleanly if bh_fwtable_init failed (e.g., flash.bin missing entries).
- * zassume_* sets the test result to SKIP and unwinds out of the test, so the
- * caller does NOT continue executing after this returns "normally."
+/* Runs FIRST in the msgqueue suite. ztest orders tests by SORT_BY_NAME on the
+ * symbol z_ztest_unit_test__<suite>__<fn>, so the "0_" prefix sorts this ahead
+ * of every other test. The build guarantees flash.bin exists (CMake FATAL_ERRORs
+ * when protoc is missing), so a not-ready fwtable device is a real bh_fwtable
+ * init/load regression and must FAIL — never skip.
  */
-static void require_dev_ready(void)
+ZTEST(msgqueue, test_0_fwtable_device_ready)
 {
 	const struct device *dev = FWTABLE_DEV;
 
-	zassume_not_null(dev, "fwtable device pointer is NULL");
-	zassume_true(device_is_ready(dev),
-		     "fwtable device not ready — init failed. Ensure flash.bin "
-		     "with valid tt-boot-fs is reachable to the simulator.");
+	zassert_not_null(dev, "fwtable device pointer is NULL");
+	zassert_true(device_is_ready(dev),
+		     "fwtable device not ready — bh_fwtable init/load failed. "
+		     "flash.bin is built by CMake; check the driver's load paths.");
 }
 
 /* Helper function to simulate DMC reading posted SMBUS messages */
@@ -126,20 +128,12 @@ static void clear_pending_smbus_messages(void)
 }
 
 /*
- * Push the current `req` onto msgqueue 0, drive the dispatcher, and pop the
- * response into `rsp`. Then assert that rsp.data[0] indicates success/failure.
- *
- * These are variadic macros so callers can attach a printf-style context
- * message describing the sub-case — useful when one ZTEST exercises multiple
- * messages and you want a per-call diagnostic on failure. Examples:
- *
- *   push_msg_success();                       // no context message
- *   push_msg_success("in-range %u", v);       // with context
+ * These variadic macros can be used to attach a printf-style context
+ * message describing a specific sub-case inside a ZTEST, instead of
+ * 1 message per ZTEST
  *
  * Uses zexpect_* (soft assertions) so a single sub-case failure doesn't
- * short-circuit the rest of the test — every sub-case still runs and is
- * reported, which is the right behavior for tests that exercise multiple
- * independent cases of one handler.
+ * short-circuit the rest of the test
  */
 #define push_msg_success(...)                                                                      \
 	do {                                                                                       \
@@ -567,7 +561,6 @@ ZTEST(msgqueue, test_msg_type_force_vdd)
 	 * All test inputs are derived from the loaded fw_table so this test is
 	 * board-portable.
 	 */
-	require_dev_ready();
 	(void)InitVoltagePPM();
 
 	const uint32_t vdd_min = voltage_arbiter.vdd_min;

@@ -25,9 +25,9 @@ set(FLASH_BIN     "${CMAKE_BINARY_DIR}/flash.bin")
 # Need protoc on PATH (apt: protobuf-compiler) for the .proto → *_pb2.py step.
 find_program(PROTOC_EXE protoc)
 if(NOT PROTOC_EXE)
-    message(WARNING
+    message(FATAL_ERROR
         "protoc not found. Install with 'sudo apt install protobuf-compiler'. "
-        "flash.bin will not be generated; test_msg_type_force_vdd will SKIP.")
+        "It is required to generate flash.bin for these tests.")
 endif()
 
 if(PROTOC_EXE)

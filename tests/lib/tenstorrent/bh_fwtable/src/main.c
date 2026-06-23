@@ -128,34 +128,8 @@ static const struct board_expected *expected_for_board_type(uint8_t board_type)
 /* Populated in suite_setup, read by every other test. */
 static const struct board_expected *expected;
 
-/* Predicate runs once BEFORE suite_setup. Returning false causes ztest to
- * SKIP the entire suite — none of the tests below run, suite_setup is never
- * called. The cheap precondition lives here so the failure mode is one
- * clean SKIP rather than a cascade of misleading per-test failures.
- *
- * Log a clear diagnostic on failure so the SKIP isn't silent in handler.log.
- */
-static bool suite_predicate(const void *state)
-{
-	ARG_UNUSED(state);
-
-	if (!device_is_ready(FWTABLE_DEV)) {
-		printk("\n*** bh_fwtable_sim precondition NOT met: fwtable device "
-		       "is not ready. ***\n"
-		       "    Likely cause: flash.bin missing boardcfg/cmfwcfg/flshinfo "
-		       "entries, or not reachable to the simulator (twister cwd).\n"
-		       "    Generate it from the repo root with:\n"
-		       "      python3 scripts/tt_boot_fs.py mkfs \\\n"
-		       "          tests/lib/tenstorrent/bh_fwtable/flash_spec.yaml \\\n"
-		       "          tests/lib/tenstorrent/bh_fwtable/flash.bin\n"
-		       "    All tests in this suite will be SKIPPED.\n\n");
-		return false;
-	}
-	return true;
-}
-
-/* Runs once after the predicate accepts, before any test. By the time this
- * executes we know the device is ready, so the read_only table is populated.
+/* Runs once before any test. The read_only table is read here; if the device
+ * failed to load, test_0_device_ready (below) flags it as a hard failure.
  */
 static void *suite_setup(void)
 {
@@ -165,6 +139,19 @@ static void *suite_setup(void)
 
 	expected = expected_for_board_type(board_type);
 	return (void *)expected;
+}
+
+/* Runs FIRST in this suite. ztest orders tests by SORT_BY_NAME on the symbol
+ * z_ztest_unit_test__<suite>__<fn>, so the "0_" prefix sorts this ahead of the
+ * content tests below. The build guarantees flash.bin exists (CMake FATAL_ERRORs
+ * when protoc is missing), so a not-ready device here is a real bh_fwtable
+ * init/load regression and must FAIL — never skip.
+ */
+ZTEST(bh_fwtable_sim, test_0_device_ready)
+{
+	zassert_true(device_is_ready(FWTABLE_DEV),
+		     "fwtable device not ready — bh_fwtable init/load (tt_bh_fwtable_load) "
+		     "failed; check the driver's -EIO/-ENOMEM/-EINVAL load paths.");
 }
 
 ZTEST(bh_fwtable_sim, test_read_only_loaded)
@@ -222,4 +209,4 @@ ZTEST(bh_fwtable_sim, test_flash_info_loaded)
 	TC_PRINT("tt_flash_version   = 0x%x\n", fi->tt_flash_version);
 }
 
-ZTEST_SUITE(bh_fwtable_sim, suite_predicate, suite_setup, NULL, NULL, NULL);
+ZTEST_SUITE(bh_fwtable_sim, NULL, suite_setup, NULL, NULL, NULL);
