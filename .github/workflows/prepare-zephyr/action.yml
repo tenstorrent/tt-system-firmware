@@ -21,8 +21,8 @@ runs:
       shell: bash
       run: |
         TOINSTALL=""
-        cmds=(curl protoc dtc)
-        pkgs=(curl protobuf-compiler device-tree-compiler)
+        cmds=(curl protoc)
+        pkgs=(curl protobuf-compiler)
 
         for ((i=0; i < ${#cmds[@]}; i++)); do
           cmd=${cmds[$i]}
