@@ -15,6 +15,8 @@ Major enhancements with this release include:
 ### Power & Performance Improvements
 - Enable process based V/F curve for p300c
 - Read GDDR temperatures more frequently as part of internal telemetry
+- Add Blackhole Kernel throttler when we reach AICLK floor (disabled by default)
+- Add throttler controls via ARC message to enable/disable kernel throttling at AICLK floor and tune the stop-NOPs frequency threshold (kernel throttling at floor is now disabled by default).
 
 ## Grendel
 
