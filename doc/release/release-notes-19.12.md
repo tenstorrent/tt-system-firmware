@@ -19,6 +19,10 @@ Major enhancements with this release include:
 ### Telemetry
 - Carve out a region of memory for Metal runtime telemetry and publish its address and size via `SCRATCH_RAM[22:23]`.
 
+### GDDR
+- Change NOC endpoint used to load GDDR0 MRISC from 0 to 2 (NOC node 0-11)
+- Report the NOC endpoint each GDDR instance loads MRISC on in telemetry at `TAG_GDDR_MRISC_NOC2AXI_PORT`
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->
