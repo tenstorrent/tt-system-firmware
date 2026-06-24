@@ -29,6 +29,8 @@ struct CntlInitV2Param {
 	uint64_t region0_mask;
 	uint64_t region2_mask;
 	uint64_t region4_mask;
+	uint32_t gen3_eq_pset_req_vec;
+	uint8_t gen3_eq_fb_mode;
 };
 
 /* Verify prototype of ArcDmaTransfer, because it's used by libpciesd.a. */

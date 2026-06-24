@@ -75,6 +75,8 @@ message FwTable {
     uint32 pcie_bar4_size = 5;
     PcieMode pcie_mode = 6;
     uint32 num_serdes = 7;
+    uint32 pcie_gen3_eq_pset_req_vec = 8;
+    uint32 pcie_gen3_eq_fb_mode = 9;
 
     enum PcieMode {
       DISABLED = 0;

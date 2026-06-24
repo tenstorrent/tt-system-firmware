@@ -53,6 +53,8 @@ pci0_property_table {
   pcie_bar4_size: 0
   pcie_mode: DISABLED
   num_serdes: 0
+  pcie_gen3_eq_pset_req_vec: 992
+  pcie_gen3_eq_fb_mode: 1
 }
 
 pci1_property_table {
@@ -62,6 +64,8 @@ pci1_property_table {
   pcie_bar4_size: 32768
   pcie_mode: EP
   num_serdes: 2
+  pcie_gen3_eq_pset_req_vec: 992
+  pcie_gen3_eq_fb_mode: 1
 }
 
 eth_property_table {

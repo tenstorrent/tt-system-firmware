@@ -248,6 +248,8 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, const ReadOnly *rotable,
 	*param = (struct CntlInitV2Param){
 		.board_id = rotable->board_id,
 		.vendor_id = rotable->vendor_id,
+		.gen3_eq_pset_req_vec = pcitable->pcie_gen3_eq_pset_req_vec,
+		.gen3_eq_fb_mode = pcitable->pcie_gen3_eq_fb_mode,
 		.serdes_inst = pcitable->num_serdes,
 		.max_pcie_speed = pcitable->max_pcie_speed,
 		.pcie_inst = pcie_inst,
@@ -485,6 +487,8 @@ static int pcie_init(void)
 			.pcie_bar0_size = PCIE_BAR0_SIZE_DEFAULT_MB,
 			.pcie_bar2_size = PCIE_BAR2_SIZE_DEFAULT_MB,
 			.pcie_bar4_size = PCIE_BAR4_SIZE_DEFAULT_MB,
+			.pcie_gen3_eq_pset_req_vec = 0x3E0,
+			.pcie_gen3_eq_fb_mode = 1,
 		};
 		pci1_property_table = (FwTable_PciPropertyTable){
 			.pcie_mode = FwTable_PciPropertyTable_PcieMode_EP,
@@ -492,6 +496,8 @@ static int pcie_init(void)
 			.pcie_bar0_size = PCIE_BAR0_SIZE_DEFAULT_MB,
 			.pcie_bar2_size = PCIE_BAR2_SIZE_DEFAULT_MB,
 			.pcie_bar4_size = PCIE_BAR4_SIZE_DEFAULT_MB,
+			.pcie_gen3_eq_pset_req_vec = 0x3E0,
+			.pcie_gen3_eq_fb_mode = 1,
 		};
 	} else {
 		pci0_property_table = tt_bh_fwtable_get_fw_table(fwtable_dev)->pci0_property_table;
