@@ -28,7 +28,7 @@ static bool doppler_t2;
 static bool doppler_t3;
 static const bool thermal_throttling = true;
 
-static bool kernel_throttler_at_aiclk_floor_enabled = true;
+static bool kernel_throttler_at_aiclk_floor_enabled;
 static uint32_t kernel_throttler_stop_nops_freq;
 
 #define kThrottlerAiclkScaleFactor 500.0F
