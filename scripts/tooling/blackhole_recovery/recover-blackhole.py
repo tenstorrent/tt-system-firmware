@@ -116,6 +116,14 @@ def set_board_serial(hex_file, board_name, board_id):
     return hex_file
 
 
+def cards_on_bus(board_config):
+    """Return True only if every ASIC's device node is present on the PCIe bus."""
+    return all(
+        Path(f"/dev/tenstorrent/{pci_idx}").exists()
+        for pci_idx in range(len(board_config))
+    )
+
+
 def check_card_status(board_config):
     """Check if the card is in a good state"""
     for pci_idx, config in enumerate(board_config):
@@ -137,7 +145,7 @@ def check_card_status(board_config):
         except BaseException:
             print(f"Error accessing card with pyluwen for ASIC {pci_idx}")
             return False
-        return True
+    return True
 
 
 def main():
@@ -231,19 +239,25 @@ def main():
             session.board.target.reset_and_halt()
             session.board.target.resume()
             session.close()
-        # DMFW will always update, so delay for 20 seconds to allow for that
-        print("Waiting 20 seconds for DMFW to update...")
-        pcie_utils.rescan_pcie()
-        timeout = 20  # seconds
+        # After flashing, the card resets and the DMFW self-updates. That cycle
+        # takes the PCIe endpoint down and back up, so the card transiently drops
+        # off the bus before re-enumerating. Poll until it comes back and is fully
+        # responsive. Start with one bus rescan, then only rescan again when the
+        # card is actually missing: rescanning removes and re-adds the device,
+        # which can race with the card's own re-enumeration if the link is still training.
+        print("Waiting for DMFW update and PCIe re-enumeration...")
+        timeout = 30  # seconds; DMFW update + double PCIe link train can be slow
         timeout_ts = time.time() + timeout
+        pcie_utils.rescan_pcie()
         while time.time() < timeout_ts:
             if check_card_status(BOARD_ID_MAP[args.board]):
                 print("Card recovered successfully")
                 return
-            # Otherwise, try rescanning the PCIe bus
-            pcie_utils.rescan_pcie()
-            # Wait a bit and try again
-            time.sleep(1)
+            # Only rescan when the card is off the bus; otherwise give the link
+            # time to finish training and the card to become responsive.
+            if not cards_on_bus(BOARD_ID_MAP[args.board]):
+                pcie_utils.rescan_pcie()
+            time.sleep(2)
         # If we get here, the card did not recover
         raise RuntimeError("Card did not recover successfully, try a reboot?")
 
