@@ -215,9 +215,8 @@ uint32_t GetEthFwVersion(uint32_t ring)
 		if (IS_BIT_SET(tile_enable.eth_enabled, eth_inst)) {
 			SetupEthTlb(eth_inst, ring, ETH_FW_BASE_ADDR);
 
-			volatile uint32_t *eth_fw_version = GetTlbWindowAddr(
-				ring, ETH_SETUP_TLB, ETH_FW_BASE_ADDR + ETH_FW_VERSION_ADDR_OFFSET);
-			return *eth_fw_version;
+			return NOC2AXIRead32(ring, ETH_SETUP_TLB,
+					     ETH_FW_BASE_ADDR + ETH_FW_VERSION_ADDR_OFFSET);
 		}
 	}
 
@@ -227,7 +226,7 @@ uint32_t GetEthFwVersion(uint32_t ring)
 
 uint32_t GetEthHeartbeatStatus(uint32_t ring)
 {
-	/* Look through all the enabled ETH tiles, and read the heartbeatfrom each tile's L1
+	/* Look through all the enabled ETH tiles, and read the heartbeat from each tile's L1
 	 * Compare the heartbeat status versus the saved heartbeat to see if it's still alive.
 	 * Accumulate the heartbeat status of all the tiles into a bitmask
 	 */
@@ -237,12 +236,12 @@ uint32_t GetEthHeartbeatStatus(uint32_t ring)
 		if (IS_BIT_SET(tile_enable.eth_enabled, eth_inst)) {
 			SetupEthTlb(eth_inst, ring, ETH_HEARTBEAT_ADDR);
 
-			volatile uint32_t *heartbeat =
-				GetTlbWindowAddr(ring, ETH_SETUP_TLB, ETH_HEARTBEAT_ADDR);
-			if (saved_heartbeat[eth_inst] != *heartbeat) {
+			uint32_t heartbeat = NOC2AXIRead32(ring, ETH_SETUP_TLB, ETH_HEARTBEAT_ADDR);
+
+			if (saved_heartbeat[eth_inst] != heartbeat) {
 				heartbeat_status |= BIT(eth_inst);
 			}
-			saved_heartbeat[eth_inst] = *heartbeat;
+			saved_heartbeat[eth_inst] = heartbeat;
 		}
 	}
 
@@ -261,9 +260,9 @@ uint32_t GetEthLinkStatus(uint32_t ring)
 		if (IS_BIT_SET(tile_enable.eth_enabled, eth_inst)) {
 			SetupEthTlb(eth_inst, ring, ETH_PCS_STATUS);
 
-			volatile uint32_t *pcs_status =
-				GetTlbWindowAddr(ring, ETH_SETUP_TLB, ETH_PCS_STATUS);
-			if (*pcs_status) {
+			uint32_t pcs_status = NOC2AXIRead32(ring, ETH_SETUP_TLB, ETH_PCS_STATUS);
+
+			if (pcs_status) {
 				link_status |= BIT(eth_inst);
 			}
 		}
