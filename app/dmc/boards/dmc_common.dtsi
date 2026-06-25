@@ -18,6 +18,11 @@
 		flash-dev = DMC_FLASH_DEV;
 	};
 
+	efuse: efuse {
+		compatible = "tenstorrent,bh-efuse-emul";
+		status = "okay";
+	};
+
 	pll0: pll0 {
 		compatible = "tenstorrent,clock-control-emul";
 		status = "okay";
