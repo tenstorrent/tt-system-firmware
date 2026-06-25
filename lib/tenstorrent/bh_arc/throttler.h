@@ -14,5 +14,6 @@ void CalculateThrottlers(void);
 int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size);
 uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled);
 uint8_t ThrottlerSetKernelThrottlerStopFreq(uint32_t frequency);
+uint32_t GetStartNOPCount(void);
 
 #endif

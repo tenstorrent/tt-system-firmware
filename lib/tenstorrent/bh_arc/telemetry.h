@@ -379,12 +379,19 @@
  */
 #define TAG_KERNEL_THROTTLER 75
 
+/** @brief Number of times kernel NOP throttling has started.
+ *
+ * Counts the transitions into the throttled (NOP) state since boot, derived
+ * from the throttler's transition counter. Monotonically increasing.
+ */
+#define TAG_NOP_START_COUNT 76
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 76
+#define TAG_COUNT 77
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)

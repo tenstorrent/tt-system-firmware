@@ -33,6 +33,7 @@
 #include "reg.h"
 #include "regulator.h"
 #include "status_reg.h"
+#include "throttler.h"
 #include "telemetry_internal.h"
 #include "gddr.h"
 #include "eth.h"
@@ -170,6 +171,7 @@ static struct telemetry_table telemetry_table = {
 		[68] = {TAG_GDDR_WEST_IO_POWER, TELEM_OFFSET(TAG_GDDR_WEST_IO_POWER)},
 		[69] = {TAG_GDDR_EAST_IO_POWER, TELEM_OFFSET(TAG_GDDR_EAST_IO_POWER)},
 		[70] = {TAG_KERNEL_THROTTLER, TELEM_OFFSET(TAG_KERNEL_THROTTLER)},
+		[71] = {TAG_NOP_START_COUNT, TELEM_OFFSET(TAG_NOP_START_COUNT)},
 	},
 };
 /* clang-format on */
@@ -541,6 +543,7 @@ static void update_telemetry(void)
 	telemetry[TAG_GDDR_WEST_IO_POWER] = telemetry_internal_data.gddr_io_power_west;
 	/* reported in W, truncated to uint32_t */
 	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
+	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);
 }

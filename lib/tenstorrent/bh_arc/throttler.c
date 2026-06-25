@@ -530,4 +530,12 @@ static uint8_t set_tdp_limit_handler(const union request *request, struct respon
 	return 0;
 }
 
+uint32_t GetStartNOPCount(void)
+{
+	/* throttle_counter increments on every throttle-state change.
+	 * Need to convert transition count to NOP start count
+	 */
+	return (throttle_counter + 1) >> 1;
+}
+
 REGISTER_MESSAGE(TT_SMC_MSG_SET_TDP_LIMIT, set_tdp_limit_handler);
