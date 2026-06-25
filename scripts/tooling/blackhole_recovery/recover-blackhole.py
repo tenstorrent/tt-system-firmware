@@ -192,6 +192,9 @@ def main():
                 pyocd_config, args.adapter_id, args.no_prompt
             )
             session.open()
+            # Reset and halt the DMC so its firmware is not running on (and
+            # holding) the shared SPI bus while we drive the flash loader
+            session.board.target.reset_and_halt()
             # Erase the flash
             print(f"Erasing flash on ASIC {idx}...")
             FlashEraser(session, FlashEraser.Mode.CHIP).erase()
@@ -219,6 +222,9 @@ def main():
                 pyocd_config, args.adapter_id, args.no_prompt
             )
             session.open()
+            # Reset and halt the DMC before programming for the same reason as
+            # the erase loop: keep firmware off the shared SPI bus
+            session.board.target.reset_and_halt()
             # Program the recovery hex
             print(f"Flashing {recovery_hex} to ASIC {idx}...")
             FileProgrammer(session).program(str(recovery_hex), file_format="hex")
