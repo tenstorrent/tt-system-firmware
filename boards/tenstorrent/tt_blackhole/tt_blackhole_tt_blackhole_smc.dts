@@ -55,9 +55,9 @@
 		use-4byte-addressing;
 		mspi-endian = "MSPI_BIG_ENDIAN";
 		quad-enable-requirements = "NONE";
-		read-command = <0xEC>;
+		read-command = <0xec>;
 		rx-dummy = <10>;
-		write-command = <0x3E>;
+		write-command = <0x3e>;
 
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -191,6 +191,13 @@
 	status = "okay";
 };
 
+/ {
+	efuse: efuse {
+		compatible = "tenstorrent,bh-efuse";
+		status = "okay";
+	};
+};
+
 &nv_flash {
-	#include "tt_blackhole_fixed_partitions.dtsi"
+#include "tt_blackhole_fixed_partitions.dtsi"
 };
