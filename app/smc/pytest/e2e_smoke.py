@@ -90,6 +90,14 @@ ARC_START_TIME_REG_ADDR = 0x80030440
 ARC_HANG_PC_REG_ADDR = 0x80030454
 TELEMETRY_DATA_REG_ADDR = 0x80030430
 
+# Functional efuse MMIO mapping (32-bit words)
+EFUSE_DFT0_MEM_BASE_ADDR = 0x80040000
+EFUSE_BOX_ADDR_ALIGN = 0x2000
+EFUSE_BOX_FUNC = 2
+
+FUSE_ASIC_ID_LOW_START_BIT = 1600
+FUSE_ASIC_ID_HIGH_START_BIT = 5568
+
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
 TRISC0_RESET_PC_ADDR = 0xFFB12228
@@ -128,6 +136,8 @@ TAG_ETH_LIVE_STATUS = 21
 TAG_CM_FW_VERSION = 29
 TAG_ENABLED_ETH = 35
 TAG_INPUT_POWER = 54
+TAG_ASIC_ID_HIGH = 61
+TAG_ASIC_ID_LOW = 62
 TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
 
@@ -143,6 +153,11 @@ def read_telem(arc_chip, telem_idx):
     telem = arc_chip.axi_read32(table_addr + telem_idx * 4)
 
     return telem
+
+
+def read_functional_efuse_word(arc_chip, word_idx):
+    func_base = EFUSE_DFT0_MEM_BASE_ADDR + EFUSE_BOX_FUNC * EFUSE_BOX_ADDR_ALIGN
+    return arc_chip.axi_read32(func_base + word_idx * 4)
 
 
 def convert_telemetry_to_float(value):
@@ -787,6 +802,29 @@ def test_fw_bundle_version(arc_chip_dut, asic_id):
         f"Firmware bundle version mismatch: {telemetry.fw_bundle_version:#010x} != {exp_bundle_version:#010x}"
     )
     logger.info(f"FW bundle version: {telemetry.fw_bundle_version:#010x}")
+
+
+def test_telemetry_asic_id_from_functional_efuse(arc_chip_dut, asic_id):
+    """Validate ASIC ID telemetry tags are sourced from functional efuse words."""
+    arc_chip = pyluwen.detect_chips()[asic_id]
+
+    asic_id_low_word_idx = FUSE_ASIC_ID_LOW_START_BIT // 32
+    asic_id_high_word_idx = FUSE_ASIC_ID_HIGH_START_BIT // 32
+
+    expected_low = read_functional_efuse_word(arc_chip, asic_id_low_word_idx)
+    expected_high = read_functional_efuse_word(arc_chip, asic_id_high_word_idx)
+
+    telem_high = read_telem(arc_chip, TAG_ASIC_ID_HIGH)
+    telem_low = read_telem(arc_chip, TAG_ASIC_ID_LOW)
+
+    assert telem_high == expected_high, (
+        f"TAG_ASIC_ID_HIGH mismatch: telemetry=0x{telem_high:08x}, "
+        f"efuse=0x{expected_high:08x}"
+    )
+    assert telem_low == expected_low, (
+        f"TAG_ASIC_ID_LOW mismatch: telemetry=0x{telem_low:08x}, "
+        f"efuse=0x{expected_low:08x}"
+    )
 
 
 def smi_reset_test(asic_id):
