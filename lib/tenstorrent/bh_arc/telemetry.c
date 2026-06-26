@@ -172,6 +172,7 @@ static struct telemetry_table telemetry_table = {
 		[69] = {TAG_GDDR_EAST_IO_POWER, TELEM_OFFSET(TAG_GDDR_EAST_IO_POWER)},
 		[70] = {TAG_KERNEL_THROTTLER, TELEM_OFFSET(TAG_KERNEL_THROTTLER)},
 		[71] = {TAG_NOP_START_COUNT, TELEM_OFFSET(TAG_NOP_START_COUNT)},
+		[72] = {TAG_NOP_ON_DURATION, TELEM_OFFSET(TAG_NOP_ON_DURATION)},
 	},
 };
 /* clang-format on */
@@ -544,6 +545,7 @@ static void update_telemetry(void)
 	/* reported in W, truncated to uint32_t */
 	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
 	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
+	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telem_update_interval);
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);
 }

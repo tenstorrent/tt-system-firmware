@@ -170,6 +170,10 @@ static uint32_t throttle_counter;
 static const uint32_t kKernelThrottleAddress = 0x10;
 static bool tensixes_enabled = true;
 
+static uint32_t nop_on_since_ms;      /* uptime when NOP last turned on */
+static uint32_t nop_on_accum_ms;      /* total ms NOP's been on until now */
+static uint32_t prev_nop_on_accum_ms; /* total ms NOP's been on until prev telemetry update */
+
 static void BroadcastKernelThrottleState(void)
 {
 	const uint8_t kNocRing = 0;
@@ -186,6 +190,9 @@ static void BroadcastKernelThrottleState(void)
 static void InitKernelThrottling(void)
 {
 	throttle_counter = 0;
+	nop_on_since_ms = 0;
+	nop_on_accum_ms = 0;
+	prev_nop_on_accum_ms = 0;
 
 	BroadcastKernelThrottleState();
 }
@@ -200,6 +207,16 @@ static void SendKernelThrottlingMessage(bool throttle)
 	throttle_counter++;
 	if ((throttle_counter & 1) != throttle) {
 		throttle_counter++;
+	}
+
+	/* Accumulate NOP-on time: stamp the start on the rising edge, bank the
+	 * elapsed interval on the falling edge. Centralised here so every edge
+	 * (kernel throttler, Doppler, and feature-disable paths) is accounted for.
+	 */
+	if (throttle) {
+		nop_on_since_ms = k_uptime_get_32();
+	} else {
+		nop_on_accum_ms += k_uptime_get_32() - nop_on_since_ms;
 	}
 
 	BroadcastKernelThrottleState();
@@ -536,6 +553,46 @@ uint32_t GetStartNOPCount(void)
 	 * Need to convert transition count to NOP start count
 	 */
 	return (throttle_counter + 1) >> 1;
+}
+
+uint32_t GetNOPOnAccumulatedTime(void)
+{
+	/* If NOPs are currently enabled, add time since they were last turned on to
+	 * accumulated time. Wraps at ~49.7 days of cumulative NOP-on time; consumers
+	 * must difference samples with unsigned (modular) arithmetic.
+	 */
+	if (kernel_nops_enabled) {
+		return nop_on_accum_ms + (k_uptime_get_32() - nop_on_since_ms);
+	} else {
+		return nop_on_accum_ms;
+	}
+}
+
+uint32_t GetNOPOnDuration(uint32_t window_ms)
+{
+	/* NOP-on time accrued since the previous call. Unsigned subtraction stays
+	 * correct across accumulator wrap, since one window's delta is tiny relative
+	 * to the 32-bit millisecond range.
+	 */
+	uint32_t accumulated_time = GetNOPOnAccumulatedTime();
+	uint32_t duration = accumulated_time - prev_nop_on_accum_ms;
+
+	prev_nop_on_accum_ms = accumulated_time;
+
+	/* On the first call prev_nop_on_accum_ms is still 0 from init, so the delta is
+	 * the entire NOP-on time banked since boot rather than a single window. Clamp
+	 * that bootstrap sample to the window length. `seeded` makes this one-shot:
+	 * later samples are returned unclamped so their running sum stays faithful to
+	 * the true cumulative NOP-on time.
+	 */
+	static bool seeded;
+
+	if (!seeded) {
+		seeded = true;
+		duration = MIN(duration, window_ms);
+	}
+
+	return duration;
 }
 
 REGISTER_MESSAGE(TT_SMC_MSG_SET_TDP_LIMIT, set_tdp_limit_handler);
