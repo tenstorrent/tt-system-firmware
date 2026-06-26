@@ -21,6 +21,21 @@
 
 LOG_MODULE_REGISTER(tt_shell, CONFIG_LOG_DEFAULT_LEVEL);
 
+static int parse_u32_arg(const char *arg, uint32_t *value)
+{
+	char *endptr;
+	unsigned long parsed;
+
+	errno = 0;
+	parsed = strtoul(arg, &endptr, 0);
+	if (errno != 0 || endptr == arg || *endptr != '\0' || parsed > UINT32_MAX) {
+		return -EINVAL;
+	}
+
+	*value = (uint32_t)parsed;
+	return 0;
+}
+
 static int l2cpu_enable_handler(const struct shell *sh, size_t argc, char **argv)
 {
 	bool on = false;
@@ -151,21 +166,6 @@ static int telem_handler(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
-#ifdef CONFIG_TT_BH_ARC_MSGQUEUE
-static int parse_u32_arg(const char *arg, uint32_t *value)
-{
-	char *endptr;
-	unsigned long parsed;
-
-	errno = 0;
-	parsed = strtoul(arg, &endptr, 0);
-	if (errno != 0 || endptr == arg || *endptr != '\0' || parsed > UINT32_MAX) {
-		return -EINVAL;
-	}
-
-	*value = (uint32_t)parsed;
-	return 0;
-}
 
 static int msg_handler(const struct shell *sh, size_t argc, char **argv)
 {
@@ -204,7 +204,6 @@ static int msg_handler(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
-#endif
 
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_tt_commands, SHELL_CMD_ARG(mrisc_power, NULL, "[off|on]", mrisc_power_handler, 2, 0),
@@ -212,9 +211,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 	SHELL_CMD_ARG(l2cpu_power, NULL, "[off|on]", l2cpu_enable_handler, 2, 0),
 	SHELL_CMD_ARG(asic_state, NULL, "[|0|3]", asic_state_handler, 1, 1),
 	SHELL_CMD_ARG(telem, NULL, "<Telemetry Index> [|x|f|d]", telem_handler, 2, 1),
-#ifdef CONFIG_TT_BH_ARC_MSGQUEUE
 	SHELL_CMD_ARG(msg, NULL, "<cmd> [data1 ... data7]", msg_handler, 2, 7),
-#endif
 	SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(tt, &sub_tt_commands, "Tensorrent commands", NULL);
