@@ -454,7 +454,7 @@ static void msgqueue_msi_overflow_handler(void *arg)
 }
 #endif
 
-static int init_msgqueue(void)
+void init_msgqueue(void)
 {
 	prepare_msg_queue();
 
@@ -472,7 +472,4 @@ static int init_msgqueue(void)
 		(volatile STATUS_BOOT_STATUS0_reg_u *)STATUS_BOOT_STATUS0_REG_ADDR;
 	boot_status0->f.msg_queue_ready = 1;
 #endif
-	return 0;
 }
-
-SYS_INIT_APP(init_msgqueue);

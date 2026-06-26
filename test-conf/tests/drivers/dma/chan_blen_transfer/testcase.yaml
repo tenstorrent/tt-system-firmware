@@ -2,8 +2,6 @@ common:
   tags:
     - smoke
     - dma
-  extra_configs:
-    - CONFIG_TT_BH_ARC_MSGQUEUE=n
 tests:
   drivers.dma.chan_blen_transfer.tt_mimir_smc:
     platform_allow:

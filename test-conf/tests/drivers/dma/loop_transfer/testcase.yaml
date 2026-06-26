@@ -2,8 +2,6 @@ common:
   tags:
     - smoke
     - dma
-  extra_configs:
-    - CONFIG_TT_BH_ARC_MSGQUEUE=n
   platform_allow:
     - tt_blackhole@p100a/tt_blackhole/smc
     - tt_blackhole@p150a/tt_blackhole/smc

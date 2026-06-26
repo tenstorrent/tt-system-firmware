@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include <app_version.h>
+#include <tenstorrent/msgqueue.h>
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
 #include <zephyr/init.h>
@@ -58,6 +59,8 @@ int main(void)
 		}
 	}
 #endif
+
+	init_msgqueue();
 
 #ifdef CONFIG_BH_FWTABLE
 	init_telemetry(APPVERSION);

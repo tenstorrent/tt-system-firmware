@@ -1065,6 +1065,7 @@ int msgqueue_request_push(uint32_t msgqueue_id, const union request *request);
 int msgqueue_request_pop(uint32_t msgqueue_id, union request *request);
 int msgqueue_response_push(uint32_t msgqueue_id, const struct response *response);
 int msgqueue_response_pop(uint32_t msgqueue_id, struct response *response);
+void init_msgqueue(void);
 
 #ifdef __cplusplus
 }
