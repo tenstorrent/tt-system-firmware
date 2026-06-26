@@ -7,9 +7,15 @@ manifest:
       url-base: https://github.com/tenstorrent
     - name: tenstorrent-forks
       url-base: https://github.com/tenstorrent-forks
+    - name: openbmc
+      url-base: https://github.com/openbmc
 
   # zephyr-keep-sorted-start re(^\s+\- name:)
   projects:
+    - name: libpldm
+      remote: openbmc
+      path: modules/lib/libpldm
+      revision: 1c4a11442648a7ac670167b4d306a70376a35cc2
     - name: librpmi
       remote: tenstorrent-forks
       path: modules/lib/librpmi
