@@ -27,3 +27,4 @@ anytree
 
 # Used to support both Markdown and reStructuredText in Sphinx
 myst_parser
+sphinxcontrib-mermaid

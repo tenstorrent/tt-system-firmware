@@ -10,3 +10,4 @@ Firmware Services
    tracing/index.rst
    telemetry/index.rst
    runtime_telemetry/index.rst
+   pldm/index.rst
