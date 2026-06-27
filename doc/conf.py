@@ -31,6 +31,7 @@ extensions = [
     "sphinx_tabs.tabs",
     "zephyr.application",
     "sphinx.ext.graphviz",
+    "sphinxcontrib.mermaid",
     "sphinx_sitemap",
 ]
 
