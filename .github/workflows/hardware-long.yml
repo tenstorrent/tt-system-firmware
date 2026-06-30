@@ -99,14 +99,22 @@ jobs:
             zephyr/twister-*e2e*/**/update.fwbundle
             zephyr/twister-*e2e*/**/recording.csv
 
-      - name: Print RTT logs
-        if: ${{ failure() }}
+      - name: Print DMC RTT logs
+        # DMC RTT goes over the STLink/SWD adapter; galaxy/loudbox/quietbox2 have none.
+        if: >-
+          ${{ failure()
+          && matrix.config.board != 'bh-galaxy'
+          && matrix.config.board != 'loudbox'
+          && matrix.config.board != 'quietbox2' }}
         working-directory: tt-system-firmware
         run: |
           echo "DMC RTT logs:"
           python3 ./scripts/dmc_rtt.py -n
-          echo "SMC RTT logs:"
-          python3 ./scripts/smc_console.py --rtt -n
+
+      - name: Dump SMC state
+        if: ${{ failure() }}
+        working-directory: tt-system-firmware
+        run: |
           echo "SMC state dump:"
           python3 ./scripts/dump_smc_state.py
 

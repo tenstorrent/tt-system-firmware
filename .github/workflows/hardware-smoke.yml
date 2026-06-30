@@ -115,7 +115,6 @@ jobs:
         run: |
           tt-system-firmware/scripts/ci/run-smoke.sh -t smc -p $ASIC_ID ${{ matrix.config.board }}
 
-
       - name: Upload SMC Smoke Tests
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -140,8 +139,6 @@ jobs:
         run: |
           echo "DMC RTT logs:"
           python3 ./scripts/dmc_rtt.py -n
-          echo "SMC RTT logs:"
-          python3 ./scripts/smc_console.py --rtt -n
           echo "SMC state dump:"
           python3 ./scripts/dump_smc_state.py --asic-id $ASIC_ID
 
@@ -255,8 +252,6 @@ jobs:
         run: |
           echo "DMC RTT logs:"
           python3 ./scripts/dmc_rtt.py -n
-          echo "SMC RTT logs:"
-          python3 ./scripts/smc_console.py --rtt -n
           echo "SMC state dump:"
           python3 ./scripts/dump_smc_state.py --asic-id $ASIC_ID
 
