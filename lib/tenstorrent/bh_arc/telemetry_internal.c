@@ -48,17 +48,19 @@ void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data)
 				(struct sensor_chan_spec){SENSOR_CHAN_PVT_TT_BH_TS_AVG, 0}, NULL, 1,
 				&avg_tmp);
 
+		internal_data.asic_temperature = avg_tmp;
+
 		/* Get all dynamically updated values */
+#ifndef CONFIG_TT_BH_ARC_EMUL
 		internal_data.vcore_voltage = get_vcore();
 		AVSReadCurrent(AVS_VCORE_RAIL, &internal_data.vcore_current);
 		internal_data.vcore_power =
 			internal_data.vcore_current * internal_data.vcore_voltage * 0.001f;
-		internal_data.asic_temperature = avg_tmp;
 		internal_data.gddr_io_power_west = GetGddrWestIoPower();
 		internal_data.gddr_io_power_east = GetGddrEastIoPower();
 
 		(void)get_gddr_temps(&internal_data.gddr_temps);
-
+#endif
 		/* reftime was updated to the current uptime by the k_uptime_delta() call */
 		last_update_time = reftime;
 	}
