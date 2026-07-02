@@ -37,12 +37,14 @@
 		status = "okay";
 	};
 
-	pvt: pvt@80030700 {
-		compatible = "tenstorrent,bh-pvt";
-		reg = <0x80030700 0x4>;
+	pvt: pvt {
+		compatible = "tenstorrent,bh-pvt-emul";
 		num_pd = <16>;
 		num_vm = <8>;
 		num_ts = <8>;
+		pd-raw = <15300>; /* ~1200 MHz */
+		vm-raw = <11795>; /* ~0.95 V */
+		ts-raw = <1742>;  /* ~25 C */
 		status = "okay";
 	};
 
