@@ -28,6 +28,11 @@
 		status = "okay";
 	};
 
+	pll1: pll1 {
+		compatible = "tenstorrent,clock-control-emul";
+		status = "okay";
+	};
+
 	pll4: pll4 {
 		compatible = "tenstorrent,clock-control-emul";
 		status = "okay";
