@@ -34,8 +34,9 @@ find_artifact() {
 
 cd vdk-utils
 TWISTER_PLATFORM_DIR=$OUTDIR/tt_mimir_tt_mimir_smc
-ZEPHYR_ELF=$(find_artifact "$TWISTER_PLATFORM_DIR" \
-	"*/tt-system-firmware/tests/drivers/tt_smc_remoteproc/drivers.tt_smc_remoteproc.bl1_primary/tt_smc_remoteproc/zephyr/zephyr.elf")
+ELF_PATTERN="*/tt-system-firmware/tests/drivers/tt_smc_remoteproc/"
+ELF_PATTERN+="drivers.tt_smc_remoteproc.bl1_primary/tt_smc_remoteproc/zephyr/zephyr.elf"
+ZEPHYR_ELF=$(find_artifact "$TWISTER_PLATFORM_DIR" "$ELF_PATTERN")
 PROD_ROM_ELF=../tt_smc/firmware/prod_rom-1.1.1-20260117-794e39bc/build/release/bin/prod_rom.elf
 # Watch this command until it outputs "Test PASSED"
 mkdir ../vdk-logs
@@ -60,8 +61,9 @@ sed -i "s/run_args: +COCOTB_TEST=smc_zephyr_binary_loader_test"\
 " +COCOTB_TEST=smc_zephyr_binary_loader_test"\
 " +FW_TEST=grendel_smc_hello_world_smp_zephyr"\
 " +FW_TEST_TIMEOUT=1000000000/g" tb_uvm/yaml/regression_smc_chiplet.yaml
-UART_BIN=$(find_artifact "$TWISTER_PLATFORM_DIR" \
-	"*/tests/drivers/uart/uart_elementary/drivers.uart.uart_elementary.grendel_uart/zephyr/zephyr.bin")
+UART_PATTERN="*/tests/drivers/uart/uart_elementary/"
+UART_PATTERN+="drivers.uart.uart_elementary.grendel_uart/zephyr/zephyr.bin"
+UART_BIN=$(find_artifact "$TWISTER_PLATFORM_DIR" "$UART_PATTERN")
 cp "$UART_BIN" \
    ./firmware/zephyr/grendel_smc_hello_world_smp_zephyr/grendel_smc_hello_world_smp_zephyr.bin
 ttem tb_uvm/yaml/regression_smc_chiplet.yaml smc_zephyr_hello_world_smp_test \
