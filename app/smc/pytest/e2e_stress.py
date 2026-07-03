@@ -505,8 +505,8 @@ def test_power_virus(arc_chip_dut, asic_id):
 )
 def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
     """
-    Reset every non-harvested tensix tile, then run tt-burnin and check
-    that it exits successfully.
+    Reset every non-harvested Tensix tile, then run tt-burnin and check
+    it exits successfully.
     """
     arc_chip = pyluwen.detect_chips()[asic_id]
 
@@ -517,9 +517,9 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
 
     # We want to test the tensix reset message on low power.
     # Set high power after the message to allow NOC read/write to function properly.
+    logger.info(f"Resetting {len(all_tiles)} Tensix tiles")
     arc_chip.set_power_state("low")
     for noc_x, noc_y in all_tiles:
-        logger.info(f"Resetting ({noc_x},{noc_y})")
         response = arc_chip.arc_msg(
             TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET,
             arg0=noc_x | (noc_y << 8),
@@ -528,15 +528,46 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
             f"Tensix ({noc_x}, {noc_y}) reset failed with {response[1]}"
         )
     arc_chip.set_power_state("high")
+    logger.info("  Succeeded")
 
-    logger.info(f"Reset {len(all_tiles)} tensix tiles, starting burnin")
+    duration = 180
+    logger.info(f"Running tt-burnin for {duration}s")
 
-    result = subprocess.run(
+    burnin_process = subprocess.Popen(
         ["tt-burnin", "--no-reset"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        timeout=300,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
-    logger.info(f"tt-burnin exited with code {result.returncode}")
-    assert result.returncode == 0, "tt-burnin failed after tensix reset"
+    terminated_early = False
+    try:
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            if burnin_process.poll() is not None:
+                terminated_early = True
+                break
+            time.sleep(1.0)
+    finally:
+        if burnin_process.poll() is None:
+            # Send enter key to stop tt-burnin gracefully
+            try:
+                burnin_process.stdin.write(b"\n")
+                burnin_process.stdin.flush()
+                burnin_process.wait(timeout=5)
+            except (subprocess.TimeoutExpired, BrokenPipeError):
+                logger.warning(
+                    "tt-burnin did not terminate gracefully, killing process"
+                )
+                burnin_process.terminate()
+                try:
+                    burnin_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    burnin_process.kill()
+                    burnin_process.wait()
+
+    assert not terminated_early, "tt-burnin terminated early"
+    assert burnin_process.returncode == 0, (
+        f"tt-burnin failed with {burnin_process.returncode}"
+    )
+    logger.info("  Succeeded")

@@ -281,7 +281,10 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 
 	bh_power_state_get(BH_POWER_DOMAIN_TENSIX, &power_state);
 	if (!power_state) {
-		SetSingleTileClockGate(phys_x, phys_y, true);
+		/* ARC NOC translation has been restored above, so (like the
+		 * tensix_inject_instruction call) use the logical coordinates.
+		 */
+		SetSingleTileClockGate(noc_x, noc_y, true);
 	}
 
 	rsp->data[0] = 0;
