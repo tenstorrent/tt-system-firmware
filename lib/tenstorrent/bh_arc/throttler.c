@@ -19,6 +19,7 @@
 #include "telemetry.h"
 #include "noc2axi.h"
 #include "tensix_state_msg.h"
+#include <tenstorrent/bh_arc.h>
 
 static uint32_t power_limit;
 
@@ -40,6 +41,9 @@ static uint32_t kernel_throttler_stop_nops_freq_default;
 
 #define kThrottlerAiclkScaleFactor 500.0F
 #define DEFAULT_BOARD_POWER_LIMIT  150
+
+#define GDDR_NOP_TEMP       GDDR_THERM_TRIP_TEMP /* engage NOPs at/above this GDDR temp */
+#define GDDR_NOP_HYSTERESIS 2 /* release NOPs once temp drops this far below engage */
 
 LOG_MODULE_REGISTER(throttler);
 
@@ -319,6 +323,28 @@ static uint16_t *board_power_history_cursor = board_power_history;
 static uint32_t board_power_sum;
 static bool kernel_nops_enabled;
 
+/* Kernel NOPs are a single shared lever driven by independent requesters.
+ * Each source owns exactly one bit with NOP engagement based on the unionized value.
+ */
+static union {
+	uint32_t u32_all;
+	struct {
+		uint32_t doppler: 1;
+		uint32_t kernel_throttler: 1;
+		uint32_t gddr_thermal: 1;
+	};
+} nop_requests;
+
+static void apply_nop_requests(void)
+{
+	bool new_kernel_nops_enabled = (nop_requests.u32_all != 0U);
+
+	if (new_kernel_nops_enabled != kernel_nops_enabled) {
+		kernel_nops_enabled = new_kernel_nops_enabled;
+		SendKernelThrottlingMessage(kernel_nops_enabled);
+	}
+}
+
 static uint8_t t2_count;
 static uint8_t t3_count;
 
@@ -382,13 +408,11 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
 
 	bool critical_throttling = t2_triggered || t3_triggered;
 
-	bool new_kernel_nops_enabled =
-		((kernel_nops_enabled || start_nops) && !stop_nops) || critical_throttling;
+	bool doppler_nops = nop_requests.doppler;
 
-	if (new_kernel_nops_enabled != kernel_nops_enabled) {
-		kernel_nops_enabled = new_kernel_nops_enabled;
-		SendKernelThrottlingMessage(kernel_nops_enabled);
-	}
+	doppler_nops = ((doppler_nops || start_nops) && !stop_nops) || critical_throttling;
+
+	nop_requests.doppler = doppler_nops;
 
 	EnableArbMax(aiclk_arb_max_doppler_critical, critical_throttling);
 }
@@ -401,28 +425,45 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
  */
 static void UpdateKernelThrottler(float current_power, float tdp_limit)
 {
-	bool start_nops = false;
-	bool stop_nops = false;
+	/* Feature off: clear our own request */
+	if (!kernel_throttler_at_aiclk_floor_enabled) {
+		nop_requests.kernel_throttler = false;
+		return;
+	}
+
 	enum aiclk_arb_min arb;
+	bool start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
 
-	if (kernel_throttler_at_aiclk_floor_enabled) {
-		start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
+	uint32_t stop_freq = kernel_throttler_stop_nops_freq;
 
-		uint32_t stop_freq = kernel_throttler_stop_nops_freq;
-
-		if (stop_freq == 0U) {
-			stop_freq = get_aiclk_effective_arb_min(&arb);
-		}
-
-		stop_nops = GetAiclkTarg() >= stop_freq && current_power < tdp_limit;
+	if (stop_freq == 0U) {
+		stop_freq = get_aiclk_effective_arb_min(&arb);
 	}
 
-	bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
+	bool stop_nops = GetAiclkTarg() >= stop_freq && current_power < tdp_limit;
 
-	if (new_kernel_nops_enabled != kernel_nops_enabled) {
-		kernel_nops_enabled = new_kernel_nops_enabled;
-		SendKernelThrottlingMessage(kernel_nops_enabled);
+	bool kt_nops = nop_requests.kernel_throttler;
+
+	kt_nops = ((kt_nops || start_nops) && !stop_nops);
+
+	nop_requests.kernel_throttler = kt_nops;
+}
+
+/* Engage kernel NOPs when GDDR crosses GDDR_NOP_TEMP while AICLK is already at
+ * its floor, releasing them only after GDDR has cooled past the hysteresis band.
+ */
+static void UpdateGddrThermalNops(float max_gddr_temp)
+{
+	bool active = nop_requests.gddr_thermal;
+	bool aiclk_at_floor = GetAiclkTarg() == GetAiclkFmin();
+
+	if (max_gddr_temp >= GDDR_NOP_TEMP && aiclk_at_floor) {
+		active = true;
+	} else if (max_gddr_temp <= (GDDR_NOP_TEMP - GDDR_NOP_HYSTERESIS)) {
+		active = false;
 	}
+
+	nop_requests.gddr_thermal = active;
 }
 
 void CalculateThrottlers(void)
@@ -432,8 +473,12 @@ void CalculateThrottlers(void)
 	ReadTelemetryInternal(1, &telemetry_internal_data);
 
 	if (DopplerActive()) {
+		nop_requests.kernel_throttler = false;
+
 		UpdateDoppler(&telemetry_internal_data);
 	} else {
+		nop_requests.doppler = false;
+
 		UpdateThrottler(kThrottlerTDP, telemetry_internal_data.vcore_power);
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
@@ -447,6 +492,10 @@ void CalculateThrottlers(void)
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
 	UpdateThrottler(kThrottlerGDDRThm, telemetry_internal_data.gddr_temps.max_temp);
+
+	UpdateGddrThermalNops(telemetry_internal_data.gddr_temps.max_temp);
+
+	apply_nop_requests();
 
 	for (ThrottlerId i = 0; i < kThrottlerCount; i++) {
 		UpdateThrottlerArb(i);
@@ -462,10 +511,12 @@ uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled)
 	kernel_throttler_at_aiclk_floor_enabled = (bool)enabled;
 	LOG_INF("kernel throttler at aiclk floor %s", enabled ? "enabled" : "disabled");
 
-	/* Release NOPs immediately if the feature is being disabled while active. */
-	if (!enabled && kernel_nops_enabled) {
-		kernel_nops_enabled = false;
-		SendKernelThrottlingMessage(false);
+	/* Release the kernel-throttler NOP request immediately if the feature is
+	 * being disabled.
+	 */
+	if (!enabled) {
+		nop_requests.kernel_throttler = false;
+		apply_nop_requests();
 	}
 
 	UpdateTelemetryKernelThrottler(kernel_throttler_at_aiclk_floor_enabled,
