@@ -11,7 +11,9 @@
 #include <stdlib.h>
 
 #include <tenstorrent/bh_power.h>
+#ifdef CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED
 #include <tenstorrent/msgqueue.h>
+#endif
 
 #include "telemetry.h"
 #include "smbus_target.h"
@@ -167,6 +169,7 @@ static int telem_handler(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+#ifdef CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED
 static int msg_handler(const struct shell *sh, size_t argc, char **argv)
 {
 	union request request = {0};
@@ -204,6 +207,7 @@ static int msg_handler(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
+#endif
 
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_tt_commands, SHELL_CMD_ARG(mrisc_power, NULL, "[off|on]", mrisc_power_handler, 2, 0),
@@ -211,7 +215,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 	SHELL_CMD_ARG(l2cpu_power, NULL, "[off|on]", l2cpu_enable_handler, 2, 0),
 	SHELL_CMD_ARG(asic_state, NULL, "[|0|3]", asic_state_handler, 1, 1),
 	SHELL_CMD_ARG(telem, NULL, "<Telemetry Index> [|x|f|d]", telem_handler, 2, 1),
+#ifdef CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED
 	SHELL_CMD_ARG(msg, NULL, "<cmd> [data1 ... data7]", msg_handler, 2, 7),
+#endif
 	SHELL_SUBCMD_SET_END);
 
 SHELL_CMD_REGISTER(tt, &sub_tt_commands, "Tensorrent commands", NULL);

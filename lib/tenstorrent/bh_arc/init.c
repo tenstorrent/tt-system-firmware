@@ -112,7 +112,9 @@ static int bh_arc_init_end(void)
 	}
 #endif
 
+#ifdef CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED
 	init_msgqueue();
+#endif
 
 #ifdef CONFIG_BH_FWTABLE
 	init_telemetry(APPVERSION);

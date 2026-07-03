@@ -23,7 +23,6 @@ zephyr_library_sources(
   init.c
   led.c
   log.c
-  msgqueue.c
   noc.c
   noc2axi.c
   noc_init.c
@@ -38,6 +37,8 @@ zephyr_library_sources(
   timer.c
 # zephyr-keep-sorted-stop
 )
+
+zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED msgqueue.c)
 
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_RUNTIME_TELEMETRY runtime_telemetry.c)
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_EMUL reg_stub.c)
