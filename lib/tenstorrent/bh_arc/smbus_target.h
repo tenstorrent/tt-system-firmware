@@ -5,5 +5,4 @@
 
 #ifndef TT_SMBUS_TARGET_H
 #define TT_SMBUS_TARGET_H
-void PollSmbusTarget(void);
 #endif

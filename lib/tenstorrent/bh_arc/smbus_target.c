@@ -264,9 +264,3 @@ static int InitSmbusTarget(void)
 	return 0;
 }
 SYS_INIT_APP(InitSmbusTarget);
-
-void PollSmbusTarget(void)
-{
-	PollI2CSlave(CM_I2C_DM_TARGET_INST);
-	WriteReg(I2C0_TARGET_DEBUG_STATE_2_REG_ADDR, 0xfaca);
-}
