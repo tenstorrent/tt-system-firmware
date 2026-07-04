@@ -476,17 +476,6 @@ void I2CInit(I2CMode mode, uint32_t slave_addr, I2CSpeedMode speed, uint32_t id)
 	Wait(10 * WAIT_1US);
 }
 
-/* Resets the all I2C controller instances */
-void I2CReset(void)
-{
-	uint32_t i2c_cntl = ReadReg(RESET_UNIT_I2C_CNTL_REG_ADDR);
-
-	WriteReg(RESET_UNIT_I2C_CNTL_REG_ADDR, i2c_cntl | RESET_UNIT_I2C_CNTL_RESET_MASK);
-	Wait(WAIT_1US);
-	WriteReg(RESET_UNIT_I2C_CNTL_REG_ADDR, i2c_cntl & ~RESET_UNIT_I2C_CNTL_RESET_MASK);
-	Wait(WAIT_1US);
-}
-
 /* Generalized transaction function called by I2CWriteBytes and I2CReadBytes, implements SMBUS write
  * bytes and read bytes protocols, returns TX_ABRT error if any, otherwise returns 0.
  */
