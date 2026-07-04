@@ -22,6 +22,7 @@ if(CONFIG_SOC_TT_BLACKHOLE_SMC)
 
   zephyr_library()
   zephyr_library_sources(soc.c)
+  zephyr_library_sources_ifdef(CONFIG_PINCTRL pinctrl_bh.c)
   zephyr_library_include_directories(PRIVATE
     ${ZEPHYR_BASE}/kernel/include
     ${ARCH_DIR}/${ARCH}/include

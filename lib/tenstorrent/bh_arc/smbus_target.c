@@ -208,9 +208,6 @@ static int InitSmbusTarget(void)
 {
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ARC_INIT_STEPB);
 
-	if (IS_ENABLED(CONFIG_ARC)) {
-		I2CInitGPIO(CM_I2C_DM_TARGET_INST);
-	}
 
 	if (!device_is_ready(smbus_target)) {
 		printk("SMBUS target device not ready\n");
