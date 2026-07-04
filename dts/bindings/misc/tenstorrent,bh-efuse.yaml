@@ -6,3 +6,10 @@ description: Tenstorrent Blackhole eFuse hardware backend
 compatible: "tenstorrent,bh-efuse"
 
 include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  reg-names:
+    required: true

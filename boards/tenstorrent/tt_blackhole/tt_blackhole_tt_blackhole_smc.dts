@@ -192,8 +192,10 @@
 };
 
 / {
-	efuse: efuse {
+	efuse: efuse@80040000 {
 		compatible = "tenstorrent,bh-efuse";
+		reg = <0x80040000 0x8000>, <0x80048000 0x8000>;
+		reg-names = "mem", "cntl";
 		status = "okay";
 	};
 };

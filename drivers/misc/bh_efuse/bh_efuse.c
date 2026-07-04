@@ -18,18 +18,21 @@ LOG_MODULE_REGISTER(tt_bh_efuse, CONFIG_TT_BH_EFUSE_LOG_LEVEL);
 
 #if DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 0
 
-#define EFUSE_DFT0_MEM_BASE_ADDR          0x80040000u
-#define EFUSE_DFT0_CNTL_REG_MAP_BASE_ADDR 0x80048000u
-#define EFUSE_BOX_ADDR_ALIGN              0x2000u
+#define EFUSE_BOX_ADDR_ALIGN 0x2000u
 
-#define EFUSE_CTRL_REG_START_ADDR(box_id)                                                          \
-	(EFUSE_DFT0_CNTL_REG_MAP_BASE_ADDR + ((uint32_t)(box_id) * EFUSE_BOX_ADDR_ALIGN))
+struct tt_bh_efuse_config {
+	uintptr_t mem_base_addr;
+	uintptr_t cntl_reg_map_base_addr;
+};
+
+#define EFUSE_CTRL_REG_START_ADDR(cfg, box_id)                                                     \
+	((cfg)->cntl_reg_map_base_addr + ((uint32_t)(box_id) * EFUSE_BOX_ADDR_ALIGN))
 
 #define EFUSE_RD_CNTL_REG_OFFSET 0x0u
 #define EFUSE_DATA_REG_OFFSET    0xCu
 
-#define GET_EFUSE_CNTL_ADDR(box_id, reg_name)                                                      \
-	(EFUSE_##reg_name##_REG_OFFSET + EFUSE_CTRL_REG_START_ADDR(box_id))
+#define GET_EFUSE_CNTL_ADDR(cfg, box_id, reg_name)                                                 \
+	(EFUSE_##reg_name##_REG_OFFSET + EFUSE_CTRL_REG_START_ADDR(cfg, box_id))
 
 typedef struct {
 	uint32_t csb: 1;
@@ -52,16 +55,16 @@ typedef union {
 static int tt_bh_efuse_read_impl(const struct device *dev, enum tt_bh_efuse_access_type acc_type,
 				 enum tt_bh_efuse_box_id box_id, uint32_t offset, uint32_t *value)
 {
-	ARG_UNUSED(dev);
+	const struct tt_bh_efuse_config *cfg = dev->config;
 
 	if ((uint32_t)box_id >= TT_BH_EFUSE_BOX_ID_NUM) {
 		return -EINVAL;
 	}
 
 	if (acc_type == TT_BH_EFUSE_ACCESS_DIRECT) {
-		uint32_t efuse_addr = EFUSE_DFT0_MEM_BASE_ADDR +
-				      ((uint32_t)box_id * EFUSE_BOX_ADDR_ALIGN) +
-				      (offset * sizeof(uint32_t));
+		uintptr_t efuse_addr = cfg->mem_base_addr +
+				       ((uint32_t)box_id * EFUSE_BOX_ADDR_ALIGN) +
+				       (offset * sizeof(uint32_t));
 
 		*value = sys_read32(efuse_addr);
 		return 0;
@@ -79,20 +82,20 @@ static int tt_bh_efuse_read_impl(const struct device *dev, enum tt_bh_efuse_acce
 	efuse_rd_cntl_reg.f.addr = offset;
 	efuse_rd_cntl_reg.f.ovrd = 1;
 
-	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(box_id, RD_CNTL));
+	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(cfg, box_id, RD_CNTL));
 	k_busy_wait(1);
 
 	efuse_rd_cntl_reg.f.strobe = 1;
-	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(box_id, RD_CNTL));
+	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(cfg, box_id, RD_CNTL));
 	k_busy_wait(1);
 	efuse_rd_cntl_reg.f.strobe = 0;
-	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(box_id, RD_CNTL));
+	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(cfg, box_id, RD_CNTL));
 	k_busy_wait(1);
 
 	efuse_rd_cntl_reg.f.ovrd = 0;
-	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(box_id, RD_CNTL));
+	sys_write32(efuse_rd_cntl_reg.val, GET_EFUSE_CNTL_ADDR(cfg, box_id, RD_CNTL));
 
-	*value = sys_read32(GET_EFUSE_CNTL_ADDR(box_id, DATA));
+	*value = sys_read32(GET_EFUSE_CNTL_ADDR(cfg, box_id, DATA));
 	return 0;
 }
 
@@ -107,8 +110,12 @@ static DEVICE_API(tt_efuse, tt_bh_efuse_api) = {
 };
 
 #define TT_BH_EFUSE_DEFINE(inst)                                                                   \
-	DEVICE_DT_INST_DEFINE(inst, tt_bh_efuse_init, NULL, NULL, NULL, POST_KERNEL,               \
-			      CONFIG_TT_BH_EFUSE_INIT_PRIORITY, &tt_bh_efuse_api);
+	static const struct tt_bh_efuse_config tt_bh_efuse_cfg_##inst = {                          \
+		.mem_base_addr = DT_INST_REG_ADDR_BY_NAME(inst, mem),                              \
+		.cntl_reg_map_base_addr = DT_INST_REG_ADDR_BY_NAME(inst, cntl),                    \
+	};                                                                                         \
+	DEVICE_DT_INST_DEFINE(inst, tt_bh_efuse_init, NULL, NULL, &tt_bh_efuse_cfg_##inst,         \
+			      POST_KERNEL, CONFIG_TT_BH_EFUSE_INIT_PRIORITY, &tt_bh_efuse_api);
 
 DT_INST_FOREACH_STATUS_OKAY(TT_BH_EFUSE_DEFINE)
 
