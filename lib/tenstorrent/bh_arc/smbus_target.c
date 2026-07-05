@@ -24,6 +24,7 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/crc.h>
+#include <zephyr/sys/util.h>
 
 /* DMFW to CMFW i2c interface is on I2C0 of tensix_sm */
 #define CM_I2C_DM_TARGET_INST 0
@@ -122,87 +123,36 @@ int32_t UpdateArcStateHandler(const uint8_t *data, uint8_t size)
 
 /***End of SMBus handlers***/
 
-static const struct SmbusCmdDef smbus_req_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockRead, .send_handler = &Cm2DmMsgReqSmbusHandler};
-
-static const struct SmbusCmdDef smbus_ack_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Cm2DmMsgAckSmbusHandler};
-
-static const struct SmbusCmdDef smbus_update_arc_state_cmd_def = {
-	.pec = 0U, .trans_type = kSmbusTransBlockWrite, .rcv_handler = &UpdateArcStateHandler};
-
-static const struct SmbusCmdDef smbus_dm_static_info_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockWrite, .rcv_handler = &Dm2CmSendDataHandler};
-
-static const struct SmbusCmdDef smbus_ping_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Dm2CmPingHandler};
-
-static const struct SmbusCmdDef smbus_fan_speed_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Dm2CmSendFanSpeedHandler};
-
-static const struct SmbusCmdDef smbus_fan_rpm_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Dm2CmSendFanRPMHandler};
-
+static const struct smbus_cmd_registration smbus_cmds[] = {
+	SMBUS_CMD_BLOCK_RD_ENTRY(CMFW_SMBUS_REQ, 1U, Cm2DmMsgReqSmbusHandler),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_ACK, 1U, Cm2DmMsgAckSmbusHandler),
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_UPDATE_ARC_STATE, 0U, UpdateArcStateHandler),
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_DM_STATIC_INFO, 1U, Dm2CmSendDataHandler),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_PING, 1U, Dm2CmPingHandler),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_FAN_SPEED, 1U, Dm2CmSendFanSpeedHandler),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_FAN_RPM, 1U, Dm2CmSendFanRPMHandler),
 #ifndef CONFIG_TT_SMC_RECOVERY
-static const struct SmbusCmdDef smbus_telem_read_cmd_def = {.pec = 0U,
-							    .trans_type =
-								    kSmbusTransBlockWriteBlockRead,
-							    .rcv_handler = SMBusTelemRegHandler,
-							    .send_handler = SMBusTelemDataHandler};
-
-static const struct SmbusCmdDef smbus_telem_write_cmd_def = {.pec = 0U,
-							     .trans_type =
-								     kSmbusTransBlockWriteBlockRead,
-							     .rcv_handler = Dm2CmWriteTelemetry,
-							     .send_handler = Dm2CmReadControlData};
-
-static const struct SmbusCmdDef smbus_power_limit_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Dm2CmSetBoardPowerLimit};
-
-static const struct SmbusCmdDef smbus_power_instant_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &Dm2CmSendPowerHandler};
-
-static const struct SmbusCmdDef smbus_telem_reg_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteByte, .rcv_handler = &SMBusTelemRegHandler};
-
-static const struct SmbusCmdDef smbus_telem_data_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockRead, .send_handler = &SMBusTelemDataHandler};
-
-static const struct SmbusCmdDef smbus_therm_trip_count_cmd_def = {
-	.pec = 1U,
-	.trans_type = kSmbusTransWriteWord,
-	.rcv_handler = &Dm2CmSendThermTripCountHandler};
-
-#endif /*CONFIG_TT_SMC_RECOVERY*/
-static const struct SmbusCmdDef smbus_dmc_log_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockWrite, .rcv_handler = &Dm2CmDMCLogHandler};
-
-static const struct SmbusCmdDef smbus_test_read_byte_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransReadByte, .send_handler = &ReadByteTest};
-
-static const struct SmbusCmdDef smbus_test_write_byte_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteByte, .rcv_handler = &WriteByteTest};
-
-static const struct SmbusCmdDef smbus_test_read_word_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransReadWord, .send_handler = &ReadWordTest};
-
-static const struct SmbusCmdDef smbus_test_write_word_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransWriteWord, .rcv_handler = &WriteWordTest};
-
-static const struct SmbusCmdDef smbus_block_write_block_read_test = {
-	.pec = 1U,
-	.trans_type = kSmbusTransBlockWriteBlockRead,
-	.rcv_handler = &BlockWriteTest,
-	.send_handler = BlockReadTest};
-
-static const struct SmbusCmdDef smbus_test_read_block_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockRead, .send_handler = &BlockReadTest};
-
-static const struct SmbusCmdDef smbus_test_write_block_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransBlockWrite, .rcv_handler = &BlockWriteTest};
-
-static const struct SmbusCmdDef smbus_ping_v2_cmd_def = {
-	.pec = 1U, .trans_type = kSmbusTransReadWord, .send_handler = &Dm2CmPingV2};
+	SMBUS_CMD_BLOCK_WR_BLOCK_RD_ENTRY(CMFW_SMBUS_TELEMETRY_READ, 0U, SMBusTelemRegHandler,
+					  SMBusTelemDataHandler),
+	SMBUS_CMD_BLOCK_WR_BLOCK_RD_ENTRY(CMFW_SMBUS_TELEMETRY_WRITE, 0U, Dm2CmWriteTelemetry,
+					  Dm2CmReadControlData),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_POWER_LIMIT, 1U, Dm2CmSetBoardPowerLimit),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_POWER_INSTANT, 1U, Dm2CmSendPowerHandler),
+	SMBUS_CMD_WRITE_BYTE_ENTRY(0x26, 1U, SMBusTelemRegHandler),
+	SMBUS_CMD_BLOCK_RD_ENTRY(0x27, 1U, SMBusTelemDataHandler),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_THERM_TRIP_COUNT, 1U, Dm2CmSendThermTripCountHandler),
+#endif
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_DMC_LOG, 1U, Dm2CmDMCLogHandler),
+	SMBUS_CMD_READ_BYTE_ENTRY(CMFW_SMBUS_TEST_READ, 1U, ReadByteTest),
+	SMBUS_CMD_WRITE_BYTE_ENTRY(CMFW_SMBUS_TEST_WRITE, 1U, WriteByteTest),
+	SMBUS_CMD_READ_WORD_ENTRY(CMFW_SMBUS_TEST_READ_WORD, 1U, ReadWordTest),
+	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_TEST_WRITE_WORD, 1U, WriteWordTest),
+	SMBUS_CMD_BLOCK_RD_ENTRY(CMFW_SMBUS_TEST_READ_BLOCK, 1U, BlockReadTest),
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_TEST_WRITE_BLOCK, 1U, BlockWriteTest),
+	SMBUS_CMD_BLOCK_WR_BLOCK_RD_ENTRY(CMFW_SMBUS_TEST_WRITE_BLOCK_READ_BLOCK, 1U,
+					  BlockWriteTest, BlockReadTest),
+	SMBUS_CMD_READ_WORD_ENTRY(CMFW_SMBUS_PING_V2, 1U, Dm2CmPingV2),
+};
 
 static int InitSmbusTarget(void)
 {
@@ -222,45 +172,11 @@ static int InitSmbusTarget(void)
 		return 0;
 	}
 
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_REQ, &smbus_req_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_ACK, &smbus_ack_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_UPDATE_ARC_STATE,
-				  &smbus_update_arc_state_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_DM_STATIC_INFO,
-				  &smbus_dm_static_info_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_PING, &smbus_ping_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_FAN_SPEED, &smbus_fan_speed_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_FAN_RPM, &smbus_fan_rpm_cmd_def);
-#ifndef CONFIG_TT_SMC_RECOVERY
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TELEMETRY_READ,
-				  &smbus_telem_read_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TELEMETRY_WRITE,
-				  &smbus_telem_write_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_POWER_LIMIT, &smbus_power_limit_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_POWER_INSTANT,
-				  &smbus_power_instant_cmd_def);
-	smbus_target_register_cmd(smbus_target, 0x26, &smbus_telem_reg_cmd_def);
-	smbus_target_register_cmd(smbus_target, 0x27, &smbus_telem_data_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_THERM_TRIP_COUNT,
-				  &smbus_therm_trip_count_cmd_def);
-#endif
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_DMC_LOG, &smbus_dmc_log_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_READ,
-				  &smbus_test_read_byte_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_WRITE,
-				  &smbus_test_write_byte_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_READ_WORD,
-				  &smbus_test_read_word_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_WRITE_WORD,
-				  &smbus_test_write_word_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_READ_BLOCK,
-				  &smbus_test_read_block_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_WRITE_BLOCK,
-				  &smbus_test_write_block_cmd_def);
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_TEST_WRITE_BLOCK_READ_BLOCK,
-				  &smbus_block_write_block_read_test);
+	if (smbus_target_register_cmds(smbus_target, smbus_cmds, ARRAY_SIZE(smbus_cmds)) < 0) {
+		printk("Failed to register SMBUS target commands\n");
+		return 0;
+	}
 
-	smbus_target_register_cmd(smbus_target, CMFW_SMBUS_PING_V2, &smbus_ping_v2_cmd_def);
 	return 0;
 }
 SYS_INIT_APP(InitSmbusTarget);

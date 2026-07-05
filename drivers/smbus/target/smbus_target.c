@@ -24,21 +24,21 @@ LOG_MODULE_REGISTER(i2c_target);
 		LOG_ERR_RATELIMIT(fmt, ##__VA_ARGS__);                                             \
 	} while (0)
 
-typedef enum {
-	kSmbusStateIdle,
-	kSmbusStateCmd,
-	kSmbusStateRcvData,
-	kSmbusStateRcvPec,
-	kSmbusStateSendData,
-	kSmbusStateSendPec,
-	kSmbusStateWaitIdle, /* After transactions finish, and in error conditions */
-} SmbusState;
+enum smbus_state {
+	SMBUS_STATE_IDLE,
+	SMBUS_STATE_CMD,
+	SMBUS_STATE_RCV_DATA,
+	SMBUS_STATE_RCV_PEC,
+	SMBUS_STATE_SEND_DATA,
+	SMBUS_STATE_SEND_PEC,
+	SMBUS_STATE_WAIT_IDLE, /* After transactions finish, and in error conditions */
+};
 
 struct smbus_target_data {
 	struct i2c_target_config config;
-	const struct SmbusCmdDef *cmd_defs[256];
+	const struct smbus_cmd_def *cmd_defs[256];
 	atomic_t error_count;
-	SmbusState state;
+	enum smbus_state state;
 	uint8_t command;
 	uint8_t blocksize_r;
 	uint8_t blocksize_w;
@@ -52,7 +52,7 @@ struct smbus_target_config {
 	struct i2c_dt_spec bus;
 };
 
-static const struct SmbusCmdDef *get_cmd_def(struct smbus_target_data *smbus_data, uint8_t cmd)
+static const struct smbus_cmd_def *get_cmd_def(struct smbus_target_data *smbus_data, uint8_t cmd)
 {
 	return smbus_data->cmd_defs[cmd];
 }
@@ -83,9 +83,9 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 	int32_t ret = 0;
 	struct smbus_target_data *smbus_data =
 		CONTAINER_OF(config, struct smbus_target_data, config);
-	const struct SmbusCmdDef *curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
+	const struct smbus_cmd_def *curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
 
-	if (smbus_data->state == kSmbusStateIdle) {
+	if (smbus_data->state == SMBUS_STATE_IDLE) {
 		/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de1030); */
 		smbus_data->command = val;
 		curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
@@ -93,15 +93,15 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 			/* Command not implemented */
 			SMBUS_LOG_ERR_RATELIMIT(smbus_data, "SMBUS: command 0x%02x not implemented",
 						val);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			return -1;
 		}
-		smbus_data->state = kSmbusStateCmd;
-	} else if (smbus_data->state == kSmbusStateCmd) {
+		smbus_data->state = SMBUS_STATE_CMD;
+	} else if (smbus_data->state == SMBUS_STATE_CMD) {
 		/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de1040); */
 		switch (curr_cmd->trans_type) {
-		case kSmbusTransBlockWrite:
-		case kSmbusTransBlockWriteBlockRead:
+		case SMBUS_TRANS_WRITE_BLOCK:
+		case SMBUS_TRANS_READ_WRITE_BLOCK:
 			smbus_data->blocksize_w = val;
 			if (smbus_data->blocksize_w > CONFIG_SMBUS_MAX_MSG_SIZE) {
 				SMBUS_LOG_ERR_RATELIMIT(
@@ -109,63 +109,63 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 					"SMBUS: oversized block write: %d bytes (max %d)",
 					smbus_data->blocksize_w, CONFIG_SMBUS_MAX_MSG_SIZE);
 				/* block size too big */
-				smbus_data->state = kSmbusStateWaitIdle;
+				smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 				ret = -1;
 			} else {
-				smbus_data->state = kSmbusStateRcvData;
+				smbus_data->state = SMBUS_STATE_RCV_DATA;
 			}
 			break;
-		case kSmbusTransWriteByte:
+		case SMBUS_TRANS_WRITE_BYTE:
 			smbus_data->blocksize_w = 1;
 			smbus_data->received_data[smbus_data->rcv_index++] = val;
 
 			if (1U == curr_cmd->pec) {
-				smbus_data->state = kSmbusStateRcvPec;
+				smbus_data->state = SMBUS_STATE_RCV_PEC;
 			} else {
 				ret = curr_cmd->rcv_handler(smbus_data->received_data,
 							    smbus_data->blocksize_w);
 
-				smbus_data->state = kSmbusStateWaitIdle;
+				smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			}
 			break;
-		case kSmbusTransWriteWord:
+		case SMBUS_TRANS_WRITE_WORD:
 			smbus_data->blocksize_w = 2;
 			smbus_data->received_data[smbus_data->rcv_index++] = val;
-			smbus_data->state = kSmbusStateRcvData;
+			smbus_data->state = SMBUS_STATE_RCV_DATA;
 			break;
 		default:
 			/* Error, invalid command for write */
 			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 						"SMBUS: invalid transaction type %d for write",
 						curr_cmd->trans_type);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			ret = -1;
 		}
-	} else if (smbus_data->state == kSmbusStateRcvData) {
+	} else if (smbus_data->state == SMBUS_STATE_RCV_DATA) {
 		/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de1050); */
 		smbus_data->received_data[smbus_data->rcv_index++] = val;
 		if (smbus_data->rcv_index == smbus_data->blocksize_w) {
 			if (1U == curr_cmd->pec &&
-			    (curr_cmd->trans_type != kSmbusTransBlockWriteBlockRead)) {
-				smbus_data->state = kSmbusStateRcvPec;
+			    (curr_cmd->trans_type != SMBUS_TRANS_READ_WRITE_BLOCK)) {
+				smbus_data->state = SMBUS_STATE_RCV_PEC;
 			} else {
 				ret = curr_cmd->rcv_handler(smbus_data->received_data,
 							    smbus_data->blocksize_w);
 				if (ret == 0 &&
-				    curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
-					smbus_data->state = kSmbusStateCmd;
+				    curr_cmd->trans_type == SMBUS_TRANS_READ_WRITE_BLOCK) {
+					smbus_data->state = SMBUS_STATE_CMD;
 				} else if (ret != 0) {
 					SMBUS_LOG_ERR_RATELIMIT(
 						smbus_data,
 						"SMBUS: receive handler error (cmd 0x%02x)",
 						smbus_data->command);
-					smbus_data->state = kSmbusStateWaitIdle;
+					smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 				} else {
-					smbus_data->state = kSmbusStateWaitIdle;
+					smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 				}
 			}
 		}
-	} else if (smbus_data->state == kSmbusStateRcvPec) {
+	} else if (smbus_data->state == SMBUS_STATE_RCV_PEC) {
 		/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de1060);*/
 		uint8_t rcv_pec = val;
 
@@ -175,7 +175,7 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 		pec = pec_crc_8(pec, smbus_data->config.address << 1 |
 					     I2C_MSG_WRITE); /* start address byte */
 		pec = pec_crc_8(pec, smbus_data->command);
-		if (curr_cmd->trans_type == kSmbusTransBlockWrite) {
+		if (curr_cmd->trans_type == SMBUS_TRANS_WRITE_BLOCK) {
 			pec = pec_crc_8(pec, smbus_data->blocksize_w);
 		}
 		for (int i = 0; i < smbus_data->blocksize_w; i++) {
@@ -187,27 +187,27 @@ static int smbus_write_handler(struct i2c_target_config *config, uint8_t val)
 				smbus_data,
 				"SMBUS: PEC mismatch (cmd 0x%02x): expected 0x%02x, got 0x%02x",
 				smbus_data->command, pec, rcv_pec);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			return -1;
 		}
 		ret = curr_cmd->rcv_handler(smbus_data->received_data, smbus_data->blocksize_w);
 
-		if (ret == 0 && curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
-			smbus_data->state = kSmbusStateCmd;
+		if (ret == 0 && curr_cmd->trans_type == SMBUS_TRANS_READ_WRITE_BLOCK) {
+			smbus_data->state = SMBUS_STATE_CMD;
 		} else if (ret != 0) {
 			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 						"SMBUS: PEC receive handler error (cmd 0x%02x)",
 						smbus_data->command);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 		} else {
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 		}
 	} else {
 		/* Invalid state for write handler */
 		SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 					"SMBUS: write handler called in invalid state %d",
 					smbus_data->state);
-		smbus_data->state = kSmbusStateWaitIdle;
+		smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 		ret = -1;
 	}
 	return ret;
@@ -218,24 +218,24 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 	struct smbus_target_data *smbus_data =
 		CONTAINER_OF(config, struct smbus_target_data, config);
 
-	const struct SmbusCmdDef *curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
+	const struct smbus_cmd_def *curr_cmd = get_cmd_def(smbus_data, smbus_data->command);
 
-	if (smbus_data->state == kSmbusStateCmd) {
+	if (smbus_data->state == SMBUS_STATE_CMD) {
 		/* Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de0010); */
 
 		/* Calculate blocksize for different types of commands */
 		switch (curr_cmd->trans_type) {
-		case kSmbusTransBlockRead:
-		case kSmbusTransBlockWriteBlockRead:
-		case kSmbusTransReadByte:
-		case kSmbusTransReadWord:
+		case SMBUS_TRANS_READ_BLOCK:
+		case SMBUS_TRANS_READ_WRITE_BLOCK:
+		case SMBUS_TRANS_READ_BYTE:
+		case SMBUS_TRANS_READ_WORD:
 			break;
 		default:
 			/* Error, invalid command for read */
 			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 						"SMBUS: invalid transaction type %d for read",
 						curr_cmd->trans_type);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			*val = 0xFF;
 			return -1;
 		}
@@ -245,46 +245,46 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 			SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 						"SMBUS: send handler error (cmd 0x%02x)",
 						smbus_data->command);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			*val = 0xFF;
 			return -1;
 		}
 		/* Send the correct data for different types of commands */
 		switch (curr_cmd->trans_type) {
-		case kSmbusTransBlockWriteBlockRead:
-		case kSmbusTransBlockRead:
+		case SMBUS_TRANS_READ_WRITE_BLOCK:
+		case SMBUS_TRANS_READ_BLOCK:
 			/*Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR,
 			 * 0xc0de0030);
 			 */
 			*val = smbus_data->blocksize_r;
-			smbus_data->state = kSmbusStateSendData;
+			smbus_data->state = SMBUS_STATE_SEND_DATA;
 			break;
-		case kSmbusTransReadByte:
+		case SMBUS_TRANS_READ_BYTE:
 			*val = smbus_data->send_data[smbus_data->send_index++];
 			smbus_data->state =
-				curr_cmd->pec ? kSmbusStateSendPec : kSmbusStateWaitIdle;
+				curr_cmd->pec ? SMBUS_STATE_SEND_PEC : SMBUS_STATE_WAIT_IDLE;
 			break;
-		case kSmbusTransReadWord:
+		case SMBUS_TRANS_READ_WORD:
 			*val = smbus_data->send_data[smbus_data->send_index++];
-			smbus_data->state = kSmbusStateSendData;
+			smbus_data->state = SMBUS_STATE_SEND_DATA;
 			break;
 		default:
 			/* Error, invalid command for read */
 			SMBUS_LOG_ERR_RATELIMIT(
 				smbus_data, "SMBUS: invalid transaction type %d for read response",
 				curr_cmd->trans_type);
-			smbus_data->state = kSmbusStateWaitIdle;
+			smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 			*val = 0xFF;
 			return -1;
 		}
-	} else if (smbus_data->state == kSmbusStateSendData) {
+	} else if (smbus_data->state == SMBUS_STATE_SEND_DATA) {
 		/* Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de0050); */
 		*val = smbus_data->send_data[smbus_data->send_index++];
 		if (smbus_data->send_index == smbus_data->blocksize_r) {
 			smbus_data->state =
-				curr_cmd->pec ? kSmbusStateSendPec : kSmbusStateWaitIdle;
+				curr_cmd->pec ? SMBUS_STATE_SEND_PEC : SMBUS_STATE_WAIT_IDLE;
 		}
-	} else if (smbus_data->state == kSmbusStateSendPec) {
+	} else if (smbus_data->state == SMBUS_STATE_SEND_PEC) {
 		/* Log something like WriteReg(I2C0_TARGET_DEBUG_STATE_REG_ADDR, 0xc0de0060);*/
 		/* Calculate and send PEC. This is a read-type operation, so it starts with a
 		 * sequence of writes, then some reads.
@@ -296,7 +296,7 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 					     I2C_MSG_WRITE); /* start address byte */
 		pec = pec_crc_8(pec, smbus_data->command);
 
-		if (curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
+		if (curr_cmd->trans_type == SMBUS_TRANS_READ_WRITE_BLOCK) {
 			pec = pec_crc_8(pec, smbus_data->blocksize_w);
 		}
 		/* any received data */
@@ -308,8 +308,8 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 					     I2C_MSG_READ); /* restart address byte */
 
 		/* sent data */
-		if (curr_cmd->trans_type == kSmbusTransBlockRead ||
-		    curr_cmd->trans_type == kSmbusTransBlockWriteBlockRead) {
+		if (curr_cmd->trans_type == SMBUS_TRANS_READ_BLOCK ||
+		    curr_cmd->trans_type == SMBUS_TRANS_READ_WRITE_BLOCK) {
 			pec = pec_crc_8(pec, smbus_data->blocksize_r);
 		}
 		for (int i = 0; i < smbus_data->blocksize_r; i++) {
@@ -317,13 +317,13 @@ static int32_t smbus_read_handler(struct i2c_target_config *config, uint8_t *val
 		}
 
 		*val = pec;
-		smbus_data->state = kSmbusStateWaitIdle;
+		smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 	} else {
 		/* Invalid state for read handler */
 		SMBUS_LOG_ERR_RATELIMIT(smbus_data,
 					"SMBUS: read handler called in invalid state %d",
 					smbus_data->state);
-		smbus_data->state = kSmbusStateWaitIdle;
+		smbus_data->state = SMBUS_STATE_WAIT_IDLE;
 		*val = 0xFF;
 		return -1;
 	}
@@ -343,7 +343,7 @@ uint32_t smbus_target_get_error_count(const struct device *dev)
 
 static void reset_state_machine(struct smbus_target_data *smbus_data)
 {
-	smbus_data->state = kSmbusStateIdle;
+	smbus_data->state = SMBUS_STATE_IDLE;
 	smbus_data->command = 0;
 	smbus_data->blocksize_r = 0;
 	smbus_data->blocksize_w = 0;
@@ -400,7 +400,7 @@ static int32_t smbus_target_init(const struct device *dev)
 }
 
 int32_t smbus_target_register_cmd(const struct device *dev, uint8_t cmd_id,
-				  const struct SmbusCmdDef *smbus_cmd)
+				  const struct smbus_cmd_def *smbus_cmd)
 {
 	struct smbus_target_data *data = dev->data;
 
@@ -410,6 +410,24 @@ int32_t smbus_target_register_cmd(const struct device *dev, uint8_t cmd_id,
 	}
 
 	data->cmd_defs[cmd_id] = smbus_cmd;
+	return 0;
+}
+
+int32_t smbus_target_register_cmds(const struct device *dev,
+				   const struct smbus_cmd_registration *cmds, size_t num_cmds)
+{
+	if (cmds == NULL) {
+		return -EINVAL;
+	}
+
+	for (size_t i = 0; i < num_cmds; ++i) {
+		int32_t rc = smbus_target_register_cmd(dev, cmds[i].cmd, &cmds[i].def);
+
+		if (rc < 0) {
+			return rc;
+		}
+	}
+
 	return 0;
 }
 
