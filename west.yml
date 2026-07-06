@@ -23,7 +23,7 @@ manifest:
     - name: zephyr
       remote: tenstorrent
       repo-path: zephyr-fork
-      revision: 68672ece76e299ae6f1711586fb4756390ffe574
+      revision: i3c-cdns-revert-od-timing-regression
       import:
         name-allowlist:
           - cmsis_6
