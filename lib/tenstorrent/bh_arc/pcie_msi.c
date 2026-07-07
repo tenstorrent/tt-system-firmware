@@ -61,7 +61,7 @@ void SendPcieMsi(uint8_t pcie_inst, uint32_t vector_id)
 		msi_data += vector_id;
 
 		const uint8_t ring = 0;
-		const uint8_t tlb_num = 0;
+		const uint8_t tlb_num = 12;
 		const uint8_t x = pcie_inst == 0 ? PCIE_INST0_LOGICAL_X : PCIE_INST1_LOGICAL_X;
 		const uint8_t y = PCIE_LOGICAL_Y;
 

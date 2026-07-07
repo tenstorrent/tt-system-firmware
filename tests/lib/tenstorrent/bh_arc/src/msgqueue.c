@@ -29,6 +29,9 @@
 /* Custom fake for ReadReg to simulate timer progression */
 #define RESET_UNIT_REFCLK_CNT_LO_REG_ADDR         0x800300E0
 #define PLL_CNTL_WRAPPER_CLOCK_WAVE_CNTL_REG_ADDR 0x80020038
+#define ARC_NOC0_TLB_BASE_ADDR                    0xC0000000U
+#define ARC_NOC1_TLB_BASE_ADDR                    0xE0000000U
+#define ARC_NOC_TLB_WINDOW_SPAN                   0x10000000U
 static uint32_t timer_counter;
 static uint8_t i2c_read_buf_emul[256] = {0};
 static uint8_t i2c_read_buf_idx;
@@ -192,7 +195,10 @@ static void WriteReg_msgqueue_fake(uint32_t addr, uint32_t value)
 		clock_wave_value = value;
 	}
 
-	if (addr == 0xC0000000) {
+	if ((addr >= ARC_NOC0_TLB_BASE_ADDR &&
+	     addr < ARC_NOC0_TLB_BASE_ADDR + ARC_NOC_TLB_WINDOW_SPAN) ||
+	    (addr >= ARC_NOC1_TLB_BASE_ADDR &&
+	     addr < ARC_NOC1_TLB_BASE_ADDR + ARC_NOC_TLB_WINDOW_SPAN)) {
 		noc_2_axi_last_write = value;
 	}
 }
