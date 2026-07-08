@@ -44,6 +44,20 @@
 			input-enable;
 		};
 
+		i2c1_scl_default: i2c1_scl_default {
+			/* pin 6, AF1 (placeholder - BH pinctrl uses controller base address) */
+			pinmux = <6 1>;
+			drive-strength = <127>;
+			input-enable;
+		};
+
+		i2c1_sda_default: i2c1_sda_default {
+			/* pin 7, AF1 (placeholder - BH pinctrl uses controller base address) */
+			pinmux = <7 1>;
+			drive-strength = <127>;
+			input-enable;
+		};
+
 		spi0_sclk_default: spi0_sclk_default {
 			/* Placeholder SPI SCLK pin state; BH pinctrl backend no-ops for SPI */
 			pinmux = <2 0>;
@@ -136,6 +150,10 @@
 
 &i2c1 {
 	status = "disabled";
+	fs-spike-len = <3>;
+	sda-hold-tx = <15>;
+	pinctrl-0 = <&i2c1_scl_default &i2c1_sda_default>;
+	pinctrl-names = "default";
 
 	regulator0: max20816@64 {
 		compatible = "maxim,max20816";

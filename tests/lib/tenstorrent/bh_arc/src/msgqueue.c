@@ -6,7 +6,9 @@
 
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/clock_control/clock_control_tt_bh.h>
+#include <zephyr/drivers/emul.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/i2c_emul.h>
 #include <zephyr/sys/crc.h>
 #include <zephyr/ztest.h>
 
@@ -113,6 +115,38 @@ static void push_msg_success(void)
 	zexpect_equal(rsp.data[0], 0);
 }
 
+/* Shared I2C emulation transfer: copies writes into i2c_write_buf_emul and reads from
+ * i2c_read_buf_emul. Used by all emulated I2C devices on i2c1.
+ */
+static int i2c_emul_transfer(const struct emul *target, struct i2c_msg *msgs, int num_msgs,
+			     int addr)
+{
+	for (int i = 0; i < num_msgs; i++) {
+		if (msgs[i].flags & I2C_MSG_READ) {
+			memcpy(msgs[i].buf, &i2c_read_buf_emul[i2c_read_buf_idx], msgs[i].len);
+			i2c_read_buf_idx += msgs[i].len;
+		} else {
+			memcpy(&i2c_write_buf_emul[i2c_write_buf_idx], msgs[i].buf, msgs[i].len);
+			i2c_write_buf_idx += msgs[i].len;
+		}
+	}
+	return 0;
+}
+
+static const struct i2c_emul_api i2c_emul_api = {
+	.transfer = i2c_emul_transfer,
+};
+
+static struct i2c_emul pmbus_emul = {
+	.api = &i2c_emul_api,
+	.addr = 0x64,
+};
+
+static struct i2c_emul generic_i2c_emul = {
+	.api = &i2c_emul_api,
+	.addr = 0x50,
+};
+
 static uint32_t ReadReg_msgqueue_fake(uint32_t addr)
 {
 	/* IC_STATUS; Fake out TX_FIFO to say empty and not full Fake out RX_FIFO to say not empty.
@@ -123,10 +157,6 @@ static uint32_t ReadReg_msgqueue_fake(uint32_t addr)
 		return 0b1110;
 	}
 
-	/* IC_DATA_CMD; Fake out RX data to provide emulated data*/
-	if (addr == 0x80090010) {
-		return i2c_read_buf_emul[i2c_read_buf_idx++];
-	}
 
 	if (addr == RESET_UNIT_REFCLK_CNT_LO_REG_ADDR) {
 		return timer_counter++;
@@ -330,14 +360,14 @@ ZTEST(msgqueue, test_msg_type_get_voltage)
 ZTEST(msgqueue, test_msg_type_switch_vout_control)
 {
 	req.data[0] = TT_SMC_MSG_SWITCH_VOUT_CONTROL;
-	req.data[1] = 0x01; /* regulator id */
-	req.data[2] = 1;    /* enable */
+	req.data[1] = 0x01; /* source: PMBusVoutCommand */
 	push_msg_success();
 
-	zexpect_equal(i2c_write_buf_emul[0], 1); /*OPERATION command, for readback*/
-
-	zexpect_equal(i2c_write_buf_emul[2], 1);    /*OPERATION command, writ*/
-	zexpect_equal(i2c_write_buf_emul[3], 0x12); /* transition_control and command_source high*/
+	/* I2CReadBytes issues a write_read: write buf = [OPERATION cmd] */
+	zexpect_equal(i2c_write_buf_emul[0], 1); /* OPERATION command, for readback */
+	/* I2CWriteBytes issues a write: write buf = [OPERATION cmd, data] */
+	zexpect_equal(i2c_write_buf_emul[1], 1);    /* OPERATION command, write */
+	zexpect_equal(i2c_write_buf_emul[2], 0x12); /* transition_control | command_source high */
 }
 
 ZTEST(msgqueue, test_msg_type_switch_clk_scheme)
@@ -374,6 +404,21 @@ ZTEST(msgqueue, test_msg_type_debug_noc_translation)
 	req.data[1] = NO_BAD_GDDR | ((BIT(1) | BIT(3)) << 8U) /*skip eth 1 and 3*/;
 
 	push_msg_success();
+}
+
+static void *msgqueue_suite_setup(void)
+{
+	/* Register emulated I2C devices on i2c1 once for the entire suite.
+	 * i2c_emul_register must not be called more than once per emul struct
+	 * as it uses an intrusive slist node.
+	 */
+	const struct device *i2c1_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c1));
+
+	if (i2c1_dev != NULL) {
+		i2c_emul_register(i2c1_dev, &pmbus_emul);
+		i2c_emul_register(i2c1_dev, &generic_i2c_emul);
+	}
+	return NULL;
 }
 
 static void test_setup(void *ctx)
@@ -819,4 +864,4 @@ ZTEST(msgqueue, test_msg_type_ping_dm)
 	/* Note the DM PING SMBUS message is not simulated in this test */
 }
 
-ZTEST_SUITE(msgqueue, NULL, NULL, test_setup, NULL, NULL);
+ZTEST_SUITE(msgqueue, NULL, msgqueue_suite_setup, test_setup, NULL, NULL);

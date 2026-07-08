@@ -284,7 +284,8 @@ uint32_t RegulatorInit(PcbType board_type)
 			const struct regulator_config *regulator_config =
 				regulators_config->regulator_config + i;
 
-			I2CInit(I2CMst, regulator_config->address, I2CFastMode, PMBUS_MST_ID);
+			/* Keep init transactions conservative to avoid marginal PMBus timing. */
+			I2CInit(I2CMst, regulator_config->address, I2CStandardMode, PMBUS_MST_ID);
 
 			for (uint32_t j = 0; j < regulator_config->count; j++) {
 				const struct regulator_data *regulator_data =
@@ -299,7 +300,7 @@ uint32_t RegulatorInit(PcbType board_type)
 
 				if (i2c_error) {
 					LOG_WRN("Regulator %#x init retried on cmd %#x "
-						"with error %#x",
+						"with error %d",
 						regulator_config->address, regulator_data->cmd,
 						i2c_error);
 
@@ -312,7 +313,7 @@ uint32_t RegulatorInit(PcbType board_type)
 							regulator_data->mask, regulator_data->size);
 					if (i2c_error) {
 						LOG_ERR("Regulator init failed on cmd %#x "
-							"with error %#x",
+							"with error %d",
 							regulator_data->cmd, i2c_error);
 						aggregate_i2c_errors |= i2c_error;
 					} else {

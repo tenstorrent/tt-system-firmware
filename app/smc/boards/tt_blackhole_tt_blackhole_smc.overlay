@@ -6,7 +6,7 @@
 #include "tt_blackhole_smc_partitions.dtsi"
 
 &i2c1 {
-	status = "disabled";
+	status = "okay";
 };
 
 &i2c2 {

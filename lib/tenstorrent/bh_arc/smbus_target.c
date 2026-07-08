@@ -6,7 +6,6 @@
 
 #include "reg.h"
 #include "status_reg.h"
-#include "dw_apb_i2c.h"
 #include "cm2dm_msg.h"
 #include "throttler.h"
 #include "asic_state.h"
