@@ -56,6 +56,13 @@ config TT_BH_ARC_FAN_CTRL_GDDR_TEMP
 	help
 	  Enable to use GDDR temp in fan speed calculation
 
+config TT_BH_ARC_GDDR_THERM_TRIP_ACTION
+	bool "Engage CATMON thermal trip on GDDR over-temperature"
+	default n
+	help
+	  Enable to trigger a CATMON thermal trip (shutting the ASIC down)
+	  on GDDR over-temperature.
+
 config TT_BH_ARC_I2C_TIMEOUT
 	bool "Time out if I2C transaction exceeds given duration"
 	default y
