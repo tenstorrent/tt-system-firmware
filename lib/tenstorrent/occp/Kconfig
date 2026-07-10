@@ -21,6 +21,12 @@ config OCCP_BACKEND_I3C
 	  Use the I3C-based OCCP backend, which communicates with a remote
 	  OCCP target over the I3C bus.
 
+config OCCP_BACKEND_FAKE
+	bool "Fake/loopback backend (for testing)"
+	help
+	  A software-only OCCP backend that simulates an OCCP device in memory.
+	  For unit testing on native_sim only.
+
 endchoice
 
 config OCCP_RETRY_COUNT

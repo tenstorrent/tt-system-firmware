@@ -20,7 +20,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(occp, CONFIG_OCCP_LOG_LEVEL);
 
-uint8_t occp_rw_buffer[OCCP_MAX_MSG_SIZE];
+uint8_t occp_rw_buffer[OCCP_MAX_MSG_SIZE + sizeof(struct occp_header) + 4];
 
 static void fill_cmd_header(uint8_t app_id, uint8_t msg_id, uint16_t length,
 			    struct occp_header *hdr)

@@ -6,3 +6,8 @@ tests:
     tags: smoke
     platform_allow:
       - tt_mimir/tt_mimir/smc
+  lib.tenstorrent.occp.native_sim:
+    platform_allow:
+      - native_sim
+    extra_configs:
+      - CONFIG_OCCP_BACKEND_FAKE=y
