@@ -208,24 +208,13 @@ static int CATInit(void)
 }
 SYS_INIT_APP(CATInit);
 
-static void TriggerThermTrip(void)
-{
-	if (!IS_ENABLED(CONFIG_ARC)) {
-		return;
-	}
-
-	/* Configure catmon to trip at lowest temperature threshold (-56C) */
-	EnableCAT(TempToTrimCode(-56), true);
-}
-
 int MonitorGddrThermTrip(int64_t now, int max_temp)
 {
 	static bool tracking;
 	static int64_t over_temp_start_time;
 
 	if (max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP) {
-		LOG_ERR("Max GDDR temp %dC >= %dC, will trigger thermal trip", max_temp,
-			CAT_GDDR_THERM_TRIP_CRITICAL_TEMP);
+		LOG_ERR("Max GDDR temp %dC >= %dC", max_temp, CAT_GDDR_THERM_TRIP_CRITICAL_TEMP);
 		tracking = false;
 		return max_temp;
 	}
@@ -239,13 +228,24 @@ int MonitorGddrThermTrip(int64_t now, int max_temp)
 		tracking = true;
 		over_temp_start_time = now;
 	} else if (now - over_temp_start_time >= CAT_GDDR_THERM_TRIP_DURATION_MS) {
-		LOG_ERR("Max GDDR temp %dC >= %dC for >= %d ms, will trigger thermal trip",
-			max_temp, CAT_GDDR_THERM_TRIP_TEMP, CAT_GDDR_THERM_TRIP_DURATION_MS);
+		LOG_ERR("Max GDDR temp %dC >= %dC for >= %d ms", max_temp, CAT_GDDR_THERM_TRIP_TEMP,
+			CAT_GDDR_THERM_TRIP_DURATION_MS);
 		tracking = false;
 		return max_temp;
 	}
 
 	return 0;
+}
+
+#ifdef CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION
+static void TriggerThermTrip(void)
+{
+	if (!IS_ENABLED(CONFIG_ARC)) {
+		return;
+	}
+
+	/* Configure catmon to trip at lowest temperature threshold (-56C) */
+	EnableCAT(TempToTrimCode(-56), true);
 }
 
 static void gddr_therm_trip_trigger_handler(struct k_work *work)
@@ -256,6 +256,7 @@ static void gddr_therm_trip_trigger_handler(struct k_work *work)
 }
 
 static K_WORK_DELAYABLE_DEFINE(gddr_therm_trip_trigger_work, gddr_therm_trip_trigger_handler);
+#endif /* CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION */
 
 static void gddr_therm_trip_work_handler(struct k_work *work)
 {
@@ -274,8 +275,10 @@ static void gddr_therm_trip_work_handler(struct k_work *work)
 		ReportGddrThermTrip(max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP
 					    ? kGddrThermTripReasonInstantaneous
 					    : kGddrThermTripReasonSustained);
+#ifdef CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION
 		k_work_schedule(&gddr_therm_trip_trigger_work,
 				K_MSEC(GDDR_THERM_TRIP_DMC_NOTIFY_MS));
+#endif /* CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION */
 	}
 }
 
