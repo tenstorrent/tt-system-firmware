@@ -355,12 +355,13 @@ static int bh_chip_run_smbus_tests(struct bh_chip *chip)
 	uint32_t app_version;
 
 	/* Test SMBUS telemetry by selecting TAG_DM_APP_FW_VERSION and reading it back */
-	ret = bharc_smbus_byte_data_write(&chip->config.arc, 0x26, 26);
+	ret = bharc_smbus_byte_data_write(&chip->config.arc, CMFW_SMBUS_TELEMETRY_READ_CRC, 26);
 	if (ret < 0) {
 		LOG_DBG("Failed to write to SMBUS telemetry register");
 		return ret;
 	}
-	ret = bharc_smbus_block_read(&chip->config.arc, 0x27, &count, data);
+	ret = bharc_smbus_block_read(&chip->config.arc, CMFW_SMBUS_TELEMETRY_READ_CRC_DATA, &count,
+				     data);
 	if (ret < 0) {
 		LOG_DBG("Failed to read from SMBUS telemetry register");
 		return ret;
