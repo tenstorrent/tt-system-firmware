@@ -34,7 +34,6 @@ static const bool thermal_throttling = true;
  * chip_limits.kernel_throttler_stop_nops_freq), so they can be persisted in SPI
  * flash and overridden via bh-mod.
  */
-static bool kernel_throttler_at_aiclk_floor_enabled;
 static uint32_t kernel_throttler_stop_nops_freq;
 static uint32_t kernel_throttler_stop_nops_freq_default;
 
@@ -241,9 +240,6 @@ void InitThrottlers(void)
 	doppler_t2 = doppler;
 	doppler_t3 = doppler;
 
-	kernel_throttler_at_aiclk_floor_enabled =
-		tt_bh_fwtable_get_fw_table(fwtable_dev)
-			->feature_enable.kernel_throttler_at_floor_en;
 	kernel_throttler_stop_nops_freq_default =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)
 			->chip_limits.kernel_throttler_stop_nops_freq;
@@ -260,7 +256,8 @@ void InitThrottlers(void)
 		kernel_throttler_stop_nops_freq_default = 0U;
 	}
 	kernel_throttler_stop_nops_freq = kernel_throttler_stop_nops_freq_default;
-	UpdateTelemetryKernelThrottler(kernel_throttler_at_aiclk_floor_enabled,
+	UpdateTelemetryKernelThrottler(tt_bh_fwtable_get_fw_table(fwtable_dev)
+					       ->feature_enable.kernel_throttler_at_floor_en,
 				       kernel_throttler_stop_nops_freq);
 
 	SetThrottlerLimit(kThrottlerTDP,
@@ -395,17 +392,22 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
 
 /* Update kernel throttler NOPs state when running at the AICLK floor.
  *
- * Only active when feature_enable.kernel_throttler_at_floor_en is set. The stop
- * frequency is taken from chip_limits.kernel_throttler_stop_nops_freq when
- * non-zero, otherwise it falls back to the effective minimum arbiter frequency.
+ * This path is enabled when TAG_FW_ACTIVE_CONFIG_0 bit 0
+ * (kernel_nops_at_aiclk_fmin) is set. The bit is seeded from the fwtable at
+ * telemetry init and may later be changed at runtime via the characterization
+ * message path.
+ *
+ * The stop frequency comes from kernel_throttler_stop_nops_freq. When that
+ * value is 0, FW falls back to the effective minimum arbiter frequency.
  */
 static void UpdateKernelThrottler(float current_power, float tdp_limit)
 {
+	telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
 	bool start_nops = false;
 	bool stop_nops = false;
 	enum aiclk_arb_min arb;
 
-	if (kernel_throttler_at_aiclk_floor_enabled) {
+	if (active_config.kernel_nops_at_aiclk_fmin) {
 		start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
 
 		uint32_t stop_freq = kernel_throttler_stop_nops_freq;
@@ -459,7 +461,6 @@ uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled)
 		return 1;
 	}
 
-	kernel_throttler_at_aiclk_floor_enabled = (bool)enabled;
 	LOG_INF("kernel throttler at aiclk floor %s", enabled ? "enabled" : "disabled");
 
 	/* Release NOPs immediately if the feature is being disabled while active. */
@@ -468,8 +469,7 @@ uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled)
 		SendKernelThrottlingMessage(false);
 	}
 
-	UpdateTelemetryKernelThrottler(kernel_throttler_at_aiclk_floor_enabled,
-				       kernel_throttler_stop_nops_freq);
+	UpdateTelemetryKernelThrottler((bool)enabled, kernel_throttler_stop_nops_freq);
 	return 0;
 }
 
@@ -479,10 +479,12 @@ uint8_t ThrottlerSetKernelThrottlerStopFreq(uint32_t frequency)
 	 * fall back to the effective minimum arbiter frequency at runtime).
 	 */
 	if (frequency == 0) {
+		telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
+
 		kernel_throttler_stop_nops_freq = kernel_throttler_stop_nops_freq_default;
 		LOG_INF("kernel throttler stop nops frequency restored to fwtable default %u MHz",
 			kernel_throttler_stop_nops_freq);
-		UpdateTelemetryKernelThrottler(kernel_throttler_at_aiclk_floor_enabled,
+		UpdateTelemetryKernelThrottler(active_config.kernel_nops_at_aiclk_fmin,
 					       kernel_throttler_stop_nops_freq);
 		return 0;
 	}
@@ -492,9 +494,11 @@ uint8_t ThrottlerSetKernelThrottlerStopFreq(uint32_t frequency)
 		return 1;
 	}
 
+	telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
+
 	kernel_throttler_stop_nops_freq = frequency;
 	LOG_INF("kernel throttler stop nops frequency set to %u MHz", frequency);
-	UpdateTelemetryKernelThrottler(kernel_throttler_at_aiclk_floor_enabled,
+	UpdateTelemetryKernelThrottler(active_config.kernel_nops_at_aiclk_fmin,
 				       kernel_throttler_stop_nops_freq);
 	return 0;
 }

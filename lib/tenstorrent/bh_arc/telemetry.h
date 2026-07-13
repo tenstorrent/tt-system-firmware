@@ -26,6 +26,63 @@
 #define TELEMETRY_VERSION 0x00000100
 
 /**
+ * @defgroup telemetry_feature_capabilities Feature Capabilities
+ * @ingroup telemetry
+ * @brief Feature capability and active-configuration telemetry definitions.
+ *
+ * Firmware feature capabilities are organized into telemetry register pairs:
+ * one register reports which features are supported by the firmware, and the
+ * matching register reports which of those features are currently enabled.
+ *
+ * The currently allocated telemetry pair is:
+ *
+ * <table>
+ * <tr>
+ * <th>Capability register</th><th>Active-config register</th><th>Shared bit layout</th>
+ * </tr>
+ * <tr>
+ * <td>@ref TAG_FW_CAPABILITIES_0</td>
+ * <td>@ref TAG_FW_ACTIVE_CONFIG_0</td>
+ * <td>@ref telemetry_feature_flags_bits_0_t</td>
+ * </tr>
+ * </table>
+ * @{
+ */
+
+/** @brief Bit definitions shared by firmware capability and active-configuration telemetry.
+ *
+ * These bit positions are shared by both @ref TAG_FW_CAPABILITIES_0 and
+ * @ref TAG_FW_ACTIVE_CONFIG_0.
+ *
+ * For any bit defined here:
+ *
+ * | Telemetry register | Meaning of bit value 1 |
+ * | --- | --- |
+ * | @ref TAG_FW_CAPABILITIES_0 | The firmware supports the feature. |
+ * | @ref TAG_FW_ACTIVE_CONFIG_0 | The feature is currently enabled. |
+ */
+typedef struct {
+	/** @brief Kernel-throttler-at-AICLK-floor feature.
+	 *
+	 * This bit is controlled at runtime by the host with
+	 * @ref TT_SMC_MSG_CHARACTERISATION using
+	 * @ref TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED.
+	 */
+	uint32_t kernel_nops_at_aiclk_fmin: 1;
+
+	/** @brief Reserved for future use. */
+	uint32_t reserved: 31;
+} telemetry_feature_flags_bits_0_t;
+
+/** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
+typedef union {
+	uint32_t u32_all;
+	telemetry_feature_flags_bits_0_t bits;
+} telemetry_feature_flags_0_t;
+
+/** @} */ /* end of telemetry_feature_capabilities */
+
+/**
  * @defgroup telemetry_tags Telemetry Tags
  * @ingroup telemetry
  * @brief Telemetry tag definitions
@@ -393,12 +450,35 @@
  */
 #define TAG_NOP_ON_DURATION 77
 
+/** @brief Firmware capability bitfield.
+ *
+ * Bits are defined by @ref telemetry_feature_flags_bits_0_t.
+ *
+ * Current assignments:
+ * - bit 0 (`kernel_nops_at_aiclk_fmin`): firmware supports the
+ *   kernel-throttler-at-AICLK-floor feature.
+ */
+#define TAG_FW_CAPABILITIES_0 78
+
+/** @brief Active firmware configuration bitfield.
+ *
+ * Bits are defined by @ref telemetry_feature_flags_bits_0_t.
+ *
+ * Current assignments:
+ * - bit 0 (`kernel_nops_at_aiclk_fmin`): kernel-throttler-at-AICLK-floor is enabled.
+ *
+ * Runtime control:
+ * - The host can enable or disable this bit with @ref TT_SMC_MSG_CHARACTERISATION
+ *   and @ref TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED.
+ */
+#define TAG_FW_ACTIVE_CONFIG_0 79
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 78
+#define TAG_COUNT 80
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -414,6 +494,13 @@ void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
+/** @brief Get the current active firmware feature bits from @ref TAG_FW_ACTIVE_CONFIG_0.
+ * @ingroup telemetry_feature_capabilities
+ *
+ * The returned struct uses the bit layout documented by
+ * @ref telemetry_feature_flags_bits_0_t.
+ */
+telemetry_feature_flags_bits_0_t GetActiveFeatures(void);
 bool GetTelemetryTagValid(uint16_t tag);
 uint32_t GetTelemetryTag(uint16_t tag);
 
