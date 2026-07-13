@@ -173,6 +173,8 @@ static struct telemetry_table telemetry_table = {
 		[70] = {TAG_KERNEL_THROTTLER, TELEM_OFFSET(TAG_KERNEL_THROTTLER)},
 		[71] = {TAG_NOP_START_COUNT, TELEM_OFFSET(TAG_NOP_START_COUNT)},
 		[72] = {TAG_NOP_ON_DURATION, TELEM_OFFSET(TAG_NOP_ON_DURATION)},
+		[73] = {TAG_FW_CAPABILITIES_0, TELEM_OFFSET(TAG_FW_CAPABILITIES_0)},
+		[74] = {TAG_FW_ACTIVE_CONFIG_0, TELEM_OFFSET(TAG_FW_ACTIVE_CONFIG_0)},
 	},
 };
 /* clang-format on */
@@ -249,7 +251,22 @@ void UpdateTelemetryHostAiclkLimit(uint32_t fmax)
 
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq)
 {
+	telemetry_feature_flags_0_t active_config = {
+		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
+	};
+
+	active_config.bits.kernel_nops_at_aiclk_fmin = enabled ? 1U : 0U;
+	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 	telemetry[TAG_KERNEL_THROTTLER] = (enabled ? 1U : 0U) | ((stop_nops_freq & 0xFFFFU) << 16U);
+}
+
+telemetry_feature_flags_bits_0_t GetActiveFeatures(void)
+{
+	telemetry_feature_flags_0_t active_config = {
+		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
+	};
+
+	return active_config.bits;
 }
 
 bool GetTelemetryTagValid(uint16_t tag)
@@ -385,6 +402,9 @@ static uint32_t get_gddr_mrisc_endpoints(void)
 
 static void write_static_telemetry(uint32_t app_version)
 {
+	telemetry_feature_flags_0_t fw_capabilities = {0};
+	telemetry_feature_flags_0_t active_config = {0};
+
 	telemetry_table.version = TELEMETRY_VERSION; /* v0.1.0 - Only update when redefining the
 						      * meaning of an existing tag
 						      */
@@ -451,6 +471,14 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_ASIC_LOCATION] = tt_bh_fwtable_get_asic_location(fwtable_dev);
 
 	telemetry[TAG_GDDR_MRISC_NOC2AXI_PORT] = get_gddr_mrisc_endpoints();
+
+	fw_capabilities.bits.kernel_nops_at_aiclk_fmin = 1U;
+	telemetry[TAG_FW_CAPABILITIES_0] = fw_capabilities.u32_all;
+
+	active_config.bits.kernel_nops_at_aiclk_fmin =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)
+			->feature_enable.kernel_throttler_at_floor_en;
+	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 }
 
 static void update_telemetry(void)
