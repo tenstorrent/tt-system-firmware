@@ -168,6 +168,24 @@
 			reg = <0xa>;
 		};
 	};
+
+	smc_sensor: smc_sensor {
+		compatible = "tenstorrent,bh-arc-telemetry";
+		arc = <&chip0_arc>;
+		status = "okay";
+
+		temp {
+			channel-type = <12>; /* SENSOR_CHAN_DIE_TEMP */
+			channel-index = <0>;
+			telemetry-tag = <11>;
+		};
+
+		tdp {
+			channel-type = <45>; /* SENSOR_CHAN_POWER */
+			channel-index = <0>;
+			telemetry-tag = <7>;
+		};
+	};
 };
 
 &emul_i2c {

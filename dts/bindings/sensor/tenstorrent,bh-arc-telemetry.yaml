@@ -1,0 +1,50 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Zephyr sensor driver that performs a live telemetry read from a
+  tenstorrent,bh-arc device (the SMC/ARC on a BH chip).
+
+  Configuration is one provider node per SMC and one or more
+  child channel mapping nodes that translate (channel-type, channel-index)
+  to a telemetry tag.
+
+  Each fetch issues a two-step CRC-framed telemetry read: it writes the
+  mapped telemetry tag index to CMFW_SMBUS_TELEMETRY_READ_CRC, then reads the
+  7-byte response from CMFW_SMBUS_TELEMETRY_READ_CRC_DATA. The payload value is
+  decoded from bytes 3 through 6 of that response.
+
+compatible: "tenstorrent,bh-arc-telemetry"
+
+include: [sensor-device.yaml, base.yaml]
+
+properties:
+  arc:
+    type: phandle
+    required: true
+    description: |
+      Phandle to a tenstorrent,bh-arc SMBus device node.  The driver reads
+      the SMBus bus and address from this node at compile time.
+
+child-binding:
+  description: Channel mapping entry for a tenstorrent,bh-arc-telemetry provider
+  properties:
+    channel-type:
+      type: int
+      required: true
+      description: Zephyr sensor_channel enum value
+
+    channel-index:
+      type: int
+      default: 0
+      description: Channel index within channel-type
+
+    telemetry-tag:
+      type: int
+      required: true
+      description: TAG_* value requested from SMC telemetry
+
+    scale-micro:
+      type: int
+      default: 1000000
+      description: Scale factor in micro physical-units per raw LSB
