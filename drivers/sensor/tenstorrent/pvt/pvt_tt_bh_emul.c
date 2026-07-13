@@ -23,6 +23,12 @@ struct pvt_tt_bh_emul_config {
 	uint16_t ts_raw;
 };
 
+struct pvt_tt_bh_emul_data {
+	uint16_t pd_raw;
+	uint16_t vm_raw;
+	uint16_t ts_raw;
+};
+
 static int pvt_tt_bh_emul_attr_get(const struct device *dev, enum sensor_channel chan,
 				   enum sensor_attribute attr, struct sensor_value *val)
 {
@@ -75,6 +81,8 @@ static void pvt_tt_bh_emul_submit(const struct device *sensor, struct rtio_iodev
 		(const struct sensor_read_config *)event->iodev->data;
 	const struct pvt_tt_bh_emul_config *cfg =
 		(const struct pvt_tt_bh_emul_config *)sensor_cfg->sensor->config;
+	struct pvt_tt_bh_emul_data *data_cfg =
+		(struct pvt_tt_bh_emul_data *)sensor_cfg->sensor->data;
 	uint32_t min_buffer_len = sizeof(struct pvt_tt_bh_rtio_data) * sensor_cfg->count;
 	uint8_t *buf;
 	uint32_t buf_len;
@@ -100,24 +108,24 @@ static void pvt_tt_bh_emul_submit(const struct device *sensor, struct rtio_iodev
 				rtio_iodev_sqe_err(sqe, -EINVAL);
 				return;
 			}
-			data[i].raw = cfg->pd_raw;
+			data[i].raw = data_cfg->pd_raw;
 			break;
 		case SENSOR_CHAN_PVT_TT_BH_VM:
 			if (chan->chan_idx >= cfg->num_vm) {
 				rtio_iodev_sqe_err(sqe, -EINVAL);
 				return;
 			}
-			data[i].raw = cfg->vm_raw;
+			data[i].raw = data_cfg->vm_raw;
 			break;
 		case SENSOR_CHAN_PVT_TT_BH_TS:
 			if (chan->chan_idx >= cfg->num_ts) {
 				rtio_iodev_sqe_err(sqe, -EINVAL);
 				return;
 			}
-			data[i].raw = cfg->ts_raw;
+			data[i].raw = data_cfg->ts_raw;
 			break;
 		case SENSOR_CHAN_PVT_TT_BH_TS_AVG:
-			data[i].raw = cfg->ts_raw;
+			data[i].raw = data_cfg->ts_raw;
 			break;
 		default:
 			LOG_ERR("Unsupported channel type: %d", chan->chan_type);
@@ -131,7 +139,28 @@ static void pvt_tt_bh_emul_submit(const struct device *sensor, struct rtio_iodev
 
 static int pvt_tt_bh_emul_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
+	const struct pvt_tt_bh_emul_config *cfg = (const struct pvt_tt_bh_emul_config *)dev->config;
+	struct pvt_tt_bh_emul_data *data = (struct pvt_tt_bh_emul_data *)dev->data;
+
+	data->pd_raw = cfg->pd_raw;
+	data->vm_raw = cfg->vm_raw;
+	data->ts_raw = cfg->ts_raw;
+
+	return 0;
+}
+
+int pvt_tt_bh_emul_set_ts_raw(uint16_t raw)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_DRV_INST(0));
+	struct pvt_tt_bh_emul_data *data;
+
+	if (!device_is_ready(dev)) {
+		return -ENODEV;
+	}
+
+	data = (struct pvt_tt_bh_emul_data *)dev->data;
+	data->ts_raw = raw;
+
 	return 0;
 }
 
@@ -159,8 +188,9 @@ static DEVICE_API(sensor, pvt_tt_bh_emul_driver_api) = {
 		.vm_raw = DT_PROP(DT_DRV_INST(id), vm_raw),                                        \
 		.ts_raw = DT_PROP(DT_DRV_INST(id), ts_raw),                                        \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(id, pvt_tt_bh_emul_init, NULL, NULL, &pvt_tt_bh_emul_config_##id,    \
-			      POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,                            \
-			      &pvt_tt_bh_emul_driver_api);
+	static struct pvt_tt_bh_emul_data pvt_tt_bh_emul_data_##id;                                \
+	DEVICE_DT_INST_DEFINE(id, pvt_tt_bh_emul_init, NULL, &pvt_tt_bh_emul_data_##id,            \
+			      &pvt_tt_bh_emul_config_##id, POST_KERNEL,                            \
+			      CONFIG_SENSOR_INIT_PRIORITY, &pvt_tt_bh_emul_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(DEFINE_PVT_TT_BH_EMUL)
