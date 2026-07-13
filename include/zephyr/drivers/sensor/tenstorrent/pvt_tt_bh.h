@@ -113,4 +113,9 @@ void pvt_tt_bh_submit(const struct device *sensor, struct rtio_iodev_sqe *sqe);
 
 void pvt_tt_bh_delay_chain_set(uint32_t new_delay_chain_);
 
+/* Test/emulation hook: update the emulated TS raw sample for PVT sensor instance 0. */
+#ifdef CONFIG_PVT_TT_BH_EMUL
+int pvt_tt_bh_emul_set_ts_raw(uint16_t raw);
+#endif /* CONFIG_PVT_TT_BH_EMUL */
+
 #endif /* PVT_TT_BH_H */
