@@ -1,0 +1,15 @@
+common:
+  tags:
+    - drivers
+    - sensor
+    - bh_arc_telem
+
+tests:
+  drivers.sensor.bh_arc_telem.native_sim:
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
+    extra_args:
+      - DTC_OVERLAY_FILE=boards/native_sim.overlay
+      - EXTRA_CONF_FILE=../../../../app/dmc/boards/native_sim.conf
