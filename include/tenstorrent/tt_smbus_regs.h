@@ -41,6 +41,12 @@ enum CMFWSMBusReg {
 	CMFW_SMBUS_POWER_LIMIT = 0x24,
 	/* WO, 16 bits. Write with current input power for board */
 	CMFW_SMBUS_POWER_INSTANT = 0x25,
+	/* RW, 8 bits in, 56 bits out. Select a telemetry tag for reading.
+	 */
+	CMFW_SMBUS_TELEMETRY_READ_CRC = 0x26,
+	/* RO, 56 bits out. Read the telemetry payload and response metadata after selecting a tag.
+	 */
+	CMFW_SMBUS_TELEMETRY_READ_CRC_DATA = 0x27,
 	/* WO, 16 bits. Write with therm trip count */
 	CMFW_SMBUS_THERM_TRIP_COUNT = 0x28,
 	/* WO, Up to 32 bytes. Write with data to log from DMC side */
