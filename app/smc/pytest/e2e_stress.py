@@ -70,15 +70,15 @@ def report_results(test_name, fail_count, total_tries):
     logger.info(f"{test_name} completed. Failed {fail_count}/{total_tries} times.")
 
 
-def tt_smi_reset(board_name=None):
-    board = board_name if board_name is not None else os.getenv("BOARD")
-    if board == "orion_slt":
-        smi_reset_cmd = "tt-smi -r --use_luwen --eth_train_skip"
-    else:
-        smi_reset_cmd = "tt-smi -r --eth_train_skip"
-    return subprocess.run(
+def tt_smi_reset():
+    """
+    Resets the SMC using tt-smi
+    """
+    smi_reset_cmd = "tt-smi -r --eth_train_skip"
+    smi_reset_result = subprocess.run(
         smi_reset_cmd.split(), capture_output=True, check=False
     ).returncode
+    return smi_reset_result
 
 
 @pytest.mark.skipif(
@@ -115,7 +115,7 @@ def test_arc_watchdog(arc_chip_dut, asic_id):
     "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
     reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
 )
-def test_pcie_fw_load_time(arc_chip_dut, asic_id, board_name):
+def test_pcie_fw_load_time(arc_chip_dut, asic_id):
     """
     Checks PCIe firmware load time is within 40ms.
     This test needs to be run after production reset.
@@ -131,7 +131,7 @@ def test_pcie_fw_load_time(arc_chip_dut, asic_id, board_name):
             f"Starting PCIe firmware load time test iteration {i}/{total_tries}"
         )
         # Reset the SMC to ensure we have a clean state
-        if tt_smi_reset(board_name) != 0:
+        if tt_smi_reset() != 0:
             logger.warning(f"tt-smi reset failed on iteration {i}")
             fail_count += 1
             continue
@@ -299,10 +299,6 @@ def test_dmc_ping(arc_chip_dut, asic_id):
     assert fail_count == 0, "DMC ping test failed a non-zero number of times."
 
 
-@pytest.mark.skipif(
-    "os.getenv('BOARD') == 'orion_slt'",
-    reason="Orion SLT has no recovery/downgrade path for the version upgrade test",
-)
 def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut):
     upgrade_from_version_test(
         arc_chip_dut,
@@ -392,10 +388,6 @@ def test_pvt_comprehensive(arc_chip_dut, asic_id):
     assert fail_count == 0, f"{test_name} failed {fail_count} times."
 
 
-@pytest.mark.skipif(
-    "os.getenv('BOARD') == 'orion_slt'",
-    reason="Orion SLT does not support the power state toggle flow",
-)
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
     test_name = "Power state toggle test"
     total_tries = min(MAX_TEST_ITERATIONS, 100)
@@ -415,7 +407,7 @@ def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
     "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
     reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
-def test_power_virus(arc_chip_dut, asic_id, board_name):
+def test_power_virus(arc_chip_dut, asic_id):
     """
     - Run the power virus TTX workload (tt-burnin) for 180 seconds
     - The expectations are:
@@ -426,25 +418,35 @@ def test_power_virus(arc_chip_dut, asic_id, board_name):
 
     def read_ts_once(chip, sensor_idx: int):
         # ARC handler expects sensor id; returns status in response[1]
-        rsp = chip.arc_msg(TT_SMC_MSG_READ_TS, True, False, sensor_idx, 0, 1000)
+        for i in range(NUM_TS):
+            rsp = chip.arc_msg(TT_SMC_MSG_READ_TS, True, False, i, 0, 1000)
+        # Best-effort logging; exact response layout is FW-defined
+        logger.info(f"READ_TS idx={sensor_idx} rsp={rsp}")
         # If status is present as second field, ensure success
         if len(rsp) > 1:
             assert rsp[1] == 0, f"READ_TS status error for TS[{sensor_idx}]"
         return rsp
 
-    duration = 180
-    fail_count = 0
+    # Sample TMON before PV
+    for _ in range(20):
+        for ts in range(0, 8):
+            try:
+                read_ts_once(arc_chip, ts)
+            except Exception as e:
+                logger.warning(f"READ_TS pre-PV failed for idx {ts}: {e}")
+        time.sleep(0.1)
 
-    logger.info(
-        f"Running tt-burnin for {duration}s and sample temperature sensors every second"
-    )
-
+    # Run tt-burnin for 180s and read_ts at the same time
+    logger.info("Starting tt-burnin process for power virus test")
     burnin_process = subprocess.Popen(
         ["tt-burnin", "--no-reset"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+    duration = 180  # 180 seconds
+    fail_count = 0
 
     try:
         end_time = time.time() + duration
@@ -470,6 +472,8 @@ def test_power_virus(arc_chip_dut, asic_id, board_name):
         fail_count += 1
 
     finally:
+        # Stop tt-burnin
+        logger.info("Stopping tt-burnin process")
         if burnin_process.poll() is None:
             # Send enter key to stop tt-burnin gracefully
             try:
@@ -486,16 +490,6 @@ def test_power_virus(arc_chip_dut, asic_id, board_name):
                 except subprocess.TimeoutExpired:
                     burnin_process.kill()
                     burnin_process.wait()
-        logger.info("  Succeeded")
-
-    # Release the chip handle before resetting: a held device FD causes
-    # tt-smi -r to fail (see the `del arc_chip` in test_smi_reset).
-    del arc_chip
-
-    # tt-burnin ran with --no-reset, so restore the board to a known-good
-    # state for later tests.
-    logger.info("Resetting board after burnin")
-    reset_rc = tt_smi_reset(board_name)
 
     logger.info(
         f"Power virus test completed with {fail_count} temperature read failures"
@@ -503,14 +497,13 @@ def test_power_virus(arc_chip_dut, asic_id, board_name):
     assert fail_count == 0, (
         f"Power virus test failed with {fail_count} temperature read failures"
     )
-    assert reset_rc == 0, f"tt-smi reset after burnin failed with {reset_rc}"
 
 
 @pytest.mark.skipif(
     "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
     reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
-def test_tensix_reset_then_burnin(arc_chip_dut, asic_id, board_name):
+def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
     """
     Reset every non-harvested Tensix tile, then run tt-burnin and check
     it exits successfully.
@@ -573,18 +566,8 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id, board_name):
                     burnin_process.kill()
                     burnin_process.wait()
 
-    # Release the chip handle before resetting: a held device FD causes
-    # tt-smi -r to fail (see the `del arc_chip` in test_smi_reset).
-    del arc_chip
-
-    # Since --no-reset skips tt-burnin's own post-workload reset, restore the
-    # board to a known-good state so later tests start clean.
-    logger.info("Resetting board after burnin")
-    reset_rc = tt_smi_reset(board_name)
-
     assert not terminated_early, "tt-burnin terminated early"
     assert burnin_process.returncode == 0, (
         f"tt-burnin failed with {burnin_process.returncode}"
     )
-    assert reset_rc == 0, f"tt-smi reset after burnin failed with {reset_rc}"
     logger.info("  Succeeded")

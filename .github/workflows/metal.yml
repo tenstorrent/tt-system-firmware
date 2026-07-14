@@ -103,6 +103,7 @@ jobs:
           source .env/bin/activate
           pip install tt-flash==3.10.0
           tt-flash $HOME/fw_pack-*.fwbundle --force
+          tt-smi -r
       - name: Patch Test Command
         run: |
           # Patch whisper demo test to run with CI=false to skip the performance checks.
