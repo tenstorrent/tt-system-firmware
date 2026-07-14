@@ -759,7 +759,7 @@ def create_pipeline_json(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ts = pipeline.pipeline_start_ts.strftime("%Y%m%dT%H%M%SZ")
-    filename = f"pipeline_{run_id}_{ts}.json"
+    filename = f"pipeline_{run_id}_a{run_attempt}_{ts}.json"
     output_path = output_dir / filename
 
     with open(output_path, "w") as f:
