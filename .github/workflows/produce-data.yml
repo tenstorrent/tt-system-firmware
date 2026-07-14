@@ -59,6 +59,17 @@ jobs:
             echo "::notice::Skipping upload for run from '$head_repo' (not ${{ github.repository }})"
           fi
 
+          # The soak/long tests can be triggered on a PR via the 'long-tests'
+          # label, but we only want to upload their data for runs on the
+          # main branch.
+          workflow_name="${{ github.event.workflow_run.name }}"
+          head_branch="${{ github.event.workflow_run.head_branch }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+          if [[ "$workflow_name" == "HW Soak" && "$head_branch" != "$default_branch" ]]; then
+            upload="false"
+            echo "::notice::Skipping upload for '$workflow_name' on branch '$head_branch' (only uploads on $default_branch)"
+          fi
+
           [[ -z "$run_id" ]] && { echo "::error::run_id is empty"; exit 1; }
           [[ -z "$run_attempt" ]] && { echo "::error::run_attempt is empty"; exit 1; }
 
