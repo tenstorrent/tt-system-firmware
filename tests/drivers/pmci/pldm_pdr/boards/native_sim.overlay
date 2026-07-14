@@ -1,0 +1,51 @@
+/ {
+	dummy_sensor0: dummy-sensor0 {
+		compatible = "tenstorrent,dummy-sensor-emul";
+		status = "okay";
+	};
+
+	pldm_pdr_test: pldm-pdr-test {
+		compatible = "tenstorrent,pldm-pdr";
+		status = "okay";
+
+		temp_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor0>;
+			/* SENSOR_CHAN_DIE_TEMP */
+			channel-type = <12>;
+			channel-index = <0>;
+			sensor-id = <101>;
+			entity-type = <5>;
+			entity-instance = <1>;
+			container-id = <0>;
+			unit-modifier = <(-1)>;
+			sensor-name = "ASIC_TEMP";
+		};
+
+		power_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor0>;
+			/* SENSOR_CHAN_POWER */
+			channel-type = <45>;
+			channel-index = <0>;
+			sensor-id = <202>;
+			entity-type = <10>;
+			entity-instance = <2>;
+			container-id = <0>;
+		};
+
+		override_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor0>;
+			/* SENSOR_CHAN_POWER */
+			channel-type = <45>;
+			channel-index = <0>;
+			sensor-id = <303>;
+			entity-type = <20>;
+			entity-instance = <3>;
+			container-id = <7>;
+			base-unit = <77>;
+			unit-modifier = <0>;
+		};
+	};
+};

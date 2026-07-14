@@ -1,0 +1,11 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent PLDM PDR provider node.
+  Child nodes compatible with tenstorrent,pldm-numeric-sensor define sensors
+  exported into the PLDM PDR repository.
+
+compatible: "tenstorrent,pldm-pdr"
+
+include: base.yaml
