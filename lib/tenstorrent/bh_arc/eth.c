@@ -393,11 +393,16 @@ static bool load_alt_eth_serdes_cfg(uint8_t eth_inst)
 {
 	PcbType pcb_type;
 	uint32_t asic_location;
+	uint32_t speed_override;
+
 	pcb_type = tt_bh_fwtable_get_pcb_type(fwtable_dev);
 	asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
+	speed_override =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override;
 
 	if (pcb_type == PcbTypeUBB && (asic_location >= 5 && asic_location <= 8) &&
-	    (eth_inst == 7 || eth_inst == 8 || eth_inst == 9)) {
+	    (eth_inst == 7 || eth_inst == 8 || eth_inst == 9) &&
+	    (speed_override == 0 || speed_override == 400)) {
 		return true;
 	}
 
@@ -408,11 +413,15 @@ static bool LoadAltSerdes(uint8_t serdes_inst)
 {
 	PcbType pcb_type;
 	uint32_t asic_location;
+	uint32_t speed_override;
+
 	pcb_type = tt_bh_fwtable_get_pcb_type(fwtable_dev);
 	asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
+	speed_override =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override;
 
 	if (pcb_type == PcbTypeUBB && (asic_location >= 5 && asic_location <= 8) &&
-	    serdes_inst == 5) {
+	    serdes_inst == 5 && (speed_override == 0 || speed_override == 400)) {
 		return true;
 	}
 
