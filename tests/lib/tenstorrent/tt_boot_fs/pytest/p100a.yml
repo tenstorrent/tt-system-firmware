@@ -67,5 +67,5 @@ fail_over_image:
   # binary: $BUILD/zephyr/zephyr.bin
   binary: $ROOT/zephyr/blobs/tt_blackhole_serdes_eth_fw.bin
   offset: 0x10000000
-  # not needed, but exercise padto for coverage (adds 36 bytes of 0xff)
-  padto: 19540
+  # Serdes fw bin has a max size of 34 kb.
+  padto: 34816

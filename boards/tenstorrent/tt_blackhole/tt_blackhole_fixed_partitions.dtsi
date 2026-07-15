@@ -241,24 +241,6 @@ partitions {
 		binary-path = "$BUILD_DIR/mcuboot_magic_test.bin";
 	};
 
-	/*
-	 * This partition defines binary blobs that allow booting the Ethernet
-	 * interfaces up at alternative custom speeds.
-	 */
-	altsdreg: partition@31e000 {
-		label = "altsdreg";
-		reg = <0x31e000 DT_SIZE_K(4)>;
-		binary-path = "$BLOBS_DIR/tt_blackhole_alt_serdes_eth_fwreg.bin";
-		read-only;
-	};
-
-	altsdfw: partition@31f000 {
-		label = "altsdfw";
-		reg = <0x31f000 DT_SIZE_K(64)>;
-		binary-path = "$BLOBS_DIR/tt_blackhole_alt_serdes_eth_fw.bin";
-		read-only;
-	};
-
 	/* Leave some space for future fixed partitions, if needed. */
 
 	/* Free space for storage */

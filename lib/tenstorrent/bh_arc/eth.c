@@ -51,12 +51,10 @@ LOG_MODULE_REGISTER(eth, CONFIG_TT_APP_LOG_LEVEL);
 
 #define ETH_MAC_ADDR_ORG 0x208C47 /* 20:8C:47 */
 
-#define ETH_FW_CFG_TAG     "ethfwcfg"
-#define ETH_FW_TAG         "ethfw"
-#define ETH_SD_REG_TAG     "ethsdreg"
-#define ETH_SD_FW_TAG      "ethsdfw"
-#define ETH_ALT_SD_REG_TAG "altsdreg"
-#define ETH_ALT_SD_FW_TAG  "altsdfw"
+#define ETH_FW_CFG_TAG "ethfwcfg"
+#define ETH_FW_TAG     "ethfw"
+#define ETH_SD_REG_TAG "ethsdreg"
+#define ETH_SD_FW_TAG  "ethsdfw"
 
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 static const struct device *flash = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi_flash));
@@ -332,11 +330,12 @@ int LoadEthFwCfg(uint32_t eth_inst, uint32_t ring, uint8_t *buf, uint32_t eth_en
 	fw_cfg_32b[0] = GetEthSel(eth_enabled);
 
 	/* Check if speed overrides exist, */
-	/* apply them if they are a valid speed setting (40G, 100G, 200G, 400G) */
+	/* apply them if they are a valid speed setting (40G, 100G, 200G, 330G, 350G, 370G, 400G) */
 	uint32_t speed_override =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override;
 
 	if (speed_override == 40 || speed_override == 100 || speed_override == 200 ||
+	    speed_override == 330 || speed_override == 350 || speed_override == 370 ||
 	    speed_override == 400) {
 		fw_cfg_32b[1] = speed_override;
 	}
@@ -389,51 +388,11 @@ static int load_eth_serdes_cfg(uint32_t eth_inst, uint32_t ring, uint8_t *buf, s
 	return 0;
 }
 
-static bool load_alt_eth_serdes_cfg(uint8_t eth_inst)
-{
-	PcbType pcb_type;
-	uint32_t asic_location;
-	uint32_t speed_override;
-
-	pcb_type = tt_bh_fwtable_get_pcb_type(fwtable_dev);
-	asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
-	speed_override =
-		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override;
-
-	if (pcb_type == PcbTypeUBB && (asic_location >= 5 && asic_location <= 8) &&
-	    (eth_inst == 7 || eth_inst == 8 || eth_inst == 9) &&
-	    (speed_override == 0 || speed_override == 400)) {
-		return true;
-	}
-
-	return false;
-}
-
-static bool LoadAltSerdes(uint8_t serdes_inst)
-{
-	PcbType pcb_type;
-	uint32_t asic_location;
-	uint32_t speed_override;
-
-	pcb_type = tt_bh_fwtable_get_pcb_type(fwtable_dev);
-	asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
-	speed_override =
-		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override;
-
-	if (pcb_type == PcbTypeUBB && (asic_location >= 5 && asic_location <= 8) &&
-	    serdes_inst == 5 && (speed_override == 0 || speed_override == 400)) {
-		return true;
-	}
-
-	return false;
-}
-
-static void SerdesEthInit(void)
+static uint8_t SerdesEthInit(void)
 {
 	uint32_t ring = 0;
 	int rc;
 	tt_boot_fs_fd serdes_fw_fd;
-	tt_boot_fs_fd alt_serdes_fw_fd;
 
 	SetupEthSerdesMux(tile_enable.eth_enabled);
 
@@ -459,29 +418,24 @@ static void SerdesEthInit(void)
 	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_SD_FW_TAG, &serdes_fw_fd);
 	if (rc < 0) {
 		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_SD_FW_TAG, rc);
-		return;
-	}
-
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_ALT_SD_FW_TAG, &alt_serdes_fw_fd);
-	if (rc < 0) {
-		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_ALT_SD_FW_TAG, rc);
-		return;
+		return ETH_RESET_ERR_SERDES_FW_LOOKUP;
 	}
 
 	/* Load fw */
 	for (uint8_t serdes_inst = 0; serdes_inst < 6; serdes_inst++) {
 		if (IS_BIT_SET(load_serdes, serdes_inst)) {
-			if (LoadAltSerdes(serdes_inst)) {
-				LoadSerdesEthFw(serdes_inst, ring, buf, SCRATCHPAD_SIZE,
-						alt_serdes_fw_fd.spi_addr,
-						alt_serdes_fw_fd.flags.f.image_size);
-			} else {
-				LoadSerdesEthFw(serdes_inst, ring, buf, SCRATCHPAD_SIZE,
-						serdes_fw_fd.spi_addr,
-						serdes_fw_fd.flags.f.image_size);
+			rc = LoadSerdesEthFw(serdes_inst, ring, buf, SCRATCHPAD_SIZE,
+					     serdes_fw_fd.spi_addr,
+					     serdes_fw_fd.flags.f.image_size);
+			if (rc < 0) {
+				LOG_ERR("Failed to load SerDes FW for SerDes instance %u",
+					serdes_inst);
+				return ETH_RESET_ERR_SERDES_FW_LOAD;
 			}
 		}
 	}
+
+	return 0;
 }
 
 /* This function assumes that tensix L1s have already been cleared */
@@ -521,52 +475,89 @@ static void wipe_l1(void)
 	}
 }
 
-static void EthInit(void)
+/* Look up all file descriptors for the ETH FW, cfg, and SerDes cfg */
+static uint8_t lookup_eth_fw_parts_fds(tt_boot_fs_fd *eth_fd, tt_boot_fs_fd *eth_cfg_fd,
+				       tt_boot_fs_fd *serdes_reg_fd)
+{
+	int rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, eth_fd);
+
+	if (rc < 0) {
+		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_FW_TAG, rc);
+		return ETH_RESET_ERR_FW_LOOKUP;
+	}
+
+	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, eth_cfg_fd);
+	if (rc < 0) {
+		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_FW_CFG_TAG, rc);
+		return ETH_RESET_ERR_CFG_LOOKUP;
+	}
+
+	/* Loading the ETH cfg requires the whole image to fit in the scratchpad buffer */
+	if (eth_cfg_fd->flags.f.image_size > SCRATCHPAD_SIZE) {
+		LOG_ERR("ETH cfg image size %u is larger than scratchpad size %u",
+			eth_cfg_fd->flags.f.image_size, SCRATCHPAD_SIZE);
+		return ETH_RESET_ERR_CFG_SIZE;
+	}
+
+	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_SD_REG_TAG, serdes_reg_fd);
+	if (rc < 0) {
+		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_SD_REG_TAG, rc);
+		return ETH_RESET_ERR_SERDES_CFG_LOOKUP;
+	}
+
+	return 0;
+}
+
+/* Load the ETH FW, cfg, and the SerDes cfg for a given ETH instance all at once */
+static uint8_t load_eth_fw_parts(uint32_t eth_inst, uint32_t ring, uint8_t *buf, size_t buf_size,
+				 tt_boot_fs_fd *eth_fd, tt_boot_fs_fd *eth_cfg_fd,
+				 tt_boot_fs_fd *serdes_reg_fd)
+{
+	int rc = LoadEthFw(eth_inst, ring, buf, buf_size, eth_fd->spi_addr,
+			   eth_fd->flags.f.image_size);
+	if (rc < 0) {
+		LOG_ERR("Failed to load ETH FW for ETH instance %u", eth_inst);
+		return ETH_RESET_ERR_FW_LOAD;
+	}
+
+	rc = load_eth_serdes_cfg(eth_inst, ring, buf, buf_size, serdes_reg_fd->spi_addr,
+				 serdes_reg_fd->flags.f.image_size);
+	if (rc < 0) {
+		LOG_ERR("Failed to load SerDes cfg for ETH instance %u", eth_inst);
+		return ETH_RESET_ERR_SERDES_CFG_LOAD;
+	}
+
+	rc = LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled, eth_cfg_fd->spi_addr,
+			  eth_cfg_fd->flags.f.image_size);
+	if (rc < 0) {
+		LOG_ERR("Failed to load ETH cfg for ETH instance %u", eth_inst);
+		return ETH_RESET_ERR_CFG_LOAD;
+	}
+
+	return 0;
+}
+
+static uint8_t EthInit(void)
 {
 	uint32_t ring = 0;
 	int rc;
 	tt_boot_fs_fd eth_fd;
 	tt_boot_fs_fd eth_cfg_fd;
 	tt_boot_fs_fd serdes_reg_fd;
-	tt_boot_fs_fd alt_serdes_reg_fd;
 
 	/* Early exit if no ETH tiles enabled */
 	if (tile_enable.eth_enabled == 0) {
-		return;
+		return 0;
 	}
 
 	wipe_l1();
 
 	uint8_t buf[SCRATCHPAD_SIZE] __aligned(4);
 
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, &eth_fd);
-	if (rc < 0) {
-		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_FW_TAG, rc);
-		return;
-	}
-
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, &eth_cfg_fd);
-	if (rc < 0) {
-		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_FW_CFG_TAG, rc);
-		return;
-	}
-
-	/* Loading ETH FW configuration data requires the whole data to be loaded into buffer */
-	__ASSERT(SCRATCHPAD_SIZE >= eth_cfg_fd.flags.f.image_size,
-		 "spi buffer size %zu must be larger than image size %zu", SCRATCHPAD_SIZE,
-		 eth_cfg_fd.flags.f.image_size);
-
-	/* Load the SerDes cfg from SPI into each enabled ETH tile's L1 at ETH_SERDES_CFG_ADDR */
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_SD_REG_TAG, &serdes_reg_fd);
-	if (rc < 0) {
-		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_SD_REG_TAG, rc);
-		return;
-	}
-
-	rc = tt_boot_fs_find_fd_by_tag(flash, ETH_ALT_SD_REG_TAG, &alt_serdes_reg_fd);
-	if (rc < 0) {
-		LOG_ERR("%s(%s) failed: %d", "tt_boot_fs_find_fd_by_tag", ETH_ALT_SD_REG_TAG, rc);
-		return;
+	rc = lookup_eth_fw_parts_fds(&eth_fd, &eth_cfg_fd, &serdes_reg_fd);
+	if (rc > 0) {
+		LOG_ERR("Failed to lookup ETH FW, cfg, and SerDes cfg file descriptors");
+		return rc;
 	}
 
 	/* Load fw, params, and serdes cfg */
@@ -575,25 +566,13 @@ static void EthInit(void)
 			continue;
 		}
 
-		LoadEthFw(eth_inst, ring, buf, SCRATCHPAD_SIZE, eth_fd.spi_addr,
-			  eth_fd.flags.f.image_size);
-
-		if (load_alt_eth_serdes_cfg(eth_inst)) {
-			rc = load_eth_serdes_cfg(eth_inst, ring, buf, SCRATCHPAD_SIZE,
-						 alt_serdes_reg_fd.spi_addr,
-						 alt_serdes_reg_fd.flags.f.image_size);
-		} else {
-			rc = load_eth_serdes_cfg(eth_inst, ring, buf, SCRATCHPAD_SIZE,
-						 serdes_reg_fd.spi_addr,
-						 serdes_reg_fd.flags.f.image_size);
+		rc = load_eth_fw_parts(eth_inst, ring, buf, SCRATCHPAD_SIZE, &eth_fd, &eth_cfg_fd,
+				       &serdes_reg_fd);
+		if (rc > 0) {
+			LOG_ERR("Failed to load ETH FW, cfg, and SerDes cfg for ETH instance %u",
+				eth_inst);
+			return rc;
 		}
-		if (rc < 0) {
-			LOG_ERR("%s(%u) failed: %d", "load_eth_serdes_cfg", eth_inst, rc);
-			return;
-		}
-
-		LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled, eth_cfg_fd.spi_addr,
-			     eth_cfg_fd.flags.f.image_size);
 	}
 
 	/* Deassert tile reset */
@@ -607,6 +586,8 @@ static void EthInit(void)
 
 		ReleaseEthReset(eth_inst, ring);
 	}
+
+	return 0;
 }
 
 static void assert_eth_risc_soft_reset(uint32_t eth_inst, uint32_t ring)
@@ -648,8 +629,9 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 		return 1;
 	}
 
-	tt_boot_fs_fd fw_fd;
-	tt_boot_fs_fd cfg_fd;
+	tt_boot_fs_fd eth_fd;
+	tt_boot_fs_fd eth_cfg_fd;
+	tt_boot_fs_fd serdes_reg_fd;
 
 	if (!skip_fw) {
 		if (flash == NULL || !device_is_ready(flash)) {
@@ -657,20 +639,9 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 			return 1;
 		}
 
-		rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_TAG, &fw_fd);
-		if (rc < 0) {
-			rsp->data[1] = ETH_RESET_ERR_FW_LOOKUP;
-			return 1;
-		}
-
-		rc = tt_boot_fs_find_fd_by_tag(flash, ETH_FW_CFG_TAG, &cfg_fd);
-		if (rc < 0) {
-			rsp->data[1] = ETH_RESET_ERR_CFG_LOOKUP;
-			return 1;
-		}
-
-		if (cfg_fd.flags.f.image_size > SCRATCHPAD_SIZE) {
-			rsp->data[1] = ETH_RESET_ERR_CFG_SIZE;
+		rc = lookup_eth_fw_parts_fds(&eth_fd, &eth_cfg_fd, &serdes_reg_fd);
+		if (rc > 0) {
+			rsp->data[1] = rc;
 			return 1;
 		}
 	}
@@ -709,17 +680,10 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 				continue;
 			}
 
-			rc = LoadEthFw(eth_inst, ring, buf, sizeof(buf), fw_fd.spi_addr,
-				       fw_fd.flags.f.image_size);
-			if (rc < 0) {
-				rsp->data[1] = ETH_RESET_ERR_FW_LOAD;
-				return 1;
-			}
-
-			rc = LoadEthFwCfg(eth_inst, ring, buf, tile_enable.eth_enabled,
-					  cfg_fd.spi_addr, cfg_fd.flags.f.image_size);
-			if (rc < 0) {
-				rsp->data[1] = ETH_RESET_ERR_CFG_LOAD;
+			rc = load_eth_fw_parts(eth_inst, ring, buf, SCRATCHPAD_SIZE, &eth_fd,
+					       &eth_cfg_fd, &serdes_reg_fd);
+			if (rc > 0) {
+				rsp->data[1] = rc;
 				return 1;
 			}
 		}
@@ -758,8 +722,16 @@ static int eth_init(void)
 		return 0;
 	}
 
-	SerdesEthInit();
-	EthInit();
+	int rc = SerdesEthInit();
+
+	if (rc > 0) {
+		return rc;
+	}
+
+	rc = EthInit();
+	if (rc > 0) {
+		return rc;
+	}
 
 	return 0;
 }
