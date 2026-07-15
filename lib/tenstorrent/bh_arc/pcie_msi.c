@@ -42,7 +42,7 @@ uint32_t GetVectorsAllowed(uint32_t mult_msg_en)
 	return 1 << mult_msg_en;
 }
 
-void SendPcieMsi(uint8_t pcie_inst, uint32_t vector_id)
+void SendPcieMsi(uint8_t x, uint8_t y, uint32_t vector_id)
 {
 	BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_HDL_PATH_E982B20F_PCI_MSI_CAP_ID_NEXT_CTRL_REG_reg_u
 		pci_msi_cap;
@@ -62,8 +62,6 @@ void SendPcieMsi(uint8_t pcie_inst, uint32_t vector_id)
 
 		const uint8_t ring = 0;
 		const uint8_t tlb_num = 12;
-		const uint8_t x = pcie_inst == 0 ? PCIE_INST0_LOGICAL_X : PCIE_INST1_LOGICAL_X;
-		const uint8_t y = PCIE_LOGICAL_Y;
 
 		NOC2AXITlbSetup(ring, tlb_num, x, y, msi_addr);
 		NOC2AXIWrite32(ring, tlb_num, msi_addr, msi_data);
@@ -89,7 +87,10 @@ static uint8_t send_pcie_msi_handler(const union request *request, struct respon
 	uint8_t pcie_inst = request->send_pci_msi.pcie_inst;
 	uint32_t vector_id = request->send_pci_msi.vector_id;
 
-	SendPcieMsi(pcie_inst, vector_id);
+	const uint8_t x = pcie_inst == 0 ? PCIE_INST0_LOGICAL_X : PCIE_INST1_LOGICAL_X;
+	const uint8_t y = PCIE_LOGICAL_Y;
+
+	SendPcieMsi(x, y, vector_id);
 	return 0;
 }
 
