@@ -170,21 +170,96 @@ def convert_telemetry_to_float(value):
 
 
 @pytest.fixture(scope="session")
-def launched_arc_dut(unlaunched_dut: DeviceAdapter):
+def launched_arc_dut(unlaunched_dut: DeviceAdapter, board_name, asic_id):
     """
     This fixture launches the Zephyr DUT once per test session, and returns
     a reference to the launched DUT. This is used by tests that need to
     flash the DUT once, and then run multiple tests against it.
     """
     logger.info("Flashing ARC DUT")
+    _prepare_and_launch_dut(
+        unlaunched_dut,
+        flash_mcuboot_bl2=True,
+        board_name=board_name,
+        asic_id=asic_id,
+    )
+    time.sleep(1)  # Wait for ARC to start
+    return unlaunched_dut
+
+
+def _verify_running_versions(board_name=None, asic_id=0):
+    time.sleep(0.5)
+    arc_chip = pyluwen.detect_chips()[asic_id]
+
+    if board_name and not _skip_boards(board_name):
+        expected_dmfw = get_ttzp_version.get_ttzp_version_u32(TTZP / "app/dmc/VERSION")
+        actual_dmfw = read_telem(arc_chip, TAG_DM_APP_FW_VERSION)
+        logger.info(
+            "DMFW version expected=0x%08X actual=0x%08X",
+            expected_dmfw,
+            actual_dmfw,
+        )
+        assert expected_dmfw == actual_dmfw
+
+    expected_smcfw = get_ttzp_version.get_ttzp_version_u32(TTZP / "app/smc/VERSION")
+    actual_smcfw = read_telem(arc_chip, TAG_CM_FW_VERSION)
+    logger.info(
+        "SMCFW version expected=0x%08X actual=0x%08X",
+        expected_smcfw,
+        actual_smcfw,
+    )
+    assert expected_smcfw == actual_smcfw
+    del arc_chip
+
+
+def _prepare_and_launch_dut(
+    unlaunched_dut: DeviceAdapter,
+    flash_mcuboot_bl2=False,
+    board_name=None,
+    asic_id=0,
+    timeout=20,
+):
+    """
+    Optionally flash mcuboot-bl2 before launching so DMC does not remain
+    on an older firmware signing path.
+    """
+    should_flash_mcuboot_bl2 = flash_mcuboot_bl2 and (
+        board_name is None or not _skip_boards(board_name)
+    )
+
+    if flash_mcuboot_bl2 and board_name is not None and _skip_boards(board_name):
+        logger.info("Skipping mcuboot-bl2 flash on board '%s'", board_name)
+
+    if should_flash_mcuboot_bl2:
+        try:
+            subprocess.check_call(
+                [
+                    "west",
+                    "flash",
+                    "--no-rebuild",
+                    "-d",
+                    str(
+                        unlaunched_dut.device_config.app_build_dir.parent
+                        / "mcuboot-bl2"
+                    ),
+                ]
+            )
+        except subprocess.CalledProcessError as e:
+            pytest.exit(f"Failed to flash mcuboot-bl2 with west flash: {e}")
+        # Wait for the ARC chip to boot after bootloader flash.
+        wait_arc_boot(asic_id, timeout=timeout)
+
     try:
         unlaunched_dut.launch()
     except TwisterHarnessException:
         pytest.exit("Failed to flash DUT")
     except TwisterHarnessTimeoutException:
         pytest.exit("DUT flash timed out")
-    time.sleep(1)  # Wait for ARC to start
-    return unlaunched_dut
+
+    # Wait for the ARC chip to boot after bootloader flash.
+    wait_arc_boot(asic_id, timeout=timeout)
+
+    _verify_running_versions(board_name=board_name, asic_id=asic_id)
 
 
 def wait_arc_boot(asic_id, timeout=15):
@@ -208,8 +283,8 @@ def wait_arc_boot(asic_id, timeout=15):
         if time.time() - start > timeout:
             # Dump the SMC state for debugging
             smc_test_recovery.recover_smc(asic_id)
-            logger.error("Did not detect ARC chip within timeout period")
-            pytest.exit("Did not detect ARC chip within timeout period")
+            logger.error(f"Did not detect ARC chip within timeout period {timeout}")
+            pytest.exit(f"Did not detect ARC chip within timeout period {timeout}")
         rescan_pcie()
     chip = chips[asic_id]
     try:
@@ -223,6 +298,7 @@ def wait_arc_boot(asic_id, timeout=15):
     assert (status & 0xFFFF) >= 0x1D, "SMC firmware boot failed"
     # Remove references to chip objects so pyluwen will close file descriptors.
     # Otherwise these may become stale when SMC resets.
+    logger.info("SMC detected")
     return chips[asic_id]
 
 
@@ -261,6 +337,7 @@ def upgrade_from_version_test(
     tmp_path: Path,
     board_name,
     unlaunched_dut,
+    asic_id,
     version,
     dmfw_version_base,
     cmfw_version_base,
@@ -324,30 +401,8 @@ def upgrade_from_version_test(
         )
         assert False
 
-    if replace_bootloader and not _skip_boards(board_name):
-        # Newer firmware requires us to replace the production bootloader on the
-        # DMC with one that will accept a firmware signed using our temporary key
-        try:
-            subprocess.check_call(
-                [
-                    "west",
-                    "flash",
-                    "--no-rebuild",
-                    "-d",
-                    str(
-                        unlaunched_dut.device_config.app_build_dir.parent
-                        / "mcuboot-bl2"
-                    ),
-                ]
-            )
-        except subprocess.CalledProcessError as e:
-            logger.error(f"west flash failed with error: {e}")
-            assert False
-        # Wait for the ARC chip to boot
-        wait_arc_boot(0, timeout=20)
-
     time.sleep(0.5)
-    arc_chip = pyluwen.detect_chips()[0]
+    arc_chip = pyluwen.detect_chips()[asic_id]
     if not _skip_boards(board_name):
         assert dmfw_version_base == read_telem(arc_chip, TAG_DM_APP_FW_VERSION)
     assert cmfw_version_base == read_telem(arc_chip, TAG_CM_FW_VERSION)
@@ -356,18 +411,12 @@ def upgrade_from_version_test(
     check_chip_count(board_name)
 
     # flash firmware to update to
-    unlaunched_dut.launch()
-
-    time.sleep(0.5)
-    arc_chip = pyluwen.detect_chips()[0]
-    if not _skip_boards(board_name):
-        assert get_ttzp_version.get_ttzp_version_u32(
-            TTZP / "app/dmc/VERSION"
-        ) == read_telem(arc_chip, TAG_DM_APP_FW_VERSION)
-    assert get_ttzp_version.get_ttzp_version_u32(
-        TTZP / "app/smc/VERSION"
-    ) == read_telem(arc_chip, TAG_CM_FW_VERSION)
-    del arc_chip
+    _prepare_and_launch_dut(
+        unlaunched_dut,
+        flash_mcuboot_bl2=replace_bootloader,
+        board_name=board_name,
+        asic_id=asic_id,
+    )
     # Check chip count again
     check_chip_count(board_name)
 
@@ -462,19 +511,6 @@ def temperature_sensors_test(arc_chip_dut, asic_id):
             )
 
     return fail_count
-
-
-def test_upgrade_from_19_00(arc_chip_dut, tmp_path: Path, board_name, unlaunched_dut):
-    upgrade_from_version_test(
-        arc_chip_dut,
-        tmp_path,
-        board_name,
-        unlaunched_dut,
-        "19.0.0",
-        (16 << 16),
-        (22 << 16),
-        replace_bootloader=True,
-    )
 
 
 def test_arc_msg(arc_chip_dut, asic_id):

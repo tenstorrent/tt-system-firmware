@@ -299,12 +299,15 @@ def test_dmc_ping(arc_chip_dut, asic_id):
     assert fail_count == 0, "DMC ping test failed a non-zero number of times."
 
 
-def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut):
+def test_upgrade_from_18x(
+    tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut, asic_id
+):
     upgrade_from_version_test(
         arc_chip_dut,
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.10.0",
         (13 << 16),
         (19 << 16),
@@ -315,6 +318,7 @@ def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_d
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.11.0",
         (14 << 16),
         (20 << 16),
@@ -325,9 +329,26 @@ def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_d
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.12.0",
         (15 << 16),
         (21 << 16),
+    )
+
+
+def test_upgrade_from_19_00(
+    arc_chip_dut, tmp_path: Path, board_name, unlaunched_dut, asic_id
+):
+    upgrade_from_version_test(
+        arc_chip_dut,
+        tmp_path,
+        board_name,
+        unlaunched_dut,
+        asic_id,
+        "19.0.0",
+        (16 << 16),
+        (22 << 16),
+        replace_bootloader=True,
     )
 
 
