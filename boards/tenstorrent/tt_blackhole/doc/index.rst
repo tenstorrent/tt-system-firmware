@@ -113,22 +113,22 @@ and samples, simply point the build system to the desired app directory.
    :goals: build flash
    :compact:
 
-The ``tt-console`` app is a terminal-emulator-like utility that can be used to view log messages
+The ``tt-fw-terminal`` app is a terminal-emulator-like utility that can be used to view log messages
 and interact with the Zephyr shell.
 
 .. code-block:: shell
 
-    # Build the TT console utility (for board communication)
-    make -j -C scripts/tooling OUTDIR=/tmp tt-console
+    # Build the TT firmware terminal utility (for board communication)
+    make -j -C scripts/tooling OUTDIR=/tmp tt-fw-terminal
 
     # Reset the board and refresh PCIe connectivity
     tt-smi -r
     ./scripts/rescan-pcie.sh
 
     # Connect to the board console
-    /tmp/tt-console
+    /tmp/tt-fw-terminal
 
-Press ``Ctrl-x,a`` to exit the ``tt-console`` app.
+Press ``Ctrl-x,a`` to exit the ``tt-fw-terminal`` app.
 
 Debugging
 =========

@@ -77,8 +77,8 @@ fi
 SMC_BOARD=$($TT_Z_P_ROOT/scripts/rev2board.sh $BOARD smc)
 DMC_BOARD=$($TT_Z_P_ROOT/scripts/rev2board.sh $BOARD dmc)
 
-# Start by building tt-console, so we can access the device
-echo "Building tt-console..."
+# Start by building tt-fw-terminal, so we can access the device
+echo "Building tt-fw-terminal..."
 make -C $TT_Z_P_ROOT/scripts/tooling -j$(nproc)
 
 if [[ "$TEST_SET" == *"e2e-flash"* ]]; then

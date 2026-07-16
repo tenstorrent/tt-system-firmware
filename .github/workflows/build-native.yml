@@ -38,5 +38,5 @@ jobs:
         with:
           name: tt-tooling
           path: |
-            tt-console
+            tt-fw-terminal
             tt-tracing
