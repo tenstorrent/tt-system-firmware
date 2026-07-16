@@ -108,6 +108,24 @@ jobs:
     secrets:
       SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
 
+  build-tooling:
+    needs: [prepare-release]
+    runs-on: ubuntu-22.04
+    name: Build tt-fw-terminal
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build tt-fw-terminal
+        run: make -j$(nproc) -C scripts/tooling OUTDIR="$PWD" tt-fw-terminal
+      - name: Upload tt-fw-terminal
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: tt-fw-terminal
+          path: tt-fw-terminal
+
   build-debian-pkg:
     needs: [build-release]
     runs-on: ubuntu-24.04
@@ -153,7 +171,7 @@ jobs:
           path: "*.deb"
 
   publish-release:
-    needs: [build-debian-pkg, build-release, prepare-release, build-recovery-bundle]
+    needs: [build-debian-pkg, build-release, prepare-release, build-recovery-bundle, build-tooling]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -202,6 +220,11 @@ jobs:
         with:
           name: firmware-debian-pkg
 
+      - name: Download tt-fw-terminal
+        uses: actions/download-artifact@v4
+        with:
+          name: tt-fw-terminal
+
       - name: Package firmware artifacts
         shell: bash
         run: |
@@ -248,3 +271,4 @@ jobs:
             tt-system-firmware-${{ steps.set_vars.outputs.VERSION }}.zip
             tt-system-firmware-${{ steps.set_vars.outputs.VERSION }}.spdx
             manufacturing-artifacts-${{ steps.set_vars.outputs.VERSION }}.tar.gz
+            tt-fw-terminal
