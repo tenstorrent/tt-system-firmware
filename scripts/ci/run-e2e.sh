@@ -97,13 +97,4 @@ if [[ "$TEST_SET" == *"e2e-flash"* ]]; then
 		--extra-args=SB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$KEYFILE\" \
 		-ll DEBUG \
 		$@
-	# Restore a stable DMFW, since the copy flashed by BL2 tests will
-	# leave the DMC flash in a different state than other tests expect
-	# We erase the DMC flash first to ensure no old image fragments remain
-	west build -p always -b $DMC_BOARD $TT_Z_P_ROOT/app/dmc -d $ZEPHYR_BASE/build-dmc \
-		--sysbuild
-	west flash -d $ZEPHYR_BASE/build-dmc --domain mcuboot --erase \
-		--cmd-erase 'flash erase_sector 0 0 last'
-	west flash -d $ZEPHYR_BASE/build-dmc --domain dmc
-	rm -rf $ZEPHYR_BASE/build-dmc
 fi
