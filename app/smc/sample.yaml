@@ -97,7 +97,6 @@ tests:
     build_only: true
     sysbuild: true
     tags:
-      - e2e-flash
       - build-ci
     extra_overlay_confs:
       - tracing.conf
