@@ -3,7 +3,7 @@
     {
       "board": "n150",
       "supports_smoke": true,
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     }
   ],
   "bh": [
@@ -14,7 +14,7 @@
       "metal-target": "blackhole",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     },
     {
       "board": "p150a",
@@ -23,7 +23,7 @@
       "metal-target": "blackhole",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     },
     {
       "board": "p300a",
@@ -32,7 +32,7 @@
       "metal-target": "blackhole_p300",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     },
     {
       "board": "quietbox2",
@@ -40,7 +40,7 @@
       "metal-target": "blackhole_qb_ge",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     },
     {
       "board": "loudbox",
@@ -48,7 +48,7 @@
       "metal-target": "blackhole_loudbox",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     },
     {
       "board": "bh-galaxy",
@@ -56,7 +56,7 @@
       "metal-target": "blackhole_glx",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
-      "kmd_build": "2.8.0"
+      "kmd_build": "2.10.0"
     }
   ]
 }
