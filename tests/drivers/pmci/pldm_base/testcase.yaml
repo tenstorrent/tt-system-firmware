@@ -1,0 +1,6 @@
+common:
+  platform_allow:
+    - native_sim
+tests:
+  drivers.pmci.pldm_base:
+    tags: pmci pldm
