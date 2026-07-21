@@ -195,7 +195,9 @@ static int dma_arc_hs_config(const struct device *dev, uint32_t channel, struct 
 	}
 
 	__ASSERT(config != NULL, "Invalid config pointer");
-	__ASSERT(dev_config->descriptors <= 32, "Driver supports up to 32 descriptors (1 group)");
+	__ASSERT(dev_config->descriptors <= ARC_DMA_MAX_DESCRIPTORS,
+		 "Driver supports up to 256 descriptors (8 groups)");
+	__ASSERT(dev_config->channels <= ARC_DMA_MAX_CHANNELS, "Driver supports up to 16 channels");
 
 	if (config->block_count == 0) {
 		LOG_ERR("block_count must be at least 1");
@@ -859,6 +861,7 @@ static void dma_arc_hs_isr(const struct device *dev)
 		       "unsigned int must be <= uint32_t to safely pass as handle");
 
 	struct arc_dma_data *data = dev->data;
+	const struct arc_dma_config *config = dev->config;
 	uint32_t int_status;
 	uint32_t bits_to_clear = 0;
 
@@ -872,16 +875,8 @@ static void dma_arc_hs_isr(const struct device *dev)
 		/* clear the interrupt */
 		z_arc_v2_aux_reg_write(DMA_C_INTSTAT_CLR_AUX, int_status);
 
-		/* Read current done status for group 0 */
-		if ((int_status & DMA_C_INTSTAT_DONE) != 0) {
-			bits_to_clear = z_arc_v2_aux_reg_read(DMA_S_DONESTATD_AUX(0));
-		} else {
-			bits_to_clear = 0;
-		}
-
-		if (bits_to_clear != 0) {
-			/* clear the done status */
-			z_arc_v2_aux_reg_write(DMA_S_DONESTATD_CLR_AUX(0), bits_to_clear);
+		if ((int_status & DMA_C_INTSTAT_DONE) == 0) {
+			break;
 		}
 
 		/* Handle bus error */
@@ -896,13 +891,27 @@ static void dma_arc_hs_isr(const struct device *dev)
 			/* TODO: Implement overflow handling */
 		}
 
-		if (((int_status & DMA_C_INTSTAT_DONE) != 0) && (bits_to_clear != 0)) {
-			/* Process all set bits */
-			while (bits_to_clear != 0) {
-				unsigned int bit = find_lsb_set(bits_to_clear) - 1;
+		/* iterate through each DMA group */
+		for (uint32_t group = 0; group < DIV_ROUND_UP(config->descriptors, 32); group++) {
 
-				dma_arc_hs_process_handle(dev, data, bit);
-				bits_to_clear &= ~(1U << bit);
+			/* Read current done status for current group */
+			bits_to_clear = z_arc_v2_aux_reg_read(DMA_S_DONESTATD_AUX(group));
+
+			if (bits_to_clear != 0) {
+				/* clear the done status */
+				z_arc_v2_aux_reg_write(DMA_S_DONESTATD_CLR_AUX(group),
+						       bits_to_clear);
+			}
+
+			if (((int_status & DMA_C_INTSTAT_DONE) != 0) && (bits_to_clear != 0)) {
+				/* Process all set bits */
+				while (bits_to_clear != 0) {
+					unsigned int bit = find_lsb_set(bits_to_clear) - 1;
+					uint32_t handle = (group * 32) + bit;
+
+					dma_arc_hs_process_handle(dev, data, handle);
+					bits_to_clear &= ~(1U << bit);
+				}
 			}
 		}
 	}
@@ -942,7 +951,7 @@ static int dma_arc_hs_init(const struct device *dev)
 		/* Spinlocks are zero-initialized by default in Zephyr */
 	}
 
-	/* CLear all pending DMA done status bits*/
+	/* Clear all pending DMA done status bits*/
 	uint32_t num_groups = DIV_ROUND_UP(config->descriptors, 32);
 
 	for (uint32_t group = 0; group < num_groups; group++) {

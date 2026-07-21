@@ -37,5 +37,6 @@
 };
 
 &dma0 {
-	dma-channels = <1>;
+	dma-channels = <16>;
+	dma-descriptors = <256>;
 };

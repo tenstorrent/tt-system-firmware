@@ -145,23 +145,17 @@ jobs:
           # To verify patch was applied
           cat dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh
 
-      # Keep the network alive by periodically pulling tenstorrent.com.
-      # This prevents a bug in the container runtime where the network interface can
-      # drop after a period of inactivity, which would cause our tests to fail.
-      - name: Network keepalive
-        id: network-keepalive
-        background: true
-        run: |
-          while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done
-
       - name: Run Container Test
         timeout-minutes: 120
         run: |
+          # Keep the network alive by periodically pulling tenstorrent.com.
+          # This prevents a bug in the container runtime where the network interface can
+          # drop after a period of inactivity, which would cause our tests to fail.
+          echo "while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
+          chmod +x /tmp/network-keepalive
+          /tmp/network-keepalive &
+          echo "Network keepalive started."
           dockerfile/upstream_test_images/run_upstream_tests_vanilla.sh ${{ matrix.config.metal-target }} 2>&1 | tee /tmp/container_test_output.log
-
-      - name: Stop network keepalive
-        if: ${{ always() }}
-        cancel: network-keepalive
 
       - name: Upload Test Output
         if: ${{ always() }}
@@ -175,3 +169,4 @@ jobs:
         run: |
           # Clean out metal
           rm -f $HOME/fw_pack-*.fwbundle
+          kill $(pgrep -f network-keepalive) || true

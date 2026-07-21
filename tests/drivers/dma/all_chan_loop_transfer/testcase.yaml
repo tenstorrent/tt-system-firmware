@@ -1,0 +1,19 @@
+common:
+  tags:
+    - dma
+  platform_allow:
+    - tt_blackhole@p100a/tt_blackhole/smc
+    - tt_blackhole@p150a/tt_blackhole/smc
+    - tt_blackhole@p150b/tt_blackhole/smc
+    - tt_blackhole@p300a/tt_blackhole/smc
+tests:
+  drivers.dma.all_chan_loop_transfer.tt_bh_noc:
+    extra_dtc_overlay_files:
+      - tt_bh_noc.overlay
+    extra_conf_files:
+      - tt_bh_noc.conf
+  drivers.dma.all_chan_loop_transfer.arc_hs.interrupts:
+    extra_dtc_overlay_files:
+      - arc_hs.overlay
+    extra_conf_files:
+      - arc_hs.conf

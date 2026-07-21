@@ -1,0 +1,14 @@
+# Copyright (c) 2025 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "DMA Link Transfer Test"
+
+source "Kconfig.zephyr"
+
+config DMA_NUM_CHANNELS
+	int "Number of DMA channels to test"
+	default 16
+
+config DMA_LINK_ALIGNMENT
+	int "TX and RX data alignment in bytes"
+	default 32

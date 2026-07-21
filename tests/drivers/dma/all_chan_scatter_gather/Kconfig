@@ -1,0 +1,18 @@
+# Copyright (c) 2022 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "DMA Scatter Gather Test"
+
+source "Kconfig.zephyr"
+
+config DMA_NUM_CHANNELS
+	int "Number of DMA channels to test"
+	default 16
+
+config DMA_SG_XFER_SIZE
+	int "Number of bytes to transfer"
+	default 128
+
+config DMA_SG_ALIGNMENT
+	int "TX and RX data alignment in bytes"
+	default 32

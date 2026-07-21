@@ -581,6 +581,57 @@ jobs:
             twister-out/twister.log
             twister-out/twister.json
 
+  dma-build-only-tests:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - board: p100a
+          - board: p150a
+          - board: p300a
+          - board: mimir
+            platform: tt_mimir/tt_mimir/smc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+      - name: Resolve platform
+        working-directory: tt-system-firmware
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.platform }}" ]; then
+            echo "PLATFORM=${{ matrix.platform }}" >> "$GITHUB_ENV"
+          else
+            echo "PLATFORM=$(./scripts/rev2board.sh "${{ matrix.board }}" smc)" >> "$GITHUB_ENV"
+          fi
+      - name: DMA tag build-only tests
+        shell: bash
+        run: |
+          ./zephyr/scripts/twister \
+            -p "$PLATFORM" \
+            --build-only \
+            --tag dma \
+            --alt-config-root tt-system-firmware/test-conf/samples \
+            --alt-config-root tt-system-firmware/test-conf/tests \
+            -T zephyr/tests -T zephyr/samples \
+            -T tt-system-firmware/tests -T tt-system-firmware/samples \
+            --outdir "twister-dma-build-${{ matrix.board }}" \
+            -j 4
+      - name: Upload DMA build-only artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dma-build-only-${{ matrix.board }}
+          include-hidden-files: true
+          path: |
+            twister-dma-build-${{ matrix.board }}/**/build.log
+            twister-dma-build-${{ matrix.board }}/twister.log
+            twister-dma-build-${{ matrix.board }}/twister.json
+
   build-dm-test:
     runs-on: ubuntu-24.04
     steps:

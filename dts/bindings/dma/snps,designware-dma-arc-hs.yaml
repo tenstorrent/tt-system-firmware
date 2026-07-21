@@ -24,13 +24,13 @@ properties:
 
   dma-channels:
     type: int
-    default: 1
+    default: 16
     description: |
       Number of DMA channels supported by the DMA server.
 
   dma-descriptors:
     type: int
-    default: 32
+    default: 256
     description: |
       Number of DMA descriptors supported by the DMA server.
 

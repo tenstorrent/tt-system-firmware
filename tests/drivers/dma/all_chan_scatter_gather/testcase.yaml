@@ -1,0 +1,31 @@
+common:
+  tags:
+    - dma
+tests:
+  drivers.dma.all_chan_scatter_gather.tt_mimir_smc:
+    platform_allow:
+      - tt_mimir/tt_mimir/smc
+    extra_dtc_overlay_files:
+      - tt_mimir_tt_mimir_smc.overlay
+    extra_conf_files:
+      - tt_mimir.conf
+  drivers.dma.all_chan_scatter_gather.tt_bh_noc:
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
+    extra_dtc_overlay_files:
+      - tt_bh_noc.overlay
+    extra_conf_files:
+      - tt_bh_noc.conf
+  drivers.dma.all_chan_scatter_gather.arc_hs.interrupts:
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
+    extra_dtc_overlay_files:
+      - arc_hs.overlay
+    extra_conf_files:
+      - arc_hs.conf

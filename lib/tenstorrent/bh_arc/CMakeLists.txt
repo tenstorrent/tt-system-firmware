@@ -8,10 +8,6 @@
 zephyr_library_named(bh_arc_recovery)
 zephyr_library_include_directories_ifdef(CONFIG_TT_BH_ARC ${ZEPHYR_CURRENT_MODULE_DIR}/include)
 
-if(EXISTS ${APPLICATION_SOURCE_DIR}/VERSION)
-  zephyr_library_compile_definitions(HAS_APP_VERSION=1)
-endif()
-
 zephyr_library_sources(
 # zephyr-keep-sorted-start
   asic_state.c
@@ -20,9 +16,9 @@ zephyr_library_sources(
   cm2dm_msg.c
   dw_apb_i2c.c
   harvesting.c
-  init.c
   led.c
   log.c
+  msgqueue.c
   noc.c
   noc2axi.c
   noc_init.c
@@ -37,8 +33,6 @@ zephyr_library_sources(
   timer.c
 # zephyr-keep-sorted-stop
 )
-
-zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED msgqueue.c)
 
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_RUNTIME_TELEMETRY runtime_telemetry.c)
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_EMUL reg_stub.c)
