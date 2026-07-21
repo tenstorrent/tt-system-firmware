@@ -33,11 +33,6 @@ void jtag_bootrom_soft_reset_arc(struct bh_chip *chip);
 void jtag_bootrom_set_cable_power_limit(struct bh_chip *chip, uint16_t power_limit);
 void jtag_bootrom_teardown(const struct bh_chip *chip);
 
-ALWAYS_INLINE int jtag_bootrom_patch(struct bh_chip *chip, const uint32_t *patch, size_t patch_len)
-{
-	return jtag_bootrom_patch_offset(chip, patch, patch_len, 0);
-}
-
 uint32_t jtag_bootrom_get_perst_start_time(void);
 
 /* for verification via gpio-emul */

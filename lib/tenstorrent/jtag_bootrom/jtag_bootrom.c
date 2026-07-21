@@ -68,7 +68,7 @@ void gpio_asic_reset_callback(const struct device *port, struct gpio_callback *c
 {
 	perst_start_time = k_cycle_get_32();
 
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		chip->data.perst_seen = true;
 		atomic_set(&chip->data.trigger_reset, true);
 		/* Set the bus cancel following the logic of (reset_triggered && !performing_reset)
