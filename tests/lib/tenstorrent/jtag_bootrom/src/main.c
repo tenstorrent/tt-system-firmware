@@ -23,7 +23,7 @@ ZTEST(jtag_bootrom, test_jtag_bootrom)
 	const uint32_t *const patch = (const uint32_t *)get_bootcode();
 	const size_t patch_len = get_bootcode_len();
 
-	zassert_ok(jtag_bootrom_patch(&test_chip, patch, patch_len));
+	zassert_ok(jtag_bootrom_patch_offset(&test_chip, patch, patch_len, 0));
 	zassert_ok(jtag_bootrom_verify(test_chip.config.jtag, patch, patch_len));
 }
 

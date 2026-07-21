@@ -118,6 +118,13 @@ struct bh_chip {
 #define BH_CHIP_COUNT                          DT_PROP_LEN_OR(DT_PATH(chips), chips, 0)
 extern struct bh_chip BH_CHIPS[BH_CHIP_COUNT];
 
+#if BH_CHIP_COUNT > 0
+#define ARRAY_FOR_EACH_BH_CHIP(chip) ARRAY_FOR_EACH_PTR(BH_CHIPS, chip)
+#else
+#define ARRAY_FOR_EACH_BH_CHIP(chip)                                                               \
+	for (struct bh_chip * (chip) = NULL; (chip) != NULL; (chip) = NULL)
+#endif
+
 #define MAKE_STRUCT_FIELD(n) .n
 
 #define INIT_STRAP(n) MAKE_STRUCT_FIELD(DT_NODE_FULL_NAME_TOKEN(n)) = GPIO_DT_SPEC_GET(n, gpios),
