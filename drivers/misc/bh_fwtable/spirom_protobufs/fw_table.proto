@@ -62,6 +62,7 @@ message FwTable {
   message DramTable {
     uint32 dram_mask = 1;
     bool dram_mask_en = 2;
+    uint32 soft_harvest_dram_mask = 3;
   }
 
   message ChipHarvestingTable {
