@@ -537,7 +537,8 @@
 			compatible = "snps,designware-dma-arc-hs";
 			reg = <0>;
 			#dma-cells = <1>;
-			dma-channels = <4>;
+			dma-channels = <16>;
+			dma-descriptors = <256>;
 			interrupts = <21 1>;
 			interrupt-parent = <&intc>;
 			status = "disabled";
