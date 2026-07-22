@@ -6,3 +6,10 @@ description: Test-only dummy sensor used as a sensor phandle target in native_si
 compatible: "tenstorrent,dummy-sensor-emul"
 
 include: sensor-device.yaml
+
+properties:
+  force-init-fail:
+    type: boolean
+    description: |
+      Test-only knob. When present on a dummy sensor instance, driver init
+      returns an error so device_is_ready() is false.

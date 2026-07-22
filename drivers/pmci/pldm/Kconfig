@@ -3,7 +3,7 @@
 
 config PMCI_PLDM_PLATFORM
 	bool "Enable PLDM Platform support"
-	depends on PLDM
+	depends on PLDM && SENSOR_ASYNC_API
 	default y
 	help
 	  Enable PLDM Platform command handling and PDR repository support.

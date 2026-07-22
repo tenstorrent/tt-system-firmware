@@ -1,0 +1,59 @@
+/ {
+	dummy_sensor0: dummy-sensor0 {
+		compatible = "tenstorrent,dummy-sensor-emul";
+		status = "okay";
+	};
+
+	dummy_sensor1: dummy-sensor1 {
+		compatible = "tenstorrent,dummy-sensor-emul";
+		status = "okay";
+		force-init-fail;
+	};
+
+	pldm_pdr_test: pldm-pdr-test {
+		compatible = "tenstorrent,pldm-pdr";
+		status = "okay";
+
+		temp_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor0>;
+			/* SENSOR_CHAN_DIE_TEMP */
+			channel-type = <12>;
+			channel-index = <0>;
+			sensor-id = <101>;
+			entity-type = <5>;
+			entity-instance = <1>;
+			container-id = <0>;
+			unit-modifier = <(-1)>;
+			sensor-name = "ASIC_TEMP";
+		};
+
+		unready_temp_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor1>;
+			/* SENSOR_CHAN_DIE_TEMP */
+			channel-type = <12>;
+			channel-index = <0>;
+			sensor-id = <404>;
+			entity-type = <5>;
+			entity-instance = <2>;
+			container-id = <0>;
+			unit-modifier = <(-1)>;
+			sensor-name = "ASIC_TEMP_UNREADY";
+		};
+
+		unsupported_channel_sensor {
+			compatible = "tenstorrent,pldm-numeric-sensor";
+			sensor = <&dummy_sensor0>;
+			/* SENSOR_CHAN_VOLTAGE (dummy backend does not implement this channel) */
+			channel-type = <39>;
+			channel-index = <0>;
+			sensor-id = <505>;
+			entity-type = <5>;
+			entity-instance = <3>;
+			container-id = <0>;
+			unit-modifier = <0>;
+			sensor-name = "UNSUPPORTED_CHAN";
+		};
+	};
+};
