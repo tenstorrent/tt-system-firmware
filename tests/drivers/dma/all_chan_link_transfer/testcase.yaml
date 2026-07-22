@@ -1,0 +1,13 @@
+common:
+  tags:
+    - dma
+    - smoke
+  platform_allow:
+    - tt_blackhole@p100a/tt_blackhole/smc
+    - tt_blackhole@p150a/tt_blackhole/smc
+    - tt_blackhole@p150b/tt_blackhole/smc
+    - tt_blackhole@p300a/tt_blackhole/smc
+tests:
+  drivers.dma.all_chan_link_transfer.arc_hs.interrupts:
+    extra_dtc_overlay_files:
+      - arc_hs.overlay
