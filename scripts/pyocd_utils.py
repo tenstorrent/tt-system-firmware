@@ -6,7 +6,7 @@
 Shared pyocd / ST-Link helpers for PCIe card tooling.
 
 Consolidates probe-session creation, ST-Link USB recovery, and board
-metadata loading that were previously duplicated across spi_flash.py,
+metadata loading that were previously duplicated across smc_spi_flash.py,
 recover-blackhole.py, recover-wormhole.py, tt_bootstrap.py, and set-p300-jtag.py.
 """
 
@@ -47,6 +47,37 @@ def load_board_metadata(path=None):
     path = Path(path) if path else BOARD_METADATA_PATH
     with open(path) as f:
         return yaml.load(f.read(), Loader=SafeLoader)
+
+
+def select_asics(board_metadata, board_name, asic_index):
+    """Return the list of ``(index, asic)`` pairs to operate on.
+
+    If *asic_index* is ``None`` all ASICs for the board are returned.
+    Otherwise only the requested ASIC is returned (with validation).
+    Returns ``None`` (after logging) on unknown board / out-of-range index.
+    """
+    if board_name not in board_metadata:
+        logger.error(
+            "Unknown board name: %s. Supported: %s",
+            board_name,
+            list(board_metadata.keys()),
+        )
+        return None
+
+    asics = board_metadata[board_name]
+
+    if asic_index is not None:
+        if asic_index < 0 or asic_index >= len(asics):
+            logger.error(
+                "ASIC index %d out of range for board %s (has %d ASIC(s))",
+                asic_index,
+                board_name,
+                len(asics),
+            )
+            return None
+        return [(asic_index, asics[asic_index])]
+
+    return list(enumerate(asics))
 
 
 def recover_stlink():
@@ -112,6 +143,41 @@ def create_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=N
     return session
 
 
+def add_common_args(parser, *, adapter_id=True, no_prompt=True, verbose=True):
+    """Add standard pyocd-related CLI arguments to an argparse parser.
+
+    Each flag can be individually disabled by passing ``False``.
+
+    Args:
+        parser:     The :class:`argparse.ArgumentParser` to extend.
+        adapter_id: Add ``--adapter-id`` flag.
+        no_prompt:  Add ``--no-prompt`` flag.
+        verbose:    Add ``-v``/``--verbose`` flag.
+    """
+    if adapter_id:
+        parser.add_argument(
+            "--adapter-id",
+            type=str,
+            default=None,
+            help="ST-Link adapter serial / unique ID",
+        )
+    if no_prompt:
+        parser.add_argument(
+            "--no-prompt",
+            action="store_true",
+            default=False,
+            help="Do not prompt for adapter selection; use the first available probe",
+        )
+    if verbose:
+        parser.add_argument(
+            "-v",
+            "--verbose",
+            action="count",
+            default=0,
+            help="Increase logging verbosity (repeat for more)",
+        )
+
+
 def get_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None):
     """Like :func:`create_session`, but retries once after an ST-Link
     USB reset if the initial connection fails.
@@ -122,3 +188,16 @@ def get_session(pyocd_config=None, adapter_id=None, no_prompt=False, target=None
         logger.warning("Error connecting to probe, will attempt USB reset: %s", e)
         recover_stlink()
         return create_session(pyocd_config, adapter_id, no_prompt, target)
+
+
+def setup_logging(verbose):
+    """Configure root logging from a ``-v``/``--verbose`` count.
+
+    0 = WARNING, 1 = INFO, 2+ = DEBUG.
+    """
+    level = logging.WARNING
+    if verbose >= 2:
+        level = logging.DEBUG
+    elif verbose >= 1:
+        level = logging.INFO
+    logging.basicConfig(level=level, format="%(name)s: %(levelname)s: %(message)s")

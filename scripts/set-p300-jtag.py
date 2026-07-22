@@ -30,17 +30,7 @@ def parse_args():
         help="JTAG mux to configure: 'ARC' for ARC core, 'SYS' for system JTAG",
     )
     parser.add_argument("asic", type=int, choices=[0, 1], help="ASIC number (0 or 1)")
-    parser.add_argument(
-        "--adapter-id",
-        type=str,
-        help="Adapter ID for the ST-Link device used in recovery",
-    )
-    parser.add_argument(
-        "--no-prompt",
-        default=False,
-        help="Do not prompt for adapter if none is provided, use first available",
-        action="store_true",
-    )
+    pyocd_utils.add_common_args(parser, verbose=False)
     return parser.parse_args()
 
 

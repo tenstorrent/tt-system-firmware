@@ -55,17 +55,12 @@ def parse_args():
         default="auto",
         help="Board ID to program into the board's EEPROM",
     )
-    parser.add_argument("--adapter-id", help="Adapter ID to use for pyocd")
     parser.add_argument(
         "--force",
         action="store_true",
         help="Forcibly recover the card, even if sanity checks pass",
     )
-    parser.add_argument(
-        "--no-prompt",
-        action="store_true",
-        help="Don't prompt for adapter if multiple are found",
-    )
+    pyocd_utils.add_common_args(parser, verbose=False)
     return parser.parse_args()
 
 
