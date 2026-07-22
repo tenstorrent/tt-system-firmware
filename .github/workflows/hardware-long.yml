@@ -35,11 +35,15 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix-config: ${{ steps.gen.outputs.matrix-config }}
+      mfg-matrix-config: ${{ steps.gen.outputs.mfg-matrix-config }}
     steps:
       - uses: actions/checkout@v4
       - id: gen
         run: |
           echo "matrix-config=$(jq -c '.bh' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          # Manufacturing test only runs on the standalone PCIe cards (p100a, p150a, p300a)
+          MFG_MATRIX_CONFIG="$(jq -c '[.bh[] | select(.board == "p100a" or .board == "p150a" or .board == "p300a")]' .github/ci_boards.json)"
+          echo "mfg-matrix-config=$MFG_MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
 
   e2e-stress-test:
     name: BH E2E Stress Test on ${{ matrix.config.board }}
@@ -171,3 +175,100 @@ jobs:
             exit 1
           fi
           echo "Successfully verified that tensix-enabled column count is correct: $TENSIX_COUNT"
+
+  manufacturing-test:
+    needs: [build-fw-artifact, gen-config]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.mfg-matrix-config) }}
+    runs-on: ${{ matrix.config.board }}
+    container:
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+      options: '--device /dev/tenstorrent --device /dev/bus/usb --privileged'
+    steps:
+      - name: Cleanup State
+        if: ${{ always() }}
+        run: |
+          ls -la
+          rm -rf *
+
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          path: tt-system-firmware
+
+      - name: Prepare Container
+        uses: ./tt-system-firmware/.github/workflows/prepare-container
+        with:
+          app-path: tt-system-firmware
+          kmd-version: ${{ matrix.config.kmd_build }}
+
+      - name: Derive board properties
+        id: board-map
+        shell: bash
+        working-directory: tt-system-firmware
+        run: |
+          BOARD="${{ matrix.config.board }}"
+          source scripts/ci/board-map.sh
+          echo "assembly_board=$ASSEMBLY_BOARD" | tee -a $GITHUB_OUTPUT
+          echo "num_asics=$NUM_ASICS" | tee -a $GITHUB_OUTPUT
+          echo "preflash_rev=$PREFLASH_REV" | tee -a $GITHUB_OUTPUT
+
+      - name: Download preflash firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: preflash-fw-${{ steps.board-map.outputs.preflash_rev }}
+          path: artifacts/preflash
+
+      - name: Download assembly test firmware
+        uses: actions/download-artifact@v4
+        with:
+          name: assembly-fw-${{ steps.board-map.outputs.assembly_board }}
+          path: artifacts/assembly-fw
+
+      - name: Download assembly MCUBoot
+        uses: actions/download-artifact@v4
+        with:
+          name: assembly-mcuboot-${{ steps.board-map.outputs.assembly_board }}
+          path: artifacts/assembly-mcuboot
+
+      - name: Download combined firmware bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: combined-fwbundle
+          path: artifacts/fwbundle
+
+      - name: Download Flash Loader Module
+        uses: actions/download-artifact@v4
+        with:
+          name: bh-flm
+          path: tt-system-firmware/scripts/tooling/blackhole_recovery/data/bh_flm/build
+
+      - name: Run manufacturing test
+        shell: bash
+        run: |
+          tt-system-firmware/scripts/ci/run-manufacturing-test.sh \
+            -p artifacts/preflash \
+            -m artifacts/assembly-mcuboot \
+            -a artifacts/assembly-fw \
+            -f artifacts/fwbundle \
+            ${{ matrix.config.board }}
+
+      # ---- Debug info on failure ----
+      - name: Print RTT logs
+        if: ${{ failure() }}
+        working-directory: tt-system-firmware
+        run: |
+          echo "DMC RTT logs:"
+          python3 ./scripts/dmc_rtt.py -n
+          echo "SMC RTT logs:"
+          python3 ./scripts/smc_console.py --rtt -n
+          NUM_ASICS=${{ steps.board-map.outputs.num_asics }}
+          for ((i=0; i<NUM_ASICS; i++)); do
+            echo "SMC state dump for ASIC $i:"
+            python3 ./scripts/dump_smc_state.py --asic-id $i
+          done

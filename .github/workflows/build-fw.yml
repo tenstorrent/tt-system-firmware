@@ -325,6 +325,9 @@ jobs:
 
   build-preflash:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        board_rev: [p150a, p300a]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -336,12 +339,12 @@ jobs:
       - name: Build preflash firmware
         shell: bash
         run: |
-          ./tt-system-firmware/scripts/build-preflash.sh
+          ./tt-system-firmware/scripts/build-preflash.sh ${{ matrix.board_rev }}
 
       - name: Upload preflash
         uses: actions/upload-artifact@v4
         with:
-          name: preflash-fw
+          name: preflash-fw-${{ matrix.board_rev }}
           path: |
             preflash*.ihex
             preflash*.bin
@@ -394,6 +397,11 @@ jobs:
         shell: bash
         run: |
           ./build-flm.sh
+      - name: Upload Flash Loader Module
+        uses: actions/upload-artifact@v4
+        with:
+          name: bh-flm
+          path: tt-system-firmware/scripts/tooling/blackhole_recovery/data/bh_flm/build/*.flm
 
   discover-smc-tests:
     runs-on: ubuntu-24.04

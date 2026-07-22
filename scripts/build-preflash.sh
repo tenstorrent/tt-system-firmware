@@ -34,8 +34,13 @@ trap cleanup EXIT
 SCRIPT_DIR="$(dirname "$0")"
 TTZP_BASE="$(dirname "$SCRIPT_DIR")"
 
-# use p300a for pre-flash.
-BOARD_REV="p300a"
+# board rev to build pre-flash for (p300a or p150a)
+BOARD_REV="${1:-p300a}"
+if [[ "$BOARD_REV" != "p300a" && "$BOARD_REV" != "p150a" ]]; then
+  echo "ERROR: unsupported board rev '$BOARD_REV' (expected p300a or p150a)"
+  echo "Usage: $0 [p300a|p150a]"
+  exit 1
+fi
 BUILD_DIR="$TEMP_DIR"
 
 # firmware version info

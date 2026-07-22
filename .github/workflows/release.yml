@@ -209,11 +209,17 @@ jobs:
         with:
           pattern: assembly-test-*
 
-      - name: Download preflash firmware
+      - name: Download preflash firmware (p300a)
         uses: actions/download-artifact@v4
         with:
-          name: preflash-fw
-          path: preflash-fw
+          name: preflash-fw-p300a
+          path: preflash-fw/p300a
+
+      - name: Download preflash firmware (p150a)
+        uses: actions/download-artifact@v4
+        with:
+          name: preflash-fw-p150a
+          path: preflash-fw/p150a
 
       - name: Download Debian Package
         uses: actions/download-artifact@v4
