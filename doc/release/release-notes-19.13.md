@@ -10,6 +10,11 @@ Major enhancements with this release include:
 
 ## Wormhole
 
+### Telemetry
+- Carve out a region of memory for Metal runtime telemetry and publish its address and size via `SCRATCH_EXT[0:1]`
+  - Add `SCRATCH_EXT` as a fixed-address carve out of CSM for extra "scratch registers"
+
+
 ## Blackhole
 
 ## Grendel
