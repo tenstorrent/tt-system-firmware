@@ -4,6 +4,11 @@
       "board": "n150",
       "supports_smoke": true,
       "kmd_build": "2.8.0"
+    },
+    {
+      "board": "n300",
+      "supports_smoke": true,
+      "kmd_build": "2.8.0"
     }
   ],
   "bh": [
