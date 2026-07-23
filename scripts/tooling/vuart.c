@@ -193,13 +193,18 @@ static int program_noc(const struct vuart_data *data, uint32_t x, uint32_t y, en
 		       uint64_t phys, uint64_t *adjust)
 {
 	uint64_t mask = (data->bar_idx == 0) ? TLB_2M_WINDOW_MASK : TLB_4G_WINDOW_MASK;
+	uint64_t base = phys & ~mask;
 	struct tenstorrent_configure_tlb tlb = {.in.id = data->tlb_id,
 						.in.config = (struct tenstorrent_noc_tlb_config){
-							.addr = phys & ~mask,
+							.addr = base,
 							.x_end = x,
 							.y_end = y,
 							.ordering = order,
 						}};
+
+	D(1, "program_noc: tlb=%u bar=%d x=%u y=%u order=%u phys=0x%llx base=0x%llx mask=0x%llx",
+	  data->tlb_id, data->bar_idx, x, y, order, (unsigned long long)phys,
+	  (unsigned long long)base, (unsigned long long)mask);
 
 	if (ioctl(data->fd, TENSTORRENT_IOCTL_CONFIGURE_TLB, &tlb) < 0) {
 		E("ioctl(TENSTORRENT_IOCTL_GET_DRIVER_INFO): %s", strerror(errno));
@@ -207,11 +212,12 @@ static int program_noc(const struct vuart_data *data, uint32_t x, uint32_t y, en
 	}
 
 	*adjust = phys & mask;
+	D(1, "program_noc: tlb=%u adjust=0x%llx", data->tlb_id, (unsigned long long)*adjust);
 
 	/* There isn't a new API for getting the current TLB programming */
 	/* D(2, "tlb[%u]: %s", data->tlb_id, tlb2m2str(reg)); */
-	D(2, "tlb[%u]: %llx", data->tlb_id, (long long)phys & ~mask);
-	printf("tlb[%u]: %llx\n", data->tlb_id, (long long)phys & ~mask);
+	D(2, "tlb[%u]: %llx", data->tlb_id, (unsigned long long)base);
+	printf("tlb[%u]: %llx\n", data->tlb_id, (unsigned long long)base);
 
 	return 0;
 }
@@ -232,6 +238,7 @@ static int64_t arc_read32(const struct vuart_data *data, uint32_t phys)
 
 	D(2, "32-bit read from (%p,%p) %p (phys,virt)", (void *)(uintptr_t)phys, virt,
 	  (void *)(uintptr_t)adjust);
+	D(1, "arc_read32: phys=0x%08x virt=%p val=0x%08x", phys, virt, *virt);
 
 	return *virt;
 }
@@ -459,6 +466,10 @@ int vuart_open(struct vuart_data *data)
 		return -EINVAL;
 	}
 
+	D(1, "vuart_open: dev=%s bar=%d discovery=0x%08x magic=0x%08x channel=%u pci_dev=0x%04x",
+	  data->dev_name, data->bar_idx, data->addr, data->magic, data->channel,
+	  data->pci_device_id);
+
 	ret = open_tt_dev(data);
 	if (ret < 0) {
 		goto fail;
@@ -509,7 +520,7 @@ int vuart_start(struct vuart_data *data)
 			return ret;
 		}
 		data->vuart_addr = ret;
-		D(2, "discovery address: 0x%08x", data->vuart_addr);
+		D(1, "discovery read: addr=0x%08x val=0x%08x", data->addr, data->vuart_addr);
 		if (data->vuart_addr == 0xffffffff) {
 			D(1, "Read 0xffffffff from ARC. Please reset the card and try again.");
 			return -ENOENT;
@@ -524,6 +535,8 @@ int vuart_start(struct vuart_data *data)
 			return ret;
 		}
 		data->vuart = (volatile struct tt_vuart *)(data->tlb + adjust);
+		D(1, "descriptor map: vuart_addr=0x%08x adjust=0x%llx mapped=%p", data->vuart_addr,
+		  (unsigned long long)adjust, data->vuart);
 
 		if (data->vuart->magic != data->magic) {
 			D(1, "0x%08x does not match expected magic 0x%08x", data->vuart->magic,
@@ -558,6 +571,8 @@ void vuart_putc(struct vuart_data *data, int ch)
 
 	if (tt_vuart_buf_space(vuart->rx_head, vuart->rx_tail, vuart->rx_cap) > 0) {
 		++vuart->rx_tail;
+		D_RL(2, 250, "putc: ch=0x%02x rx_head=%u rx_tail=%u rx_cap=%u", (uint8_t)ch,
+		     vuart->rx_head, vuart->rx_tail, vuart->rx_cap);
 	}
 }
 
@@ -598,6 +613,8 @@ int vuart_getc(struct vuart_data *data)
 	int ch = tx_buf[vuart->tx_head % vuart->tx_cap];
 
 	++vuart->tx_head;
+	D_RL(2, 250, "getc: ch=0x%02x tx_head=%u tx_tail=%u tx_cap=%u", (uint8_t)ch,
+	     vuart->tx_head, vuart->tx_tail, vuart->tx_cap);
 
 	return ch;
 }
@@ -640,6 +657,8 @@ int vuart_read(struct vuart_data *data, uint8_t *buf, size_t size)
 	memcpy(buf, (uint8_t *)&vuart->buf[offset], size);
 
 	vuart->tx_head += size;
+	D_RL(2, 250, "read: size=%zu tx_head=%u tx_tail=%u tx_cap=%u", size, vuart->tx_head,
+	     vuart->tx_tail, vuart->tx_cap);
 
 	return (int)size;
 }

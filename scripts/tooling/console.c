@@ -124,10 +124,16 @@ static int loop(struct console *const cons)
 	bool ctrl_a_pressed = false;
 	static bool press_ctrl_a_printed;
 
+	D(1, "loop begin: dev=%s discovery=0x%08x channel=%u magic=0x%08x skip_rescan=%d",
+	  cons->vuart.dev_name, cons->vuart.addr, cons->vuart.channel, cons->vuart.magic,
+	  cons->skip_rescan);
+
 	ret = vuart_open(&cons->vuart);
 	if (ret < 0) {
+		D(1, "vuart_open failed: %d", ret);
 		goto out;
 	}
+	D(1, "vuart_open success: tlb_id=%u tlb=%p", cons->vuart.tlb_id, cons->vuart.tlb);
 
 	if (!press_ctrl_a_printed) {
 		I("Press Ctrl-a,x to quit");
@@ -138,6 +144,7 @@ static int loop(struct console *const cons)
 		ret = vuart_start(&cons->vuart);
 		if (ret < 0) {
 			D(2, "Lost vuart connection..");
+			D(1, "vuart_start failed: %d", ret);
 			goto out;
 		}
 
@@ -195,6 +202,7 @@ static int loop(struct console *const cons)
 				if (vuart_space(&cons->vuart) > 0) {
 					vuart_putc(&cons->vuart, ch);
 				} else {
+					D_RL(1, 250, "host->fw backpressure: rx ring full, deferring char 0x%02x", ch);
 					ungetc(ch, stdin);
 				}
 			}
@@ -426,6 +434,10 @@ int main(int argc, char **argv)
 	if (parse_args(&_cons, argc, argv) < 0) {
 		return EXIT_FAILURE;
 	}
+
+	D(1, "config: dev=%s discovery=0x%08x channel=%u magic=0x%08x pci_dev=0x%04x timeout_ms=%lu",
+	  _cons.vuart.dev_name, _cons.vuart.addr, _cons.vuart.channel, _cons.vuart.magic,
+	  _cons.vuart.pci_device_id, _cons.timeout_rel_ms);
 
 	ret = install_handlers(&_cons);
 	if (ret < 0) {
