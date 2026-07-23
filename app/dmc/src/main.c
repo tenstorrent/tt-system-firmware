@@ -573,6 +573,7 @@ static void handle_cm2dm_messages(void)
 
 static void send_logs_to_smc(void)
 {
+#if defined(CONFIG_LOG_BACKEND_RINGBUF)
 	uint8_t *log_data;
 	int ret;
 
@@ -588,6 +589,9 @@ static void send_logs_to_smc(void)
 			log_backend_ringbuf_finish_claim(0);
 		}
 	}
+#else
+	return;
+#endif
 }
 
 static void shared_20ms_expired(struct k_timer *timer)
