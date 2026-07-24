@@ -15,6 +15,9 @@
 #include "status_reg.h"
 #include "timer.h"
 
+#include <inttypes.h>
+#include "arc_dma.h"
+
 #include <stdbool.h>
 
 #include <tenstorrent/post_code.h>
@@ -198,11 +201,11 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t v
 	};
 
 	if (pcitable->pcie_bar0_size != PCIE_BAR0_SIZE_DEFAULT_MB) {
-		LOG_WRN("BAR%zu %s(%u -> size %llu MiB)", 0, "Fixed ", (uint32_t)bar_sizes[0],
+		LOG_WRN("BAR0 Fixed (%" PRIu64 " -> size %" PRIu64 " MiB)", bar_sizes[0],
 			(uint64_t)PCIE_BAR0_SIZE_DEFAULT_MB);
 		bar_sizes[0] = PCIE_BAR0_SIZE_DEFAULT_MB;
 	} else {
-		LOG_INF("BAR%zu %s(%u -> size %llu MiB)", 0, "", PCIE_BAR0_SIZE_DEFAULT_MB,
+		LOG_INF("BAR0 (%u -> size %" PRIu64 " MiB)", PCIE_BAR0_SIZE_DEFAULT_MB,
 			(uint64_t)PCIE_BAR0_SIZE_DEFAULT_MB);
 	}
 	/* convert to bytes and adjust by -1 to get the correct mask */
@@ -210,11 +213,11 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t v
 	bar_sizes[0] -= 1;
 
 	if (pcitable->pcie_bar2_size != PCIE_BAR2_SIZE_DEFAULT_MB) {
-		LOG_WRN("BAR%zu %s(%u -> size %llu MiB)", 2, "Fixed ", (uint32_t)bar_sizes[1],
+		LOG_WRN("BAR2 Fixed (%" PRIu64 " -> size %" PRIu64 " MiB)", bar_sizes[1],
 			(uint64_t)PCIE_BAR2_SIZE_DEFAULT_MB);
 		bar_sizes[1] = PCIE_BAR2_SIZE_DEFAULT_MB;
 	} else {
-		LOG_INF("BAR%zu %s(%u -> size %llu MiB)", 2, "", PCIE_BAR2_SIZE_DEFAULT_MB,
+		LOG_INF("BAR2 (%u -> size %" PRIu64 " MiB)", PCIE_BAR2_SIZE_DEFAULT_MB,
 			(uint64_t)PCIE_BAR2_SIZE_DEFAULT_MB);
 	}
 	/* convert to bytes and adjust by -1 to get the correct mask */
@@ -222,16 +225,16 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t v
 	bar_sizes[1] -= 1;
 
 	if ((uint32_t)bar_sizes[2] == 0) {
-		LOG_WRN("BAR%zu %s(%u -> size %llu MiB)", 4, "Disabled ", 0U, 0ULL);
+		LOG_WRN("BAR4 Disabled (0 -> size 0 MiB)");
 	} else {
 		if (!IS_POWER_OF_TWO(bar_sizes[2])) {
 			uint64_t nhpot = NHPOT(bar_sizes[2]);
 
-			LOG_WRN("BAR%zu %s(%u -> size %llu MiB)", 4, "Rounded-up ",
-				(uint32_t)bar_sizes[2], nhpot);
+			LOG_WRN("BAR4 Rounded-up (%" PRIu64 " -> size %" PRIu64 " MiB)",
+				bar_sizes[2], nhpot);
 			bar_sizes[2] = nhpot;
 		} else {
-			LOG_INF("BAR%zu %s(%u -> size %llu MiB)", 4, "", (uint32_t)bar_sizes[2],
+			LOG_INF("BAR4 (%" PRIu64 " -> size %" PRIu64 " MiB)", bar_sizes[2],
 				bar_sizes[2]);
 		}
 		/* convert to bytes and adjust by -1 to get the correct mask */
