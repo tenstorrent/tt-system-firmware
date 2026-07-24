@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdatomic.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 
@@ -17,7 +18,13 @@
 #include <tenstorrent/sys_init_defines.h>
 #include "status_reg.h"
 #include "reg.h"
-#include "irqnum.h"
+
+#define MSGQUEUE_IRQS_NODE DT_NODELABEL(msgqueue_irqs)
+
+#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
+#define MSGQUEUE_IRQN(_name)     DT_IRQN_BY_NAME(MSGQUEUE_IRQS_NODE, _name)
+#define MSGQUEUE_IRQ_PRIO(_name) DT_IRQ_BY_NAME(MSGQUEUE_IRQS_NODE, _name, priority)
+#endif
 
 #define MSGHANDLER_COMPAT_MASK 0x1
 
@@ -392,7 +399,7 @@ static int register_interrupt_handlers(void)
 SYS_INIT_APP(register_interrupt_handlers);
 #endif
 
-#ifdef CONFIG_BOARD_TT_BLACKHOLE
+#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
 static void msgqueue_work_handler(struct k_work *work)
 {
 	process_message_queues();
@@ -458,15 +465,18 @@ void init_msgqueue(void)
 {
 	prepare_msg_queue();
 
-#ifdef CONFIG_BOARD_TT_BLACKHOLE
-	IRQ_CONNECT(IRQNUM_ARC_MISC_CNTL_IRQ0, 0, msgqueue_interrupt_handler, NULL, 0);
-	irq_enable(IRQNUM_ARC_MISC_CNTL_IRQ0);
+#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
+	IRQ_CONNECT(MSGQUEUE_IRQN(arc_misc_cntl_irq0), MSGQUEUE_IRQ_PRIO(arc_misc_cntl_irq0),
+		    msgqueue_interrupt_handler, NULL, 0);
+	irq_enable(MSGQUEUE_IRQN(arc_misc_cntl_irq0));
 
-	IRQ_CONNECT(IRQNUM_MSI_CATCHER_NONEMPTY, 0, msgqueue_msi_interrupt_handler, NULL, 0);
-	irq_enable(IRQNUM_MSI_CATCHER_NONEMPTY);
+	IRQ_CONNECT(MSGQUEUE_IRQN(msi_catcher_nonempty), MSGQUEUE_IRQ_PRIO(msi_catcher_nonempty),
+		    msgqueue_msi_interrupt_handler, NULL, 0);
+	irq_enable(MSGQUEUE_IRQN(msi_catcher_nonempty));
 
-	IRQ_CONNECT(IRQNUM_MSI_CATCHER_OVERFLOW, 0, msgqueue_msi_overflow_handler, NULL, 0);
-	irq_enable(IRQNUM_MSI_CATCHER_OVERFLOW);
+	IRQ_CONNECT(MSGQUEUE_IRQN(msi_catcher_overflow), MSGQUEUE_IRQ_PRIO(msi_catcher_overflow),
+		    msgqueue_msi_overflow_handler, NULL, 0);
+	irq_enable(MSGQUEUE_IRQN(msi_catcher_overflow));
 
 	volatile STATUS_BOOT_STATUS0_reg_u *boot_status0 =
 		(volatile STATUS_BOOT_STATUS0_reg_u *)STATUS_BOOT_STATUS0_REG_ADDR;

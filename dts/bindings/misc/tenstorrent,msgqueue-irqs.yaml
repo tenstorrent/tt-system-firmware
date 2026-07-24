@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent message queue interrupt specifiers
+
+compatible: "tenstorrent,msgqueue-irqs"
+
+include: base.yaml
+
+properties:
+  interrupts:
+    required: true
+
+  interrupt-names:
+    required: true

@@ -27,6 +27,15 @@
 		dmc-vuart = &vuart2;
 	};
 
+	msgqueue_irqs: msgqueue_irqs {
+		compatible = "tenstorrent,msgqueue-irqs";
+		interrupt-parent = <&idu_intc>;
+		interrupts = <32 0>, <57 0>, <58 0>;
+		interrupt-names = "arc_misc_cntl_irq0", "msi_catcher_nonempty",
+				  "msi_catcher_overflow";
+		status = "okay";
+	};
+
 	pinctrl: pinctrl {
 		compatible = "tenstorrent,bh-pinctrl";
 
