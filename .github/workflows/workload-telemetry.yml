@@ -1,0 +1,147 @@
+name: Workload Telemetry
+
+on:
+  pull_request:
+    # TEMPORARY: `opened/synchronize/reopened` cause the workflow to run on the
+    # upstream repo (where the self-hosted runners live) every time the PR branch
+    # is updated. Remove these three types prior to merging so only `closed`
+    # remains and the workflow only runs on merge.
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  gen-config:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix-config: ${{ steps.gen-config.outputs.matrix-config }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gen-config
+        shell: bash
+        run: |
+          # Fan out across every Blackhole board, sourcing each board's
+          # dedicated power-CI runner label and metal-image from the shared
+          # config. (WH boards like n150 have no metal-image and can't run these
+          # BH workloads.)
+          #
+          # NOTE: the job targets `power-ci-label` (e.g. p150a-power-CI), not the
+          # bare board label. Exactly one runner per board type carries that
+          # custom label, so the power test always lands on that single runner --
+          # while that runner keeps its normal `<board>` label and stays shared
+          # with other workflows (metal, hardware-smoke, etc.).
+          #
+          # TEMPORARY: loudbox is excluded while its system is powered off.
+          # Re-add it once the host is back online.
+          MATRIX_CONFIG="$(jq -c '[.bh[] | select(.board != "loudbox")]' .github/ci_boards.json)"
+          echo "matrix-config=$MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
+
+  power_CI_telemetry:
+    name: BH PCIe DIDT + Telemetry on ${{ matrix.config.board }}
+    needs: [gen-config]
+    # TEMPORARY: the `pull_request` clause (without the merged check) lets every
+    # PR push trigger the job. Replace this `if:` with
+    #   if: ${{ github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true }}
+    # prior to merging so the job only fires on actual merges.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
+    runs-on: ${{ matrix.config.power-ci-label }}
+    env:
+      LLAMA_INSTRUCT_DIR: /opt/tenstorrent/hf-models/meta-llama/Llama-3.1-8B-Instruct/
+      VENV_DIR: ${{ github.workspace }}/.telem-env
+    steps:
+      - name: Clean workspace
+        # These self-hosted runners are shared with container-based jobs
+        # (e.g. hardware-smoke, metal) that run `west` as root, leaving
+        # root-owned files like .west/config in the workspace. This job runs
+        # on the host as the runner user, so actions/checkout's default clean
+        # can't unlink those files (EACCES).
+        #
+        # We can't `sudo rm` them: the runner user has no passwordless sudo on
+        # all boards, so `sudo` just errors ("a password is required") and the
+        # leftovers survive into Checkout. Instead, get root the same way the
+        # workload does -- inside a container -- and wipe the workspace from
+        # there. `docker` is already usable by the runner user without sudo.
+        #
+        # NOTE: `--user root` is required. The metal image's default user is
+        # non-root, so without it the container hits the same "Permission
+        # denied" on the root-owned leftovers (which is why the workload's
+        # metal-options also pass --user=root).
+        run: |
+          docker run --rm \
+            --user root \
+            --entrypoint bash \
+            -v "${{ github.workspace }}":/workspace \
+            ${{ matrix.config.metal-image }} \
+            -c 'rm -rf /workspace/* /workspace/.[!.]* /workspace/..?* || true'
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install telemetry dependencies
+        run: |
+          set -euxo pipefail
+          python3 -m venv "$VENV_DIR"
+          "$VENV_DIR/bin/pip" install --upgrade pip
+          "$VENV_DIR/bin/pip" install "pyluwen>=0.8.1" pandas
+
+      # ----------------------------------------------------------------------
+      # Subtests run sequentially, each wrapped in its own telemetry run by the
+      # power-telemetry-subtest composite action (start -> run -> stop -> upload
+      # to telemetry_output/<name>). To add a new workload (e.g. llama, ff1),
+      # copy one block below and set its name/workload/run.
+      # ----------------------------------------------------------------------
+      - name: resnet_conv subtest
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: resnet_conv
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          timeout-minutes: "65"
+          run: |
+            docker run \
+              --entrypoint pytest \
+              --device /dev/tenstorrent \
+              -v /dev/hugepages-1G:/dev/hugepages-1G \
+              -v "$LLAMA_INSTRUCT_DIR:$LLAMA_INSTRUCT_DIR" \
+              -e HF_MODEL="$LLAMA_INSTRUCT_DIR" \
+              -e TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" \
+              ${{ matrix.config.metal-image }} \
+                tests/didt/test_resnet_conv.py::test_resnet_conv -k "all" \
+                --didt-workload-iterations 100 --determinism-check-interval 0
+
+      - name: ff1_matmul with_gelu subtest
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: ff1_matmul_with_gelu
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          timeout-minutes: "65"
+          run: |
+            docker run \
+              --entrypoint pytest \
+              --device /dev/tenstorrent \
+              -v /dev/hugepages-1G:/dev/hugepages-1G \
+              -v "$LLAMA_INSTRUCT_DIR:$LLAMA_INSTRUCT_DIR" \
+              -e HF_MODEL="$LLAMA_INSTRUCT_DIR" \
+              -e TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" \
+              ${{ matrix.config.metal-image }} \
+                tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "with_gelu and all" \
+                --didt-workload-iterations 100 --determinism-check-interval 0
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          rm -rf "${{ github.workspace }}/telemetry_output" "$VENV_DIR" || true
