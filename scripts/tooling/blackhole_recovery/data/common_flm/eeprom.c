@@ -231,6 +231,16 @@ static int eeprom_probe(struct spi_nor_config *cfg)
 				},
 		},
 		{
+			.jedec_id = 0x1A63C8, /* JEDEC ID for GD25LF512MF */
+			.config = {
+					.read_cmd = 0x13,
+					.pp_cmd = 0x12,
+					.se_cmd = 0x21,
+					.ce_cmd = 0xC7,
+					.addr_len = 4,
+				},
+		},
+		{
 			.jedec_id = 0x1A5B2C, /* JEDEC ID for MT35XU02GCBA */
 			.config = {
 					.read_cmd = 0x13,
