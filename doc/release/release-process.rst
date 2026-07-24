@@ -123,29 +123,33 @@ To start the RC process, perform the following steps:
 1. Create a release branch from main with the name ``vX.Y-branch`` where X and Y
    are the major and minor version numbers of the release.
 
-2. Update the MINOR version field, and set the EXTRAVERSION field to "rc1" in
+2. Immediately after creating the release branch, post a PR incrementing the next
+   minor version on main, and merge after CI is successful. For example, if the
+   release branch is ``v19.9-branch``, then the version on main should be
+   incremented to 19.10. This step can be performed using the command
+   ``./scripts/update_versions.sh post-branch``, then creating a PR with the
+   commits it creates. Do this as soon as the branch exists, so that commits
+   merged to main after the branch point are not stamped with the release's
+   version number. This PR can proceed in parallel with the RC steps below;
+   it does not need to block them.
+
+3. Update the MINOR version field, and set the EXTRAVERSION field to "rc1" in
    the release branch. For example, if the release branch is ``v19.9-branch``, then
    the MINOR version should be set to 9 and the EXTRAVERSION field should be set to
    "rc1". This step can be performed using the command
    ``./scripts/update_versions.sh rc``.
 
-3. Tag the release branch with the first RC tag, following the format ``vX.Y.Z-rc1``
+4. Tag the release branch with the first RC tag, following the format ``vX.Y.Z-rc1``
    where X, Y and Z are the major, minor and patch version numbers of the release,
    For example, if the release branch is ``v19.9-branch``, then the first RC tag
    should be ``v19.9.0-rc1``. The tag can be created with the command
    ``git tag -s vX.Y.Z-rc1 -m "tt-system-firmware vX.Y.Z-rc1"``, where
    X, Y and Z are the major, minor and patch version numbers of the release.
 
-4. Push the release branch and RC tag to GitHub. This will start the CI process
+5. Push the release branch and RC tag to GitHub. This will start the CI process
    for the release from the tag. Once this is complete, follow
    `Posting Release to GitHub`_ steps to post the RC to GitHub as a published
    pre-release.
-
-5. Post a PR incrementing the next minor version on main, and merge after CI is
-   successful. For example, if the release branch is ``v19.9-branch``, then the
-   version on main should be incremented to 19.10. This step can be performed
-   using the command ``./scripts/update_versions.sh post-branch``, then
-   creating a PR with the commits it creates.
 
 Automated RC Creation
 *********************
