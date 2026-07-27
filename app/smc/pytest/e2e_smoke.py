@@ -169,6 +169,24 @@ def convert_telemetry_to_float(value):
         return value / 65536.0
 
 
+def get_pcie_gen(arc_chip) -> int:
+    bdf = arc_chip.get_pci_bdf()
+    with open(
+        f"/sys/bus/pci/devices/{bdf}/current_link_speed", "r", encoding="utf-8"
+    ) as f:
+        link_speed = re.findall(r"\d+\.\d+|\d+", f.read())[0]
+    speed_to_gen = {
+        "32.0": 5,
+        "16.0": 4,
+        "8.0": 3,
+        "5.0": 2,
+        "2.5": 1,
+    }
+    if link_speed not in speed_to_gen:
+        raise ValueError(f"Invalid link speed {link_speed}")
+    return speed_to_gen[link_speed]
+
+
 @pytest.fixture(scope="session")
 def launched_arc_dut(unlaunched_dut: DeviceAdapter, board_name, asic_id):
     """
@@ -1303,6 +1321,14 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
         high_power = read_telem(arc_chip, TAG_INPUT_POWER)
         logger.info(f"High power state input power: {high_power}W")
 
+    # Read PCIe gen in high power state
+    pcie_gen = get_pcie_gen(arc_chip)
+    logger.info(f"PCIE generation: {pcie_gen}")
+
+    # Verify PCIe gen is 5
+    assert pcie_gen == 5, f"PCIE generation ({pcie_gen}) is not 5"
+
+    # Set power state to low
     logger.info("Setting power state to low")
     arc_chip.set_power_state("low")
     time.sleep(settling_time)  # Allow power state to stabilize
@@ -1319,6 +1345,13 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
         assert power_delta > expected_power_delta, (
             f"Power delta ({power_delta}W) is not greater than {expected_power_delta}W"
         )
+
+    # Check PCIe gen in low power state
+    pcie_gen = get_pcie_gen(arc_chip)
+    logger.info(f"PCIE generation: {pcie_gen}")
+
+    # Verify PCIe gen is 1
+    assert pcie_gen == 1, f"PCIE generation ({pcie_gen}) is not 1"
 
     return 0
 
