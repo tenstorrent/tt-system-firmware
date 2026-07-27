@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "cm2dm_msg.h"
 #include "timer.h"
 
 #include <zephyr/kernel.h>
@@ -20,8 +19,6 @@ BUILD_ASSERT(PARTITION_EXISTS(cmfw), "cmfw fixed-partition does not exist");
 
 int main(void)
 {
-	Dm2CmReadyRequest();
-
 #ifdef CONFIG_BOOTLOADER_MCUBOOT
 	int rc;
 
