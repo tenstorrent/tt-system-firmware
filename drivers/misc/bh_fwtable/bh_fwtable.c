@@ -394,6 +394,14 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 				ovr.feature_enable.kernel_throttler_at_floor_en;
 		}
 
+		if (ovr.has_dram_table && ovr.dram_table.has_soft_harvest_dram_mask) {
+			LOG_INF("CCFGOVR override: dram_table.soft_harvest_dram_mask = 0x%x",
+				ovr.dram_table.soft_harvest_dram_mask);
+			data->fw_table.dram_table.soft_harvest_dram_mask =
+				ovr.dram_table.soft_harvest_dram_mask;
+			data->fw_table.has_dram_table = true;
+		}
+
 		return;
 	}
 
