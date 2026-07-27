@@ -260,6 +260,22 @@
 	};
 };
 
+&spi3 {
+	pinctrl-0 = <&spi3_nss_pa4 &spi3_sck_pc10
+		     &spi3_miso_pb4 &spi3_mosi_pd6>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	max7221: max7221@0 {
+		compatible = "maxim,max7219";
+		reg = <0>;
+		spi-max-frequency = <10000000>;
+		num-cascading = <1>;
+		intensity = <0>;
+		scan-limit = <7>;
+	};
+};
+
 &nv_flash {
 #include "../tt_blackhole/tt_blackhole_fixed_partitions.dtsi"
 };
