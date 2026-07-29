@@ -909,7 +909,7 @@ static void dma_arc_hs_isr(const struct device *dev)
 }
 #endif /* DT_ALL_INST_HAS_PROP_STATUS_OKAY(interrupts) */
 
-static const struct dma_driver_api dma_arc_hs_api = {
+static DEVICE_API(dma, dma_arc_hs_api) = {
 	.config = dma_arc_hs_config,
 	.start = dma_arc_hs_start,
 	.stop = dma_arc_hs_stop,

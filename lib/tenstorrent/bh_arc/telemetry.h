@@ -26,6 +26,63 @@
 #define TELEMETRY_VERSION 0x00000100
 
 /**
+ * @defgroup telemetry_feature_capabilities Feature Capabilities
+ * @ingroup telemetry
+ * @brief Feature capability and active-configuration telemetry definitions.
+ *
+ * Firmware feature capabilities are organized into telemetry register pairs:
+ * one register reports which features are supported by the firmware, and the
+ * matching register reports which of those features are currently enabled.
+ *
+ * The currently allocated telemetry pair is:
+ *
+ * <table>
+ * <tr>
+ * <th>Capability register</th><th>Active-config register</th><th>Shared bit layout</th>
+ * </tr>
+ * <tr>
+ * <td>@ref TAG_FW_CAPABILITIES_0</td>
+ * <td>@ref TAG_FW_ACTIVE_CONFIG_0</td>
+ * <td>@ref telemetry_feature_flags_bits_0_t</td>
+ * </tr>
+ * </table>
+ * @{
+ */
+
+/** @brief Bit definitions shared by firmware capability and active-configuration telemetry.
+ *
+ * These bit positions are shared by both @ref TAG_FW_CAPABILITIES_0 and
+ * @ref TAG_FW_ACTIVE_CONFIG_0.
+ *
+ * For any bit defined here:
+ *
+ * | Telemetry register | Meaning of bit value 1 |
+ * | --- | --- |
+ * | @ref TAG_FW_CAPABILITIES_0 | The firmware supports the feature. |
+ * | @ref TAG_FW_ACTIVE_CONFIG_0 | The feature is currently enabled. |
+ */
+typedef struct {
+	/** @brief Kernel-throttler-at-AICLK-floor feature.
+	 *
+	 * This bit is controlled at runtime by the host with
+	 * @ref TT_SMC_MSG_CHARACTERISATION using
+	 * @ref TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED.
+	 */
+	uint32_t kernel_nops_at_aiclk_fmin: 1;
+
+	/** @brief Reserved for future use. */
+	uint32_t reserved: 31;
+} telemetry_feature_flags_bits_0_t;
+
+/** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
+typedef union {
+	uint32_t u32_all;
+	telemetry_feature_flags_bits_0_t bits;
+} telemetry_feature_flags_0_t;
+
+/** @} */ /* end of telemetry_feature_capabilities */
+
+/**
  * @defgroup telemetry_tags Telemetry Tags
  * @ingroup telemetry
  * @brief Telemetry tag definitions
@@ -142,7 +199,7 @@
 /** @brief L2CPU firmware version. */
 #define TAG_L2CPU_FW_VERSION 30
 
-/** @brief Fan speed as a percentage. */
+/** @brief Fan speed as a percentage. 0xFFFFFFFF if fan control disabled. */
 #define TAG_FAN_SPEED 31
 
 /** @brief Timer heartbeat counter. */
@@ -172,19 +229,47 @@
 /** @brief NOC translation status. */
 #define TAG_NOC_TRANSLATION 40
 
-/** @brief Fan RPM. */
+/** @brief Fan RPM. 0xFFFFFFFF if fan control disabled. */
 #define TAG_FAN_RPM 41
 
-/** @brief GDDR 0 and 1 temperature. */
+/** @brief GDDR 0 and 1 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 1 top die
+ * - [23:16] GDDR 1 bottom die
+ * - [15:8]  GDDR 0 top die
+ * - [7:0]   GDDR 0 bottom die
+ */
 #define TAG_GDDR_0_1_TEMP 42
 
-/** @brief GDDR 2 and 3 temperature. */
+/** @brief GDDR 2 and 3 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 3 top die
+ * - [23:16] GDDR 3 bottom die
+ * - [15:8]  GDDR 2 top die
+ * - [7:0]   GDDR 2 bottom die
+ */
 #define TAG_GDDR_2_3_TEMP 43
 
-/** @brief GDDR 4 and 5 temperature. */
+/** @brief GDDR 4 and 5 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 5 top die
+ * - [23:16] GDDR 5 bottom die
+ * - [15:8]  GDDR 4 top die
+ * - [7:0]   GDDR 4 bottom die
+ */
 #define TAG_GDDR_4_5_TEMP 44
 
-/** @brief GDDR 6 and 7 temperature. */
+/** @brief GDDR 6 and 7 temperature.
+ *
+ * Each die temperature is one byte in degrees Celsius, packed as:
+ * - [31:24] GDDR 7 top die
+ * - [23:16] GDDR 7 bottom die
+ * - [15:8]  GDDR 6 top die
+ * - [7:0]   GDDR 6 bottom die
+ */
 #define TAG_GDDR_6_7_TEMP 45
 
 /** @brief GDDR 0 and 1 corrected errors. */
@@ -314,12 +399,86 @@
  */
 #define TAG_HOST_AICLK_LIMIT 70
 
+/** @brief Number of SMBUS target errors observed. */
+#define TAG_SMBUS_ERRORS 71
+
+/**
+ * @brief noc2axi port MRISC FW is loaded on for each GDDR instance.
+ *
+ * Each nibble represents the noc2axi port (0, 1 or 2) that MRISC FW is loaded on
+ * for a GDDR instance. Nibble i corresponds to GDDR instance i, with instance 0
+ * in the least significant nibble. A nibble value of 0xF indicates the instance is
+ * disabled/harvested.
+ */
+#define TAG_GDDR_MRISC_NOC2AXI_PORT 72
+
+/**
+ * @brief GDDR west IO rail power in watts.
+ *
+ * Derived from the west IO rail current and the fixed 1.35 V rail supply.
+ */
+#define TAG_GDDR_WEST_IO_POWER 73
+
+/**
+ * @brief GDDR east IO rail power in watts.
+ *
+ * Derived from the east IO rail current and the fixed 1.35 V rail supply.
+ */
+#define TAG_GDDR_EAST_IO_POWER 74
+
+/**
+ * @brief Kernel-throttler-at-AICLK-floor configuration.
+ *
+ * Reflects the persisted firmware-table configuration (which may be overridden
+ * via the SPI-flash A/B ccfgovr mechanism):
+ * - bit 0: feature enabled (1) or disabled (0)
+ * - bits [31:16]: stop-NOPs frequency in MHz (0 = FW-controlled default)
+ */
+#define TAG_KERNEL_THROTTLER 75
+
+/** @brief Number of times kernel NOP throttling has started.
+ *
+ * Counts the transitions into the throttled (NOP) state since boot, derived
+ * from the throttler's transition counter. Monotonically increasing.
+ */
+#define TAG_NOP_START_COUNT 76
+
+/** @brief Time kernel NOP throttling was active during the last telemetry
+ * update window, in milliseconds.
+ *
+ * Reflects how long NOPs were on over the most recent telemetry update interval.
+ */
+#define TAG_NOP_ON_DURATION 77
+
+/** @brief Firmware capability bitfield.
+ *
+ * Bits are defined by @ref telemetry_feature_flags_bits_0_t.
+ *
+ * Current assignments:
+ * - bit 0 (`kernel_nops_at_aiclk_fmin`): firmware supports the
+ *   kernel-throttler-at-AICLK-floor feature.
+ */
+#define TAG_FW_CAPABILITIES_0 78
+
+/** @brief Active firmware configuration bitfield.
+ *
+ * Bits are defined by @ref telemetry_feature_flags_bits_0_t.
+ *
+ * Current assignments:
+ * - bit 0 (`kernel_nops_at_aiclk_fmin`): kernel-throttler-at-AICLK-floor is enabled.
+ *
+ * Runtime control:
+ * - The host can enable or disable this bit with @ref TT_SMC_MSG_CHARACTERISATION
+ *   and @ref TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED.
+ */
+#define TAG_FW_ACTIVE_CONFIG_0 79
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 71
+#define TAG_COUNT 80
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -327,7 +486,6 @@
 void init_telemetry(uint32_t app_version);
 uint32_t ConvertFloatToTelemetry(float value);
 float ConvertTelemetryToFloat(int32_t value);
-int GetMaxGDDRTemp(void);
 void StartTelemetryTimer(void);
 void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version);
 void UpdateTelemetryNocTranslation(bool translation_enabled);
@@ -335,6 +493,14 @@ void UpdateTelemetryBoardPowerLimit(uint32_t power_limit);
 void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
+void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
+/** @brief Get the current active firmware feature bits from @ref TAG_FW_ACTIVE_CONFIG_0.
+ * @ingroup telemetry_feature_capabilities
+ *
+ * The returned struct uses the bit layout documented by
+ * @ref telemetry_feature_flags_bits_0_t.
+ */
+telemetry_feature_flags_bits_0_t GetActiveFeatures(void);
 bool GetTelemetryTagValid(uint16_t tag);
 uint32_t GetTelemetryTag(uint16_t tag);
 

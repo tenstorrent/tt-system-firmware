@@ -2,6 +2,8 @@ common:
   tags:
     - smoke
     - dma
+  extra_configs:
+    - CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED=n
   platform_allow:
     - tt_blackhole@p100a/tt_blackhole/smc
     - tt_blackhole@p150a/tt_blackhole/smc
@@ -13,9 +15,6 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
          tt_bh_noc.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
-         tt_bh_noc.conf"
   drivers.dma.chan_link_transfer.arc_hs.interrupts:
     extra_args:
       - "DTC_OVERLAY_FILE=\

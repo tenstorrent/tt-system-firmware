@@ -34,6 +34,6 @@ child-binding:
 
     drive-strength:
       type: int
-      default: 7
+      default: 127
       description: |
-        Drive strength of the pin.
+        Drive strength of the pin (8-bit field, 0-255).

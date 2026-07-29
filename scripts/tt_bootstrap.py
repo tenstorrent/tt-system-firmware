@@ -207,6 +207,14 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             / "zephyr"
             / "blobs"
             / "tt_blackhole_serdes_eth_fw.bin",
+            "altsdreg": TT_Z_P_ROOT
+            / "zephyr"
+            / "blobs"
+            / "tt_blackhole_alt_serdes_eth_fwreg.bin",
+            "altsdfw": TT_Z_P_ROOT
+            / "zephyr"
+            / "blobs"
+            / "tt_blackhole_alt_serdes_eth_fw.bin",
             "destwipe": TT_Z_P_ROOT
             / "zephyr"
             / "blobs"

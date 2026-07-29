@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	model = "Tenstorrent Blackhole P150B DMC board";
+	compatible = "tenstorrent,blackhole,p150b-dmc";
+};
+
+&max6639 {
+	status = "disabled";
+};

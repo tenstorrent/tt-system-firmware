@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "chip_info.h"
 #include "cm2dm_msg.h"
 #include "init.h"
 #include "irqnum.h"
@@ -14,22 +15,18 @@
 #include "status_reg.h"
 #include "timer.h"
 
+#include "arc_dma.h"
+
 #include <stdbool.h>
 
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_arc_hs.h>
 #include <zephyr/init.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
-
-/* FIXME: should be done via devicetree */
-#define PCIE_BAR0_SIZE_DEFAULT_MB 512
-#define PCIE_BAR2_SIZE_DEFAULT_MB 1
-#define PCIE_BAR4_SIZE_DEFAULT_MB 32768
 
 #define PCIE_SERDES0_ALPHACORE_TLB 0
 #define PCIE_SERDES1_ALPHACORE_TLB 1
@@ -58,8 +55,10 @@
 
 LOG_MODULE_DECLARE(bh_arc);
 
-static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 static const struct device *const arc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(dma0));
+
+/* Verify prototype of ArcDmaTransfer, because it's used by libpciesd.a. */
+static __unused bool (*verify_ArcDmaTransfer)(const void *, void *, uint32_t) = ArcDmaTransfer;
 
 typedef struct {
 	uint32_t tlp_type: 5;
@@ -192,8 +191,8 @@ static inline void SetupDbiAccess(void)
 	ReadSiiReg(PCIE_NOC_TLB_DATA_REG_OFFSET(DBI_PCIE_TLB_ID));
 }
 
-static void CntlInitV2ParamInit(uint8_t pcie_inst, const ReadOnly *rotable,
-				const struct _FwTable_PciPropertyTable *pcitable,
+static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t vendor_id,
+				const struct bh_pci_property *pcitable,
 				struct CntlInitV2Param *param)
 {
 	/* Start with 32-bit bar size in MiB. Round up as needed. Final value is bar mask in B */
@@ -246,11 +245,11 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, const ReadOnly *rotable,
 	}
 
 	*param = (struct CntlInitV2Param){
-		.board_id = rotable->board_id,
-		.vendor_id = rotable->vendor_id,
-		.gen3_eq_pset_req_vec = pcitable->pcie_gen3_eq_pset_req_vec,
-		.gen3_eq_fb_mode = pcitable->pcie_gen3_eq_fb_mode,
-		.serdes_inst = pcitable->num_serdes,
+		.board_id = board_id,
+		.vendor_id = vendor_id,
+		.num_serdes_instance = pcitable->num_serdes,
+		.gen3_eq_pset_req_vec = pcitable->gen3_eq_pset_req_vec,
+		.gen3_eq_fb_mode = pcitable->gen3_eq_fb_mode,
 		.max_pcie_speed = pcitable->max_pcie_speed,
 		.pcie_inst = pcie_inst,
 		/* pcie_mode - 1 to match with definition in pcie.h for PCIeDeviceType */
@@ -368,7 +367,7 @@ static PCIeInitStatus PCIeInitComm(const struct CntlInitV2Param *param)
 	ConfigurePCIeTlbs(param->pcie_inst);
 
 	PCIeInitStatus status =
-		SerdesInit(param->pcie_inst, param->device_type, param->serdes_inst);
+		SerdesInit(param->pcie_inst, param->device_type, param->num_serdes_instance);
 
 	if (status != PCIeInitOk) {
 		return status;
@@ -463,54 +462,22 @@ static int pcie_init(void)
 		return 0;
 	}
 
-	const ReadOnly *rotable = tt_bh_fwtable_get_read_only_table(fwtable_dev);
-	FwTable_PciPropertyTable pci0_property_table;
-	FwTable_PciPropertyTable pci1_property_table;
+	uint64_t board_id = bh_chip_info_board_id();
+	uint32_t vendor_id = bh_chip_info_vendor_id();
+	struct bh_pci_property pci0_property_table;
+	struct bh_pci_property pci1_property_table;
 	struct CntlInitV2Param param;
 
-	if (IS_ENABLED(CONFIG_TT_SMC_RECOVERY)) {
-		/* Set num_serdes based on board type:
-		 * P300 variants and UBB (Galaxy): 1 serdes
-		 * P100 and P150 variants: 2 serdes
-		 */
-#if defined(CONFIG_BOARD_REVISION_P300A) || defined(CONFIG_BOARD_REVISION_P300B) ||                \
-	defined(CONFIG_BOARD_REVISION_P300C) || defined(CONFIG_BOARD_REVISION_GALAXY) ||           \
-	defined(CONFIG_BOARD_REVISION_GALAXY_REVC)
-		uint8_t recovery_num_serdes = 1;
-#else
-		uint8_t recovery_num_serdes = 2;
-#endif
+	bh_chip_info_pci_property(0, &pci0_property_table);
+	bh_chip_info_pci_property(1, &pci1_property_table);
 
-		pci0_property_table = (FwTable_PciPropertyTable){
-			.pcie_mode = FwTable_PciPropertyTable_PcieMode_EP,
-			.num_serdes = recovery_num_serdes,
-			.pcie_bar0_size = PCIE_BAR0_SIZE_DEFAULT_MB,
-			.pcie_bar2_size = PCIE_BAR2_SIZE_DEFAULT_MB,
-			.pcie_bar4_size = PCIE_BAR4_SIZE_DEFAULT_MB,
-			.pcie_gen3_eq_pset_req_vec = 0x3E0,
-			.pcie_gen3_eq_fb_mode = 1,
-		};
-		pci1_property_table = (FwTable_PciPropertyTable){
-			.pcie_mode = FwTable_PciPropertyTable_PcieMode_EP,
-			.num_serdes = recovery_num_serdes,
-			.pcie_bar0_size = PCIE_BAR0_SIZE_DEFAULT_MB,
-			.pcie_bar2_size = PCIE_BAR2_SIZE_DEFAULT_MB,
-			.pcie_bar4_size = PCIE_BAR4_SIZE_DEFAULT_MB,
-			.pcie_gen3_eq_pset_req_vec = 0x3E0,
-			.pcie_gen3_eq_fb_mode = 1,
-		};
-	} else {
-		pci0_property_table = tt_bh_fwtable_get_fw_table(fwtable_dev)->pci0_property_table;
-		pci1_property_table = tt_bh_fwtable_get_fw_table(fwtable_dev)->pci1_property_table;
-	}
-
-	if (pci0_property_table.pcie_mode != FwTable_PciPropertyTable_PcieMode_DISABLED) {
-		CntlInitV2ParamInit(0, rotable, &pci0_property_table, &param);
+	if (pci0_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
+		CntlInitV2ParamInit(0, board_id, vendor_id, &pci0_property_table, &param);
 		PCIeInit(&param);
 	}
 
-	if (pci1_property_table.pcie_mode != FwTable_PciPropertyTable_PcieMode_DISABLED) {
-		CntlInitV2ParamInit(1, rotable, &pci1_property_table, &param);
+	if (pci1_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
+		CntlInitV2ParamInit(1, board_id, vendor_id, &pci1_property_table, &param);
 		PCIeInit(&param);
 	}
 

@@ -92,7 +92,8 @@ jobs:
 
           EXTRA_ARGS="--"
           EXTRA_ARGS+=" -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y"
-          if [ -n "$SIGNATURE_KEY_FILE" ]; then
+          # galaxy_2 is not yet validated on hardware; skip signing until tests pass
+          if [ -n "$SIGNATURE_KEY_FILE" ] && ! [[ "${{ matrix.board }}" == "galaxy_2" ]]; then
             EXTRA_ARGS+=" -DSB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$SIGNATURE_KEY_FILE\""
           fi
 
@@ -109,10 +110,12 @@ jobs:
         run: |
           if [ -z "$SIGNATURE_KEY_FILE" ]; then
             echo "SIGNATURE_KEY_FILE is not set, skipping signature verification"
+          elif [[ "${{ matrix.board }}" == "galaxy_2" ]]; then
+            echo "Skipping signature verification for galaxy_2"
           else
             # verify that built images for smc and dmc fw are signed
             # imgtool returns a non-zero exit code if the image is not signed
-            if ! [[ "${{ matrix.board }}" =~ ^galaxy ]]; then
+            if ! [[ "${{ matrix.board }}" =~ ^galaxy(_revc)?$ ]]; then
               imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
             fi
             imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/recovery/zephyr/zephyr.signed.bin
@@ -325,6 +328,9 @@ jobs:
 
   build-preflash:
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        board_rev: [p150a, p300a]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -336,12 +342,12 @@ jobs:
       - name: Build preflash firmware
         shell: bash
         run: |
-          ./tt-system-firmware/scripts/build-preflash.sh
+          ./tt-system-firmware/scripts/build-preflash.sh ${{ matrix.board_rev }}
 
       - name: Upload preflash
         uses: actions/upload-artifact@v4
         with:
-          name: preflash-fw
+          name: preflash-fw-${{ matrix.board_rev }}
           path: |
             preflash*.ihex
             preflash*.bin
@@ -394,6 +400,11 @@ jobs:
         shell: bash
         run: |
           ./build-flm.sh
+      - name: Upload Flash Loader Module
+        uses: actions/upload-artifact@v4
+        with:
+          name: bh-flm
+          path: tt-system-firmware/scripts/tooling/blackhole_recovery/data/bh_flm/build/*.flm
 
   discover-smc-tests:
     runs-on: ubuntu-24.04
@@ -412,6 +423,26 @@ jobs:
           cd tt-system-firmware
 
           TESTS=$(./scripts/discover_build_ci_tests.py)
+          echo "tests=$TESTS" >> $GITHUB_OUTPUT
+          echo "Discovered tests: $TESTS"
+
+  discover-dmc-tests:
+    runs-on: ubuntu-24.04
+    outputs:
+      tests: ${{ steps.discover.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+
+      - name: Discover DMC Tests
+        id: discover
+        shell: bash
+        run: |
+          # Parse app/dmc/sample.yaml to find tests with build-ci tag
+          cd tt-system-firmware
+
+          TESTS=$(./scripts/discover_build_ci_tests.py app/dmc/sample.yaml)
           echo "tests=$TESTS" >> $GITHUB_OUTPUT
           echo "Discovered tests: $TESTS"
 
@@ -475,6 +506,56 @@ jobs:
             twister-smc-tests-${{ matrix.board }}-${{ env.TEST_ID }}/**/*.lst
             twister-smc-tests-${{ matrix.board }}-${{ env.TEST_ID }}/twister.log
             twister-smc-tests-${{ matrix.board }}-${{ env.TEST_ID }}/twister.json
+
+  dmc-build-only-tests:
+    runs-on: ubuntu-24.04
+    needs: discover-dmc-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJson(needs.discover-dmc-tests.outputs.tests) }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      - name: Build DMC Build Only Tests
+        shell: bash
+        run: |
+          # Create safe artifact name
+          TEST_ID=$(echo "${{ matrix.test }}" | tr '.' '-')
+          echo "TEST_ID=$TEST_ID" >> $GITHUB_ENV
+
+          ./zephyr/scripts/twister \
+            -p native_sim \
+            --build-only \
+            -T tt-system-firmware/app/dmc \
+            --outdir twister-dmc-tests-$TEST_ID \
+            --runtime-artifact-cleanup pass \
+            -s "${{ matrix.test }}" \
+            -j 4
+
+      - name: Upload Artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-dmc-tests-${{ env.TEST_ID }}
+          include-hidden-files: true
+          path: |
+            twister-dmc-tests-${{ env.TEST_ID }}/**/handler.log
+            twister-dmc-tests-${{ env.TEST_ID }}/**/twister_harness.log
+            twister-dmc-tests-${{ env.TEST_ID }}/**/zephyr.dts
+            twister-dmc-tests-${{ env.TEST_ID }}/**/.config
+            twister-dmc-tests-${{ env.TEST_ID }}/**/*.map
+            twister-dmc-tests-${{ env.TEST_ID }}/**/zephyr.elf
+            twister-dmc-tests-${{ env.TEST_ID }}/**/*.lst
+            twister-dmc-tests-${{ env.TEST_ID }}/twister.log
+            twister-dmc-tests-${{ env.TEST_ID }}/twister.json
 
   grendel-build-test:
     runs-on: ubuntu-24.04

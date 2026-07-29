@@ -1,0 +1,265 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <st/u3/stm32u375Xe.dtsi>
+#include <st/u3/stm32u375veix-pinctrl.dtsi>
+
+/ {
+	model = "Tenstorrent Blackhole DMC GLX2 board";
+	compatible = "tenstorrent,tt-blackhole-dmc-glx2";
+
+	chosen {
+		zephyr,code-partition = &slot0_partition;
+		zephyr,flash = &flash0;
+		zephyr,sram = &sram0;
+	};
+
+	aliases {
+		watchdog0 = &iwdg;
+	};
+
+	board_fault_led {
+		compatible = "zephyr,gpio-line";
+		label = "LED Output to board fault indicator";
+		gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;
+	};
+
+	chip0: chip0 {
+		compatible = "tenstorrent,bh-chip";
+
+		pgood {
+			compatible = "zephyr,gpio-line";
+			label = "Power good indicator";
+			gpios = <&gpioc 9 GPIO_PULL_DOWN>;
+		};
+
+		asic_reset {
+			compatible = "zephyr,gpio-line";
+			label = "Line to asic reset";
+			gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
+		};
+
+		therm_trip {
+			compatible = "zephyr,gpio-line";
+			label = "Thermal trip indicator";
+			gpios = <&gpioa 2 GPIO_ACTIVE_HIGH>;
+		};
+
+		flash = <&flash1>;
+
+		spi_mux {
+			compatible = "zephyr,gpio-line";
+			label = "Line to spi mux, drive low to enable dmfw -> eeprom";
+			gpios = <&gpiob 0 GPIO_ACTIVE_LOW>;
+		};
+
+		spi_reset {
+			compatible = "zephyr,gpio-line";
+			label = "Line to spi reset";
+			gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
+		};
+
+		arc = <&chip0_arc>;
+
+		jtag0: jtag {
+			compatible = "zephyr,jtag-gpio";
+			port-write-cycles = <2>;
+
+			tms-gpios = <&gpiod 0 GPIO_ACTIVE_HIGH>;
+			tck-gpios = <&gpiod 1 GPIO_ACTIVE_HIGH>;
+			tdo-gpios = <&gpiod 3 GPIO_PULL_UP>;
+			tdi-gpios = <&gpiod 4 GPIO_ACTIVE_HIGH>;
+		};
+	};
+
+	preset_trigger {
+		compatible = "zephyr,gpio-line";
+		label = "Input from PCIe card edge triggering an asic reset";
+		gpios = <&gpioc 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+	};
+
+	chips {
+		compatible = "tenstorrent,bh-chips";
+		chips = <&chip0>;
+		primary = <0>;
+	};
+};
+
+&rcc {
+	clocks = <&clk_msis>;
+	clock-frequency = <DT_FREQ_M(96)>;
+	ahb-prescaler = <1>;
+	apb1-prescaler = <1>;
+	apb2-prescaler = <1>;
+	apb3-prescaler = <1>;
+};
+
+&clk_hsi {
+	status = "okay";
+};
+
+&clk_hsi48 {
+	status = "okay";
+};
+
+&clk_lse {
+	status = "okay";
+};
+
+&clk_msik {
+	status = "okay";
+};
+
+&clk_msis {
+	status = "okay";
+	msi-pll-mode;
+	msi-range = <0>; /* 96MHz (reset value) */
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(64)>;
+		};
+
+		slot0_partition: partition@10000 {
+			label = "image-0";
+			reg = <0x00010000 DT_SIZE_K(192)>;
+		};
+
+		slot1_partition: partition@40000 {
+			label = "image-1";
+			reg = <0x00040000 DT_SIZE_K(192)>;
+		};
+	};
+};
+
+&iwdg {
+	status = "okay";
+};
+
+&uart4 {
+	pinctrl-0 = <&uart4_tx_pa0 &uart4_rx_pc11>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
+
+/*
+ *&uart5 {
+ *	pinctrl-0 = <&uart5_tx_pc12 &uart5_rx_pd2>;
+ *	pinctrl-names = "default";
+ *	current-speed = <115200>;
+ *	status = "okay";
+ *};
+ */
+
+&i3c1 {
+	pinctrl-0 = <&i3c1_scl_pb13 &i3c1_sda_pa1>;
+	pinctrl-names = "default";
+	status = "okay";
+	i3c-scl-hz = <1000000>;   /* 1 MHz I3C frequency */
+	i2c-scl-hz = <400000>;
+	target-mode;
+	mipi-instance = <0x0>;
+};
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7 &i2c1_smba_pb5>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	gpiox0: gpio@20 {
+		compatible = "nxp,pca9555";
+		status = "okay";
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		reg = <0x20>;
+		gpio-controller;
+	};
+
+	gpiox1: gpio@21 {
+		compatible = "nxp,pca9555";
+		status = "okay";
+		#gpio-cells = <2>;
+		ngpios = <16>;
+		reg = <0x21>;
+		gpio-controller;
+	};
+};
+
+&i2c2 {
+	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pb12>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&i2c3 {
+	pinctrl-0 = <&i2c3_scl_pd12 &i2c3_sda_pd13 &i2c3_smba_pb2>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/ {
+	smbus3: smbus3 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c3>;
+		status = "okay";
+
+		chip0_arc: bh_arc@a {
+			compatible = "tenstorrent,bh-arc";
+			reg = <0xa>;
+			status = "okay";
+		};
+	};
+};
+
+&spi1 {
+	pinctrl-0 = <&spi1_nss_pe12 &spi1_sck_pe13
+		     &spi1_miso_pe14 &spi1_mosi_pe15>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	flash1: spi-flash@0 {
+		compatible = "jedec,spi-nor";
+		status = "okay";
+
+		reset-gpios = <&gpiod 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+
+		reg = <0>;
+		spi-max-frequency = <8000000>;
+		spi-cpol;
+		spi-cpha;
+
+		size = <DT_SIZE_M(512)>; /* Size in bits */
+
+		has-dpd;
+		t-enter-dpd = <3000>;
+		t-exit-dpd = <30000>;
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		nv_flash: nv-flash@0 {
+			compatible = "soc-nv-flash";
+			reg = <0 DT_SIZE_M(64)>;
+			write-block-size = <1>;
+			erase-block-size = <DT_SIZE_K(4)>;
+		};
+	};
+};
+
+&nv_flash {
+#include "../tt_blackhole/tt_blackhole_fixed_partitions.dtsi"
+};

@@ -21,6 +21,46 @@ zephyr_scripts_dir = ZEPHYR_ROOT / "scripts" / "ci"
 sys.path.insert(0, str(zephyr_scripts_dir))
 import check_compliance  # noqa: E402
 
+# Extend the upstream Kconfig allowlist with TT-specific symbols. Currently nothing.
+_ZEPHYR_CI = Path(check_compliance.__file__).parent
+check_compliance.KconfigCheck.UNDEF_KCONFIG_ALLOWLIST = (
+    check_compliance.get_set_from_file(str(_ZEPHYR_CI / "undef_kconfig_allowlist.txt"))
+)
+
+# Extend the sysbuild Kconfig allowlist with TT-specific symbols. Currently nothing.
+check_compliance.SysbuildKconfigCheck.UNDEF_KCONFIG_ALLOWLIST = (
+    check_compliance.SysbuildKconfigCheck.UNDEF_KCONFIG_ALLOWLIST
+)
+
+# Upstream module_kconfigs greps only ZEPHYR_BASE/tests+samples+modules for
+# symbol definitions, so tt-system-firmware's own Kconfig trees are invisible.
+# Wrap the method to also grep GIT_TOP (set at runtime by check_compliance).
+_orig_module_kconfigs = check_compliance.KconfigCheck.module_kconfigs
+
+
+def _tt_module_kconfigs(self, regex):
+    result = _orig_module_kconfigs(self, regex)
+    tt_output = check_compliance.git(
+        "grep",
+        "-I",
+        "-h",
+        "--perl-regexp",
+        regex,
+        "--",
+        ":tests",
+        ":samples",
+        ":modules",
+        cwd=check_compliance.GIT_TOP,
+        ignore_non_zero=True,
+    )
+
+    if tt_output:
+        result += tt_output + "\n"
+    return result
+
+
+check_compliance.KconfigCheck.module_kconfigs = _tt_module_kconfigs
+
 
 class CheckpatchFile(check_compliance.ComplianceTest):
     """

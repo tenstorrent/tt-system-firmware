@@ -28,21 +28,29 @@ jobs:
   gen-config:
     runs-on: ubuntu-24.04
     outputs:
-      matrix-config-bh: ${{ steps.gen-config.outputs.matrix-config-bh }}
-      matrix-config-wh: ${{ steps.gen-config.outputs.matrix-config-wh }}
+      matrix-config-bh: ${{ steps.gen.outputs.matrix-config-bh }}
+      matrix-config-wh: ${{ steps.gen.outputs.matrix-config-wh }}
     steps:
       - uses: actions/checkout@v4
-      - id: gen-config
-        shell: bash
+      - id: gen
         run: |
-          # Filter to only Blackhole boards (product == "bh"), then remove the product field
-          # Exclude galaxy board from smoke tests since we do not have a recovery solution for it
-          MATRIX_CONFIG_BH="$(jq -c '[.[] | select((.product == "bh") and (.board != "galaxy")) | del(.product)]' .github/ci_boards.json)"
-          echo "matrix-config-bh=$MATRIX_CONFIG_BH" | tee -a $GITHUB_OUTPUT
+          echo "matrix-config-bh=$(jq -c '.bh | map(select(.supports_smoke == true))' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "matrix-config-wh=$(jq -c '.wh | map(select(.supports_smoke == true))' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
-          # Filter to only Wormhole boards (product == "wh"), then remove the product field
-          MATRIX_CONFIG_WH="$(jq -c '[.[] | select(.product == "wh") | del(.product)]' .github/ci_boards.json)"
-          echo "matrix-config-wh=$MATRIX_CONFIG_WH" | tee -a $GITHUB_OUTPUT
+  detect-changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      wh-blob-changed: ${{ steps.changes.outputs.wh-blob }}
+    steps:
+      - uses: dorny/paths-filter@v4
+        id: changes
+        with:
+          filters: |
+            wh-blob:
+              - 'zephyr/blobs/fw_pack-wormhole.tar.gz'
 
   hardware-smoke-test:
     name: BH Hardware Smoke Test on ${{ matrix.config.board }}
@@ -54,9 +62,9 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config-bh) }}
-    runs-on: ${{ matrix.config.runs-on }}
+    runs-on: ${{ matrix.config.board }}
     container:
-      image: ghcr.io/tenstorrent/tt-zephyr-platforms/ci-image:v18.12.0-rc1
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
@@ -107,7 +115,6 @@ jobs:
         run: |
           tt-system-firmware/scripts/ci/run-smoke.sh -t smc -p $ASIC_ID ${{ matrix.config.board }}
 
-
       - name: Upload SMC Smoke Tests
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -132,8 +139,6 @@ jobs:
         run: |
           echo "DMC RTT logs:"
           python3 ./scripts/dmc_rtt.py -n
-          echo "SMC RTT logs:"
-          python3 ./scripts/smc_console.py --rtt -n
           echo "SMC state dump:"
           python3 ./scripts/dump_smc_state.py --asic-id $ASIC_ID
 
@@ -145,9 +150,9 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config-bh) }}
-    runs-on: ${{ matrix.config.runs-on }}
+    runs-on: ${{ matrix.config.board }}
     container:
-      image: ghcr.io/tenstorrent/tt-zephyr-platforms/ci-image:v18.12.0-rc1
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
@@ -189,6 +194,34 @@ jobs:
           fi
           echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
 
+      # Build bh-mod to be used by ccfgovr tests
+      - name: Build bh-mod
+        shell: bash
+        env:
+          LUWEN_REPO: ${{ vars.LUWEN_REPO || 'https://github.com/tenstorrent/luwen.git' }}
+          LUWEN_REF: ${{ vars.LUWEN_REF || 'main' }}
+        run: |
+          set -euo pipefail
+          missing=()
+          command -v protoc >/dev/null 2>&1 || missing+=(protobuf-compiler)
+          command -v curl   >/dev/null 2>&1 || missing+=(curl ca-certificates)
+          if [ ${#missing[@]} -gt 0 ]; then
+            apt-get update && apt-get install -y --no-install-recommends "${missing[@]}"
+          fi
+          protoc --version
+          # Ensure a Rust toolchain is available
+          if ! command -v cargo >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --default-toolchain stable --profile minimal --no-modify-path
+          fi
+          export PATH="$HOME/.cargo/bin:$PATH"
+          cargo --version
+          rm -rf "$HOME/luwen"
+          git clone --depth 1 --branch "$LUWEN_REF" "$LUWEN_REPO" "$HOME/luwen"
+          cargo build --release -p bh-mod --manifest-path "$HOME/luwen/Cargo.toml"
+          install -m 0755 "$HOME/luwen/target/release/bh-mod" /usr/local/bin/bh-mod
+          bh-mod --help
+
       - name: run-e2e-tests
         run: |
           tt-system-firmware/scripts/ci/run-e2e.sh -k $SIGNATURE_KEY_FILE \
@@ -219,22 +252,20 @@ jobs:
         run: |
           echo "DMC RTT logs:"
           python3 ./scripts/dmc_rtt.py -n
-          echo "SMC RTT logs:"
-          python3 ./scripts/smc_console.py --rtt -n
           echo "SMC state dump:"
           python3 ./scripts/dump_smc_state.py --asic-id $ASIC_ID
 
   smoke-e2e-wh-test:
     name: WH Smoke E2E Test on ${{ matrix.config.board }}
-    needs: [gen-config]
-    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'wh-tests')
+    needs: [gen-config, detect-changes]
+    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'wh-tests') || needs.detect-changes.outputs.wh-blob-changed == 'true'
     strategy:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config-wh) }}
-    runs-on: ${{ matrix.config.runs-on }}
+    runs-on: ${{ matrix.config.board }}
     container:
-      image: ghcr.io/tenstorrent/tt-zephyr-platforms/ci-image:v18.12.0-rc1
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/

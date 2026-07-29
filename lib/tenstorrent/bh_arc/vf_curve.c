@@ -35,17 +35,17 @@
 /* Process-based margin thresholds and values */
 #define RO_SS_THRESHOLD        2500.0F
 #define FREQ_THRESHOLD_MHZ     1200.0F
-#define SS_MARGIN_MV           45.0F
-#define FF_LOW_FREQ_MARGIN_MV  25.0F
-#define FF_HIGH_FREQ_MARGIN_MV 45.0F
+#define SS_MARGIN_MV           20.0F
+#define FF_LOW_FREQ_MARGIN_MV  0.0F
+#define FF_HIGH_FREQ_MARGIN_MV 20.0F
 
-/* Legacy VF curve coefficients (fallback for P300C / missing efuse) */
+/* Legacy VF curve coefficients (fallback for missing efuse) */
 #define VF_QUADRATIC_COEFF 0.00031395F
 #define VF_LINEAR_COEFF    -0.43953F
 #define VF_CONSTANT        828.83F
 
 static float freq_margin_mhz = FREQ_MARGIN_MAX;
-static float voltage_margin_mv = VOLTAGE_MARGIN_MAX;
+static float fw_table_voltage_margin_mv = VOLTAGE_MARGIN_MAX;
 static uint32_t process_RO;
 static bool use_process_vf_curve;
 static bool process_is_ss;
@@ -63,9 +63,7 @@ void InitVFCurve(void)
 {
 	process_RO = READ_FUNCTIONAL_EFUSE(PROCESS_RO);
 
-	uint8_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
-
-	use_process_vf_curve = (process_RO != 0) && (board_type != BOARDTYPE_P300C);
+	use_process_vf_curve = (process_RO != 0);
 	process_is_ss = process_RO < RO_SS_THRESHOLD;
 
 	if (use_process_vf_curve) {
@@ -78,7 +76,7 @@ void InitVFCurve(void)
 	freq_margin_mhz =
 		CLAMP(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.frequency_margin,
 		      FREQ_MARGIN_MIN, FREQ_MARGIN_MAX);
-	voltage_margin_mv =
+	fw_table_voltage_margin_mv =
 		CLAMP(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.voltage_margin,
 		      VOLTAGE_MARGIN_MIN, VOLTAGE_MARGIN_MAX);
 }
@@ -97,16 +95,18 @@ float VFCurve(float freq_mhz)
 			VF_QUADRATIC_COEFF * freq_with_margin_mhz * freq_with_margin_mhz +
 			VF_LINEAR_COEFF * freq_with_margin_mhz + VF_CONSTANT;
 
-		return voltage_mv + voltage_margin_mv;
+		return voltage_mv + fw_table_voltage_margin_mv;
 	}
 
 	float voltage_margin;
 
+	/* Process-based margin is FW-table base voltage margin plus process/frequency delta. */
 	if (process_is_ss) {
-		voltage_margin = SS_MARGIN_MV;
+		voltage_margin = fw_table_voltage_margin_mv + SS_MARGIN_MV;
 	} else {
-		voltage_margin = (freq_mhz >= FREQ_THRESHOLD_MHZ) ? FF_HIGH_FREQ_MARGIN_MV
-								  : FF_LOW_FREQ_MARGIN_MV;
+		voltage_margin = (freq_mhz >= FREQ_THRESHOLD_MHZ)
+					 ? fw_table_voltage_margin_mv + FF_HIGH_FREQ_MARGIN_MV
+					 : fw_table_voltage_margin_mv + FF_LOW_FREQ_MARGIN_MV;
 	}
 
 	float freq_n = (freq_mhz - FREQ_NORM_MEAN) / FREQ_NORM_STD;

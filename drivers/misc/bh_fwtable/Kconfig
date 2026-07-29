@@ -4,10 +4,15 @@
 config BH_FWTABLE
 	bool "Tenstorrent Blackhole Firmware Table"
 	default y
-	depends on DT_HAS_TENSTORRENT_BH_FWTABLE_ENABLED
+	depends on DT_HAS_TENSTORRENT_BH_FWTABLE_ENABLED && !TT_SMC_RECOVERY
 	select TT_BOOT_FS
 	help
 		Enable the Tenstorrent Blackhole Firmware Table.
+
+		Disabled in SMC recovery builds: recovery must not depend on
+		reading the SPI firmware tables during bring-up, so it links the
+		static chip-info backend (chip_info_static.c) instead of this
+		driver. See lib/tenstorrent/bh_arc/chip_info.h.
 
 if BH_FWTABLE
 
@@ -18,6 +23,12 @@ config BH_FWTABLE_INIT_PRIORITY
 		Set the initialization priority for the Tenstorrent Blackhole firmware table.
 
 		This priority should be selected so that bh_fwtable is initialized after the SPI EEPROM.
+
+config BH_FWTABLE_CCFGOVR
+	bool "Apply ccfgovr override of the cmfwcfg table"
+	default y
+	help
+		Apply ccfgovr override of the cmfwcfg table.
 
 module = BH_FWTABLE
 module-str = bh_fwtable

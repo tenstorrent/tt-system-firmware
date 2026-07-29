@@ -11,3 +11,6 @@ zephyr_library_sources_ifdef(CONFIG_DMA_TT_GRENDEL_SMC dma_tt_grendel_smc.c)
 
 zephyr_library_include_directories_ifdef(CONFIG_DMA_TT_BH_NOC
   ${ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR}/lib/tenstorrent/bh_arc)
+
+zephyr_syscall_header_ifdef(CONFIG_DMA_TT_BH_NOC
+  ${ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR}/include/zephyr/drivers/dma/dma_tt_bh_noc.h)

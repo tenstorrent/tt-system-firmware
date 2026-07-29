@@ -627,14 +627,14 @@ static int clock_control_tt_bh_init(const struct device *dev)
 	return 0;
 }
 
-static const struct clock_control_driver_api clock_control_tt_bh_api = {
-	.on = clock_control_tt_bh_on,
-	.off = clock_control_tt_bh_off,
-	.async_on = clock_control_tt_bh_async_on,
-	.get_rate = clock_control_tt_bh_get_rate,
-	.get_status = clock_control_tt_bh_get_status,
-	.set_rate = clock_control_tt_bh_set_rate,
-	.configure = clock_control_tt_bh_configure};
+static DEVICE_API(clock_control,
+		  clock_control_tt_bh_api) = {.on = clock_control_tt_bh_on,
+					      .off = clock_control_tt_bh_off,
+					      .async_on = clock_control_tt_bh_async_on,
+					      .get_rate = clock_control_tt_bh_get_rate,
+					      .get_status = clock_control_tt_bh_get_status,
+					      .set_rate = clock_control_tt_bh_set_rate,
+					      .configure = clock_control_tt_bh_configure};
 
 #define CLOCK_CONTROL_TT_BH_INIT(_inst)                                                            \
 	static struct clock_control_tt_bh_data clock_control_tt_bh_data_##_inst;                   \

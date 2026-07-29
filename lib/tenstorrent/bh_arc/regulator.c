@@ -6,6 +6,7 @@
 
 #include "avs.h"
 #include "dw_apb_i2c.h"
+#include "init.h"
 #include "regulator.h"
 #include "regulator_config.h"
 #include "status_reg.h"
@@ -41,6 +42,9 @@
 #define READ_VOUT_DATA_BYTE_SIZE       2
 #define READ_IOUT                      0x8C
 #define READ_IOUT_DATA_BYTE_SIZE       2
+#define READ_IOUT_DIRECT_MASK          0x3FFF  /* 14-bit raw IOUT field */
+#define GDDRIO_IOUT_LSB_A              0.0625f /* 62.5 mA per LSB */
+#define GDDR_IO_RAIL_VOLTAGE           1.35f   /* V - fixed IO rail supply */
 #define READ_POUT                      0x96
 #define READ_POUT_DATA_BYTE_SIZE       2
 #define OPERATION                      0x1
@@ -83,6 +87,12 @@ static float ConvertLinear11ToFloat(uint16_t value)
 	return ldexp(mantissa, exponent);
 }
 
+/* GDDR IO regulators report READ_IOUT as a direct 14-bit value, 62.5 mA/LSB. */
+static float ConvertGddrIoCurrentToFloat(uint16_t value)
+{
+	return (value & READ_IOUT_DIRECT_MASK) * GDDRIO_IOUT_LSB_A;
+}
+
 /* The function returns the core current in A. */
 float GetVcoreCurrent(void)
 {
@@ -92,6 +102,40 @@ float GetVcoreCurrent(void)
 	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
 		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
 	return ConvertLinear11ToFloat(iout);
+}
+
+/* The function returns the GDDR west IO rail current in A. */
+float GetGddrWestIoCurrent(void)
+{
+	I2CInit(I2CMst, GDDRIO_WEST_ADDR, I2CFastMode, PMBUS_MST_ID);
+	uint16_t iout;
+
+	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
+		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
+	return ConvertGddrIoCurrentToFloat(iout);
+}
+
+/* The function returns the GDDR east IO rail current in A. */
+float GetGddrEastIoCurrent(void)
+{
+	I2CInit(I2CMst, GDDRIO_EAST_ADDR, I2CFastMode, PMBUS_MST_ID);
+	uint16_t iout;
+
+	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
+		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
+	return ConvertGddrIoCurrentToFloat(iout);
+}
+
+/* The function returns the GDDR west IO rail power in W. */
+float GetGddrWestIoPower(void)
+{
+	return GetGddrWestIoCurrent() * GDDR_IO_RAIL_VOLTAGE;
+}
+
+/* The function returns the GDDR east IO rail power in W. */
+float GetGddrEastIoPower(void)
+{
+	return GetGddrEastIoCurrent() * GDDR_IO_RAIL_VOLTAGE;
 }
 
 /* The function returns the core power in W. */
@@ -377,8 +421,6 @@ static int regulator_init(void)
 {
 	int ret;
 
-	extern STATUS_ERROR_STATUS0_reg_u error_status0;
-
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ARC_INIT_STEPC);
 
 	if (IS_ENABLED(CONFIG_TT_SMC_RECOVERY) || !IS_ENABLED(CONFIG_ARC)) {
@@ -387,7 +429,7 @@ static int regulator_init(void)
 
 	ret = (int)RegulatorInit(tt_bh_fwtable_get_pcb_type(fwtable_dev));
 	if (ret != 0) {
-		error_status0.f.regulator_init_error = 1;
+		record_init_failure(INIT_STAGE_REGULATOR);
 		return -EIO;
 	}
 

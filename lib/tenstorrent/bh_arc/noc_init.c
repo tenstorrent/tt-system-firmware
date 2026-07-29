@@ -5,6 +5,7 @@
  */
 
 #include "bh_reset.h"
+#include "chip_info.h"
 #include "harvesting.h"
 #include "noc_init.h"
 #include "noc.h"
@@ -21,7 +22,6 @@
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/sys_init_defines.h>
-#include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
@@ -57,8 +57,6 @@ static const uint32_t kNiuCfg0Offset = 0x100 + 4 * NIU_CFG_0;
 static const uint8_t kTlbIndex;
 
 static const uint32_t kFirstCfgRegIndex = 0x100 / sizeof(uint32_t);
-
-static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static bool noc_translation_enabled;
 
@@ -223,9 +221,9 @@ int32_t set_tensix_enable(bool enable)
 	return 0;
 }
 
-void SetSingleTileClockGate(uint8_t phys_x, uint8_t phys_y, bool gate)
+void SetSingleTileClockGate(uint8_t noc0_x, uint8_t noc0_y, bool gate)
 {
-	volatile uint32_t *noc_regs = SetupNiuTlbPhys(kTlbIndex, phys_x, phys_y, 0);
+	volatile uint32_t *noc_regs = SetupNiuTlb(kTlbIndex, noc0_x, noc0_y, 0);
 
 	uint32_t niu_cfg_0 = ReadNocCfgReg(noc_regs, NIU_CFG_0);
 
@@ -268,7 +266,7 @@ void NocInitSingleTile(uint8_t noc0_x, uint8_t noc0_y)
 	uint32_t niu_cfg_0_updates = BIT(NIU_CFG_0_TILE_HEADER_STORE_OFF);
 	uint32_t router_cfg_0_updates = 0xF << 8;
 
-	bool cg_en = tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.cg_en;
+	bool cg_en = bh_chip_info_feature_cg_en();
 
 	if (cg_en) {
 		niu_cfg_0_updates |= BIT(0);
@@ -607,14 +605,14 @@ int InitNocTranslationFromHarvesting(void)
 		return 0;
 	}
 
-	if (!tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.noc_translation_en) {
+	if (!bh_chip_info_feature_noc_translation_en()) {
 		return 0;
 	}
 
 	/* Set up the EP as pcie instance (at 19-24). If there's no EP, it doesn't matter. */
 	unsigned int pcie_instance;
 
-	if (tile_enable.pcie_usage[0] == FwTable_PciPropertyTable_PcieMode_EP) {
+	if (tile_enable.pcie_usage[0] == BH_PCIE_MODE_EP) {
 		pcie_instance = 0;
 	} else {
 		pcie_instance = 1;
@@ -783,9 +781,10 @@ static uint8_t debug_noc_translation_handler(const union request *req, struct re
 
 	if (enable_translation) {
 		if (!pcie_instance_override) {
-			if (tt_bh_fwtable_get_fw_table(fwtable_dev)
-				    ->pci1_property_table.pcie_mode ==
-			    FwTable_PciPropertyTable_PcieMode_EP) {
+			struct bh_pci_property pci1;
+
+			bh_chip_info_pci_property(1, &pci1);
+			if (pci1.pcie_mode == BH_PCIE_MODE_EP) {
 				pcie_instance = 1;
 			} else {
 				pcie_instance = 0;

@@ -1,0 +1,4 @@
+tests:
+  lib.tenstorrent.chip_info.recovery:
+    platform_allow: native_sim
+    tags: bh_arc chip_info

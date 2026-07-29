@@ -1,0 +1,41 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * To expose a new field for override, remove its number from the reserved
+ * list, add the matching optional line, and add a one-line merge in
+ * tt_bh_fwtable_apply_ccfgovr.
+ */
+
+syntax = "proto3";
+
+message FwTableOverride {
+
+  /*
+   * Field numbers reserved to match the FwTable layout. fw_bundle_version
+   * (FwTable field 1) is deliberately reserved here so tt-mod cannot forge
+   * a bundle version.
+   */
+  reserved 1, 4, 5, 6, 7, 8, 9, 10;
+
+  optional ChipLimits chip_limits = 2;
+  optional FeatureEnable feature_enable = 3;
+
+  message ChipLimits {
+
+    reserved 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16;
+
+    optional uint32 tdp_limit = 5;
+    optional uint32 kernel_throttler_stop_nops_freq = 17;
+  }
+
+  message FeatureEnable {
+
+    reserved 1, 2, 3, 4, 5, 6, 7, 8, 9;
+
+    optional bool kernel_throttler_at_floor_en = 10;
+  }
+}

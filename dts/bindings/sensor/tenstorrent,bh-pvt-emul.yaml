@@ -1,0 +1,42 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent Blackhole PVT emulator
+
+compatible: "tenstorrent,bh-pvt-emul"
+
+include: [sensor-device.yaml, base.yaml]
+
+properties:
+  num_pd:
+    type: int
+    required: true
+
+  num_vm:
+    type: int
+    required: true
+
+  num_ts:
+    type: int
+    required: true
+
+  pd-raw:
+    type: int
+    default: 15300
+    min: 0
+    max: 65535
+    description: Raw PD sample returned for all PD channels.
+
+  vm-raw:
+    type: int
+    default: 11795
+    min: 0
+    max: 65535
+    description: Raw VM sample returned for all VM channels.
+
+  ts-raw:
+    type: int
+    default: 1742
+    min: 0
+    max: 65535
+    description: Raw TS sample returned for all TS channels and TS average.

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """
-Script to open console on Tenstorrent SMC devices. Uses tt-console
+Script to open console on Tenstorrent SMC devices. Uses tt-fw-terminal
 if the executable is available, otherwise falls back to RTT console.
 """
 
@@ -46,13 +46,13 @@ def start_smc_rtt():
 
 def find_tt_console():
     """
-    Find the tt-console executable in the specified search directories.
+    Find the tt-fw-terminal executable in the specified search directories.
     """
-    if shutil.which("tt-console"):
-        return shutil.which("tt-console")
+    if shutil.which("tt-fw-terminal"):
+        return shutil.which("tt-fw-terminal")
     # Check each directory in TT_CONSOLE_SEARCH_DIRS
     for search_dir in TT_CONSOLE_SEARCH_DIRS:
-        console_exec = search_dir / "tt-console"
+        console_exec = search_dir / "tt-fw-terminal"
         if console_exec.exists() and shutil.which(str(console_exec)):
             return str(console_exec)
     return None
@@ -89,12 +89,12 @@ def main():
         print("Using RTT console")
         start_smc_rtt()
     else:
-        # If tt-console is available and a card is present, use it.
-        print(f"Using tt-console at {console_exec}")
+        # If tt-fw-terminal is available and a card is present, use it.
+        print(f"Using tt-fw-terminal at {console_exec}")
         try:
             subprocess.run([console_exec] + sys.argv[1:])
         except KeyboardInterrupt:
-            print("Exiting tt-console")
+            print("Exiting tt-fw-terminal")
 
 
 if __name__ == "__main__":

@@ -25,7 +25,6 @@ typedef enum {
 bool IsValidI2CMasterId(uint32_t id);
 void I2CInitGPIO(uint32_t id);
 void I2CInit(I2CMode mode, uint32_t slave_addr, I2CSpeedMode speed, uint32_t id);
-void I2CReset(void);
 uint32_t I2CReadRxFifo(uint32_t id, uint8_t *p_read_buf);
 uint32_t I2CTransaction(uint32_t id, const uint8_t *write_data, uint32_t write_len,
 			uint8_t *read_data, uint32_t read_len);
@@ -35,7 +34,5 @@ uint32_t I2CReadBytes(uint32_t id, uint16_t command, uint32_t command_byte_size,
 		      uint8_t *p_read_buf, uint32_t data_byte_size, uint8_t flip_bytes);
 uint32_t I2CRMWV(uint32_t id, uint16_t command, uint32_t command_byte_size, const uint8_t *p_data,
 		 const uint8_t *p_mask, uint32_t data_byte_size);
-void SetI2CSlaveCallbacks(uint32_t id, const struct i2c_target_callbacks *cb);
-void PollI2CSlave(uint32_t id);
 void I2CRecoverBus(uint32_t id);
 #endif

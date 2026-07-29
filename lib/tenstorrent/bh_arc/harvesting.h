@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <zephyr/drivers/misc/bh_fwtable.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,8 +25,8 @@ typedef struct {
 	uint8_t gddr_enabled;          /* Bitmap 0-7 */
 	uint8_t l2cpu_enabled;         /* Bitmap 0-3. Shows L2CPU cluster enablement */
 	uint8_t pcie_enabled;          /* Bitmap 0-1. Shows PCIe instance enablement */
-	FwTable_PciPropertyTable_PcieMode pcie_usage[2];
-	uint8_t pcie_num_serdes[2]; /* 1 or 2 if enabled */
+	uint8_t pcie_usage[2];         /* bh_pcie_mode_t per PCIe instance (see chip_info.h) */
+	uint8_t pcie_num_serdes[2];    /* 1 or 2 if enabled */
 } TileEnable;
 
 extern TileEnable tile_enable;

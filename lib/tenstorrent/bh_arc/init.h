@@ -104,6 +104,28 @@ typedef enum {
 	FW_ID_SMC_RECOVERY = 1,
 } FWID;
 
-extern STATUS_ERROR_STATUS0_reg_u error_status0;
+/*
+ * Identifiers for the SMC init stages. Each enum value is the bit position
+ * in STATUS_ERROR_STATUS0 for that stage's failure.
+ */
+enum init_stage_id {
+	INIT_STAGE_REGULATOR = 0,
+	INIT_STAGE_CABLE_FAULT = 1,
+	INIT_STAGE_TENSIX = 2,
+	INIT_STAGE_MRISC_LOAD = 3,
+	INIT_STAGE_GDDR_TRAIN = 4,
+	INIT_STAGE_COUNT,
+};
+
+extern uint32_t error_status0;
+
+/**
+ * @brief Record a failure from an init function
+ *
+ * Sets bit @p stage in STATUS_ERROR_STATUS0 and writes the shadow value
+ * through to scratch RAM immediately so the host can read it even if init
+ * hangs after this call. Safe to call multiple times; the bitmap accumulates.
+ */
+void record_init_failure(enum init_stage_id stage);
 
 #endif

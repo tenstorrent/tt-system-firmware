@@ -1,0 +1,190 @@
+name: Produce Data
+
+on:
+  workflow_run:
+    workflows:
+      - "HW Smoke"
+      - "HW Soak"
+      - "Metal 🤘"
+      - "Unit"
+      - "Create a Release"
+    types: [completed]
+
+jobs:
+  produce-data:
+    name: Produce Pipeline Data
+    if: >-
+      ${{ github.event_name == 'workflow_run' &&
+           (github.event.workflow_run.conclusion == 'success' ||
+            github.event.workflow_run.conclusion == 'failure' ||
+            github.event.workflow_run.conclusion == 'cancelled') }}
+    runs-on: ubuntu-24.04
+    outputs:
+      upload: ${{ steps.run-info.outputs.upload }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            scripts/ci
+            VERSION
+            app/smc/VERSION
+            app/dmc/VERSION
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pydantic pyyaml requests
+
+      - name: Determine run ID
+        id: run-info
+        shell: bash
+        run: |
+          run_id="${{ github.event.workflow_run.id }}"
+          run_attempt="${{ github.event.workflow_run.run_attempt }}"
+
+          # Only upload for runs that originate from this repository. A
+          # workflow_run can be triggered by fork PRs, and the upload job runs
+          # on a self-hosted runner with SFTP credentials, so gate the upload
+          # to trusted (non-fork) runs only.
+          head_repo="${{ github.event.workflow_run.head_repository.full_name }}"
+          if [[ "$head_repo" == "${{ github.repository }}" ]]; then
+            upload="true"
+          else
+            upload="false"
+            echo "::notice::Skipping upload for run from '$head_repo' (not ${{ github.repository }})"
+          fi
+
+          # The soak/long tests can be triggered on a PR via the 'long-tests'
+          # label, but we only want to upload their data for runs on the
+          # main branch.
+          workflow_name="${{ github.event.workflow_run.name }}"
+          head_branch="${{ github.event.workflow_run.head_branch }}"
+          default_branch="${{ github.event.repository.default_branch }}"
+          if [[ "$workflow_name" == "HW Soak" && "$head_branch" != "$default_branch" ]]; then
+            upload="false"
+            echo "::notice::Skipping upload for '$workflow_name' on branch '$head_branch' (only uploads on $default_branch)"
+          fi
+
+          [[ -z "$run_id" ]] && { echo "::error::run_id is empty"; exit 1; }
+          [[ -z "$run_attempt" ]] && { echo "::error::run_attempt is empty"; exit 1; }
+
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+          echo "upload=$upload" >> "$GITHUB_OUTPUT"
+
+          echo "::notice title=target-workflow-link::The workflow being analyzed is available at https://github.com/${{ github.repository }}/actions/runs/$run_id/attempts/$run_attempt"
+
+      - name: Check API rate limit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api rate_limit
+
+      - name: Wait for GitHub API consistency
+        run: |
+          echo "Sleeping 60s for GitHub to fully sync workflow run data"
+          sleep 60
+
+      - name: Produce pipeline JSON
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: scripts/ci
+        run: |
+          python create_pipeline_json.py \
+            --run-id "${{ steps.run-info.outputs.run_id }}" \
+            --run-attempt "${{ steps.run-info.outputs.run_attempt }}" \
+            --repo "${{ github.repository }}" \
+            --output-dir "${{ runner.temp }}/pipeline-data"
+
+      - name: Upload pipeline JSON as artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-data
+          path: ${{ runner.temp }}/pipeline-data/*.json
+          retention-days: 30
+
+  upload:
+    name: Upload Pipeline Data via SFTP
+    needs: produce-data
+    if: needs.produce-data.outputs.upload == 'true'
+    runs-on: self-hosted
+    steps:
+      - name: Download pipeline JSON
+        uses: actions/download-artifact@v4
+        with:
+          name: pipeline-data
+          path: pipeline-data
+
+      - name: Start ssh-agent and load SFTP key
+        env:
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SFTP_PRIVATE_KEY:?SFTP_PRIVATE_KEY secret is missing}"
+
+          eval "$(ssh-agent -s)"
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> "$GITHUB_ENV"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> "$GITHUB_ENV"
+
+          printf '%s\n' "$SFTP_PRIVATE_KEY" | ssh-add - >/dev/null
+          ssh-add -l
+
+          if [[ -n "${SFTP_KNOWN_HOSTS:-}" ]]; then
+            KNOWN_HOSTS_FILE="${RUNNER_TEMP}/known_hosts.$$"
+            printf '%s\n' "$SFTP_KNOWN_HOSTS" > "$KNOWN_HOSTS_FILE"
+            chmod 644 "$KNOWN_HOSTS_FILE"
+            echo "KNOWN_HOSTS_FILE=$KNOWN_HOSTS_FILE" >> "$GITHUB_ENV"
+          else
+            echo "::warning::SFTP_KNOWN_HOSTS not set; falling back to StrictHostKeyChecking=no"
+          fi
+
+      - name: Upload via SFTP
+        env:
+          SFTP_USERNAME: ${{ secrets.SFTP_USERNAME }}
+          SFTP_ENDPOINT: ${{ secrets.SFTP_ENDPOINT }}
+          SFTP_REMOTE_DIR: ${{ secrets.SFTP_REMOTE_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SFTP_USERNAME:?SFTP_USERNAME secret is missing}"
+          : "${SFTP_ENDPOINT:?SFTP_ENDPOINT secret is missing}"
+
+          shopt -s nullglob
+          files=(pipeline-data/*.json)
+          if (( ${#files[@]} == 0 )); then
+            echo "::warning::no pipeline-data/*.json files to upload"
+            exit 0
+          fi
+
+          if [[ -n "${KNOWN_HOSTS_FILE:-}" ]]; then
+            ssh_opts=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KNOWN_HOSTS_FILE")
+          else
+            ssh_opts=(-o StrictHostKeyChecking=no  -o UserKnownHostsFile=/dev/null)
+          fi
+
+          for f in "${files[@]}"; do
+            echo "Uploading $(basename "$f") to ${SFTP_USERNAME}@${SFTP_ENDPOINT} (from $(hostname))"
+            sftp "${ssh_opts[@]}" "${SFTP_USERNAME}@${SFTP_ENDPOINT}" <<EOF
+          cd ${SFTP_REMOTE_DIR:-.}
+          put "$f"
+          bye
+          EOF
+          done
+
+      - name: Stop ssh-agent and clean up
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${SSH_AGENT_PID:-}" ]]; then
+            kill "$SSH_AGENT_PID" 2>/dev/null || true
+          fi
+          if [[ -n "${KNOWN_HOSTS_FILE:-}" && -f "$KNOWN_HOSTS_FILE" ]]; then
+            rm -f "$KNOWN_HOSTS_FILE"
+          fi

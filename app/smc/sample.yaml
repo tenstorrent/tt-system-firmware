@@ -61,7 +61,9 @@ tests:
     platform_allow:
       - tt_blackhole@p100a/tt_blackhole/smc
       - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
       - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@p300c/tt_blackhole/smc
       - tt_blackhole@galaxy/tt_blackhole/smc
     harness: pytest
     sysbuild: true
@@ -95,7 +97,6 @@ tests:
     build_only: true
     sysbuild: true
     tags:
-      - e2e-flash
       - build-ci
     extra_overlay_confs:
       - tracing.conf

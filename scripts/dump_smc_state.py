@@ -23,6 +23,9 @@ SMC_SCRATCH_RAM_BASE = ARC_RESET_UNIT + 0x400
 SMC_POSTCODE_REG = SCRATCH_0
 ARC_PC_CORE_0 = ARC_RESET_UNIT + 0x0C00
 
+STRAP_REGISTERS_L = ARC_RESET_UNIT + 0xD20
+STRAP_REGISTERS_H = ARC_RESET_UNIT + 0xD24
+
 # Offsets within scratch RAM for named registers
 SCRATCH_REGS = {
     "FW Version": 0x00,
@@ -42,6 +45,8 @@ SCRATCH_REGS = {
     "I2C target state 0": 0x4C,
     "I2C target state 1": 0x50,
     "ARC hang pc": 0x54,
+    "Runtime telemetry address": 0x58,
+    "Runtime telemetry size": 0x5C,
     "VUART 0 address": 0xA0,
     "VUART 1 address": 0xA4,
     "VUART 2 address": 0xA8,
@@ -60,8 +65,8 @@ SCRATCH_REGS = {
     "VUART 15 address": 0xDC,
 }
 
-# List of all possible states to dump
-ALL_STATES = ["scratch", "pc", "crash"]
+# List of all possible states to dump (only these names are valid for --states).
+ALL_STATES = ["scratch", "straps", "pc", "crash", "board_id"]
 
 
 def parse_args():
@@ -72,51 +77,96 @@ def parse_args():
         "--states",
         type=str,
         nargs="+",
+        choices=ALL_STATES,
         default=ALL_STATES,
-        help="Specify one or more subsets of SMC state to dump (default: all).",
+        metavar="STATE",
+        help=(
+            "One or more state groups to dump (default: all). "
+            f"Valid STATE values: {', '.join(ALL_STATES)}."
+        ),
     )
     parser.add_argument(
         "--asic-id",
         type=int,
-        default=0,
-        help="Specify which ASIC to dump state from (default: 0).",
+        nargs="+",
+        default=[0],
+        metavar="ID",
+        help="One or more ASIC indices to dump state from (default: 0).",
     )
     return parser.parse_args()
+
+
+def _format_board_id_u64(board_id: int) -> str:
+    """Format telemetry board_id as unsigned 64-bit hex."""
+    return f"0x{(board_id & 0xFFFFFFFFFFFFFFFF):016x}"
+
+
+def print_board_id_from_telemetry(chip):
+    """Print board ID from pyluwen telemetry; tolerate hung / partial firmware."""
+    try:
+        board_id = chip.get_telemetry().board_id
+        print(f"Board ID (telemetry): {_format_board_id_u64(board_id)}")
+    except BaseException as e:
+        print(f"Board ID (telemetry): unavailable ({e})")
+
+
+def dump_straps(chip):
+    """Dump reset-unit strap GPIO latch registers."""
+    print("\nStrap registers:")
+    print(f"STRAP_REGISTERS_L: 0x{chip.axi_read32(STRAP_REGISTERS_L):08x}")
+    print(f"STRAP_REGISTERS_H: 0x{chip.axi_read32(STRAP_REGISTERS_H):08x}")
 
 
 def dump_scratch(chip):
     """
     Dump SMC scratch registers
     """
-    print("SMC Scratch Registers:")
+    print("\nSMC Scratch Registers:")
     print(f"SMC Postcode: 0x{chip.axi_read32(SMC_POSTCODE_REG):08x}")
     for name, offset in SCRATCH_REGS.items():
         val = chip.axi_read32(SMC_SCRATCH_RAM_BASE + offset)
         print(f"{name}: 0x{val:08x}")
 
 
+def dump_crash(chip):
+    """Dump crash information that was written to ICCM by the FW's panic handler"""
+    print("\nCrash information:")
+    print(f"Crash reason: 0x{chip.axi_read32(ICCM_BASE):08x}")
+    print(f"Crash BLINK: 0x{chip.axi_read32(ICCM_BASE + 0x4):08x}")
+
+
 def dump_states(asic_id, states=ALL_STATES):
     """
-    Dump specified SMC states from given ASIC
-    Callable as a module or from the main function
+    Dump specified SMC states from one or more ASICs.
+
+    asic_id may be a single int or an iterable of ints. Callable as a module
+    or from the main function.
     """
-    # Don't detect chips with detect_chips(), since that has status checks
-    try:
-        chip = pcie_utils.get_chip(asic_id)
-    except Exception as e:
-        print(f"Error accessing SMC ASIC {asic_id}: {e}")
-        print("Make sure the SMC is powered on and accessible over PCIe")
-        return errno.EIO
-    if "pc" in states:
-        pc = chip.axi_read32(ARC_PC_CORE_0)
-        print(f"ARC PC: 0x{pc:08x}")
-    if "scratch" in states:
-        dump_scratch(chip)
-    if "crash" in states:
-        crash_reason = chip.axi_read32(ICCM_BASE)
-        print(f"Crash reason: 0x{crash_reason:08x}")
-        crash_blink = chip.axi_read32(ICCM_BASE + 0x4)
-        print(f"Crash BLINK: 0x{crash_blink:08x}")
+    asic_ids = [asic_id] if isinstance(asic_id, int) else list(asic_id)
+    rc = 0
+    for aid in asic_ids:
+        print(f"--- ASIC {aid} ---")
+        # Don't detect chips with detect_chips(), since that has status checks
+        try:
+            chip = pcie_utils.get_chip(aid)
+        except Exception as e:
+            print(f"Error accessing SMC ASIC {aid}: {e}")
+            print("Make sure the SMC is powered on and accessible over PCIe")
+            rc = errno.EIO
+            continue
+        if "board_id" in states:
+            print_board_id_from_telemetry(chip)
+        if "pc" in states:
+            pc = chip.axi_read32(ARC_PC_CORE_0)
+            print(f"ARC PC: 0x{pc:08x}")
+        if "straps" in states:
+            dump_straps(chip)
+        if "scratch" in states:
+            dump_scratch(chip)
+        if "crash" in states:
+            dump_crash(chip)
+        print()
+    return rc
 
 
 def main():

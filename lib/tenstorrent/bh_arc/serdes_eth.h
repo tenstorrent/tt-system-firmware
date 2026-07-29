@@ -32,13 +32,6 @@
 #define SERDES_INST_SRAM_ADDR(inst)                                                                \
 	(SERDES_INST_BASE_ADDR(inst) + PCIE_PHY_SERDES_SRAM_START_REG_ADDR)
 
-typedef struct {
-	uint32_t addr;
-	uint32_t data;
-} SerdesRegData;
-
-void LoadSerdesEthRegs(uint32_t serdes_inst, uint32_t ring, uint8_t *buf, size_t buf_size,
-		       size_t spi_address, size_t image_size);
 int LoadSerdesEthFw(uint32_t serdes_inst, uint32_t ring, uint8_t *buf, size_t buf_size,
 		    size_t spi_address, size_t image_size);
 

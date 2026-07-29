@@ -50,6 +50,9 @@ PRELEASE="$MAJOR.$MINOR.$PATCH.$EXTRAVERSION_NUMBER"
 
 echo "Building release $RELEASE / pack $PRELEASE"
 
+PIDS=""
+FAIL=0
+
 for REV in $BOARD_REVS; do
   BOARD="$($TTZP_BASE/scripts/rev2board.sh "$REV")"
 
@@ -61,10 +64,22 @@ for REV in $BOARD_REVS; do
     echo "Warning: pre-built ${TEMP_DIR}${REV}/update.fwbundle not found"
   fi
 
-  echo "Building $BOARD"
-  west build -d "${TEMP_DIR}${REV}" --sysbuild -p -b "$BOARD" app/smc \
-    >/dev/null 2>&1
+  echo "Building $BOARD (rev $REV) -> ${TEMP_DIR}${REV}.log"
+  (
+    west build -d "${TEMP_DIR}${REV}" --sysbuild -p -b "$BOARD" app/smc \
+      >"${TEMP_DIR}${REV}.log" 2>&1
+  ) &
+  PIDS="$PIDS $!"
 done
+
+for pid in $PIDS; do
+  wait "$pid" || FAIL=1
+done
+
+if [ "$FAIL" -ne 0 ]; then
+  echo "one or more builds failed; see ${TEMP_DIR}*.log"
+  exit 1
+fi
 
 echo "Creating fw_pack-$RELEASE.fwbundle"
 # construct arguments..

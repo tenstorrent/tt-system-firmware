@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config PMCI_PLDM_PLATFORM
+	bool "Enable PLDM Platform support"
+	depends on PLDM
+	default y
+	help
+	  Enable PLDM Platform command handling and PDR repository support.
+
+config PMCI_PLDM_OEM
+	bool "Enable PLDM OEM support"
+	depends on PLDM
+	help
+	  Enable PLDM OEM support. OEM functionality must be provided by a compatible
+	  device implementing the PLDM OEM handler API.
+
+config PMCI_PLDM_BASE
+	bool "Enable PLDM Base support"
+	depends on PLDM
+	help
+	  Enable PLDM BASE support

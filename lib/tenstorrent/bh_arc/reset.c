@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "chip_info.h"
 #include "cm2dm_msg.h"
 #include "eth.h"
 #include "gddr.h"
@@ -28,8 +29,6 @@
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
-#include <tenstorrent/tt_boot_fs.h>
-#include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -47,8 +46,18 @@ static const struct device *const pll_devs[] = {DT_INST_FOREACH_STATUS_OKAY(PLL_
 
 LOG_MODULE_REGISTER(InitHW, CONFIG_TT_APP_LOG_LEVEL);
 
-static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
-STATUS_ERROR_STATUS0_reg_u error_status0;
+uint32_t error_status0;
+
+void record_init_failure(enum init_stage_id stage)
+{
+	if ((unsigned int)stage >= INIT_STAGE_COUNT) {
+		return;
+	}
+
+	error_status0 |= BIT(stage);
+
+	WriteReg(STATUS_ERROR_STATUS0_REG_ADDR, error_status0);
+}
 
 /* Cable fault mode: true when DMC reports 0W power limit (no cable or improper installation).
  * In this mode, all tiles except column 15 are clock-gated via NIU_CFG_0 TILE_CLK_OFF to minimize
@@ -108,7 +117,8 @@ static int AssertSoftResets(void)
 	for (uint8_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
 		/* Skip harvested GDDR tiles */
 		if (tile_enable.gddr_enabled & BIT(gddr_inst)) {
-			for (uint8_t noc_node_inst = 0; noc_node_inst < 3; noc_node_inst++) {
+			for (uint8_t noc_node_inst = 0; noc_node_inst < NUM_MRISC_NOC2AXI_PORT;
+			     noc_node_inst++) {
 				uint8_t x, y;
 
 				GetGddrNocCoords(gddr_inst, noc_node_inst, kNocRing, &x, &y);
@@ -271,7 +281,10 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 
 	bh_power_state_get(BH_POWER_DOMAIN_TENSIX, &power_state);
 	if (!power_state) {
-		SetSingleTileClockGate(phys_x, phys_y, true);
+		/* ARC NOC translation has been restored above, so (like the
+		 * tensix_inject_instruction call) use the logical coordinates.
+		 */
+		SetSingleTileClockGate(noc_x, noc_y, true);
 	}
 
 	rsp->data[0] = 0;
@@ -297,7 +310,7 @@ static __maybe_unused uint8_t ReinitTensix(const union request *req, struct resp
 	 */
 	NocInit();
 	TensixInit();
-	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.noc_translation_en) {
+	if (bh_chip_info_feature_noc_translation_en()) {
 		InitNocTranslationFromHarvesting();
 	}
 
@@ -320,9 +333,8 @@ static int DeassertTileResets(void)
 	 * - If magic marker absent: legacy DMC, skip cable fault detection
 	 */
 	uint32_t raw_value = ReadReg(DMC_CABLE_POWER_LIMIT_REG_ADDR);
-	uint8_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
 
-	if (board_type == BOARDTYPE_UBB) {
+	if (bh_chip_info_is_ubb()) {
 		/* Galaxy boards have no DMC; CPLD never sets cable power limit */
 		LOG_INF("Galaxy board detected, no cable fault check needed");
 	} else if ((raw_value & CABLE_POWER_LIMIT_MAGIC_MASK) == CABLE_POWER_LIMIT_MAGIC) {
@@ -333,7 +345,7 @@ static int DeassertTileResets(void)
 
 		if (cable_power_limit == 0) {
 			cable_fault_mode = true;
-			error_status0.f.cable_fault = 1;
+			record_init_failure(INIT_STAGE_CABLE_FAULT);
 			LOG_WRN("Cable fault detected (0W power limit). "
 				"Entering low-power mode - clock-gating all tiles except column 15 "
 				"(contains ARC).");

@@ -4,14 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "functional_efuse.h"
+/*
+ * Harvesting tile-enable state.
+ *
+ * The tile_enable defaults below (everything enabled) are the values SMC
+ * recovery runs with: recovery references tile_enable (e.g. reset.c skips
+ * harvested ETH/GDDR tiles) but never computes harvesting. The fuse- and
+ * firmware-table-driven computation needs the bh_fwtable driver, so it is
+ * compiled only when CONFIG_BH_FWTABLE is set (mission firmware, not recovery).
+ */
+
 #include "harvesting.h"
+
+#include <zephyr/sys/util.h>
+
+#ifdef CONFIG_BH_FWTABLE
+#include "functional_efuse.h"
 #include "noc.h"
 
 #include <tenstorrent/sys_init_defines.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/init.h>
-#include <zephyr/sys/util.h>
+#endif
 
 TileEnable tile_enable = {
 	.tensix_col_enabled = BIT_MASK(14),
@@ -24,6 +38,7 @@ TileEnable tile_enable = {
 	.pcie_enabled = BIT_MASK(2),
 };
 
+#ifdef CONFIG_BH_FWTABLE
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static bool FusesValid(void)
@@ -167,7 +182,7 @@ static void HarvestingSLTFuses(void)
 
 static int CalculateHarvesting(void)
 {
-	if (IS_ENABLED(CONFIG_TT_SMC_RECOVERY) || !IS_ENABLED(CONFIG_ARC)) {
+	if (!IS_ENABLED(CONFIG_ARC)) {
 		return 0;
 	}
 
@@ -264,3 +279,4 @@ static int CalculateHarvesting(void)
 	return 0;
 }
 SYS_INIT_APP(CalculateHarvesting);
+#endif /* CONFIG_BH_FWTABLE */

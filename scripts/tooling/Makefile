@@ -4,7 +4,7 @@
 # Makefile for tooling scripts that need direct TLB access.
 
 OUTDIR ?= .
-TOOLS = $(addprefix $(OUTDIR)/, tt-console tt-tracing)
+TOOLS = $(addprefix $(OUTDIR)/, tt-fw-terminal tt-tracing)
 
 .PHONY: all clean $(notdir $(TOOLS))
 
@@ -12,7 +12,7 @@ all: $(notdir $(TOOLS))
 
 CFLAGS += -O0 -g -static -Wall -Wextra -Werror -std=gnu11 -I ../../include
 
-tt-console: console.c vuart.c rescan.c
+tt-fw-terminal: console.c vuart.c rescan.c
 	$(CC) $(CFLAGS) -o $(OUTDIR)/$@ $^
 
 tt-tracing: tracing.c vuart.c

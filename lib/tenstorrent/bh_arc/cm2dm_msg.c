@@ -12,7 +12,6 @@
 
 #include <string.h>
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/byteorder.h>
@@ -22,13 +21,12 @@
 
 #include "cm2dm_msg.h"
 #include "asic_state.h"
+#include "chip_info.h"
 #include "reg.h"
 #include "status_reg.h"
 #include "fan_ctrl.h"
 #include "telemetry.h"
 #include "dvfs.h"
-
-static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 typedef struct {
 	atomic_t pending_messages;
@@ -170,6 +168,11 @@ void UpdateTelemHeartbeatRequest(uint32_t heartbeat)
 void RequestLedBlink(uint32_t blink_mode)
 {
 	PostCm2DmMsg(kCm2DmMsgIdLedBlink, blink_mode);
+}
+
+void ReportGddrThermTrip(GddrThermTripReason reason)
+{
+	PostCm2DmMsg(kCm2DmMsgIdGddrThermTrip, (uint32_t)reason);
 }
 
 void reset_request_handler(struct k_timer *timer)
@@ -343,8 +346,7 @@ int32_t Dm2CmSendPowerHandler(const uint8_t *data, uint8_t size)
 
 	AdjustDVFSTimer();
 
-	power = sys_get_le16(data) +
-		tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.additional_board_power;
+	power = sys_get_le16(data) + bh_chip_info_additional_board_power();
 
 	return 0;
 }

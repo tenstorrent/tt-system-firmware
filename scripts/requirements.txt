@@ -1,6 +1,5 @@
 # zephyr-keep-sorted-start
 cmsis-pack-manager>=0.6.0
-devicetree
 grpcio-tools
 protobuf
 pytest-repeat
@@ -10,8 +9,8 @@ west
 # zephyr-keep-sorted-start
 pyluwen>=0.8.1; sys_platform == "linux"
 tt-burnin>=0.4.0; sys_platform == "linux"
-tt-flash==3.6.2; sys_platform == "linux"
-tt-smi==4.1.2; sys_platform == "linux"
+tt-flash==3.8.0; sys_platform == "linux"
+tt-smi==5.2.0; sys_platform == "linux"
 tt-tools-common>=1.4.31; sys_platform == "linux"
 # zephyr-keep-sorted-stop
 

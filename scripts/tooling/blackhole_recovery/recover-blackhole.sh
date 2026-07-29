@@ -4,8 +4,22 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-IMAGE_URL="ghcr.io/tenstorrent/tt-zephyr-platforms/recovery-image"
 IMAGE_TAG=${IMAGE_TAG:-"v18.12.2"}
+
+# Tags v19.6.0 and earlier were published as ghcr.io/tenstorrent/tt-zephyr-platforms/recovery-image
+# with scripts under /tt-zephyr-platforms; newer releases replace "tt-zephyr-platforms"
+# with "tt-system-firmware"
+if [ "$IMAGE_TAG" == "v19.6.0-rc1" ]; then
+    # Special case for 19.6.0-rc1, since sort -V doesn't order semver pre-release tags correctly.
+    FIRMWARE_REPO="tt-zephyr-platforms"
+elif [ "$IMAGE_TAG" = "$(printf '%s\n' "$IMAGE_TAG" "v19.6.0" | sort -V | head -n1)" ]; then
+    FIRMWARE_REPO="tt-zephyr-platforms"
+else
+    FIRMWARE_REPO="tt-system-firmware"
+fi
+
+IMAGE_URL=${IMAGE_URL:-"ghcr.io/tenstorrent/${FIRMWARE_REPO}/recovery-image"}
+
 if [[ -n $BOARD_SERIAL ]]; then
     SERIAL_ARG="--board-id ${BOARD_SERIAL}"
 fi
@@ -43,5 +57,5 @@ docker pull $IMAGE_URL:$IMAGE_TAG
 echo "Launching docker container to recover blackhole device..."
 docker run --device /dev/bus/usb --privileged \
     --rm $IMAGE_URL:$IMAGE_TAG \
-    python3 /tt-zephyr-platforms/scripts/tooling/blackhole_recovery/recover-blackhole.py \
+    python3 "/${FIRMWARE_REPO}/scripts/tooling/blackhole_recovery/recover-blackhole.py" \
     /recovery.tar.gz $NAME_ARG $SERIAL_ARG $FORCE_ARG $@

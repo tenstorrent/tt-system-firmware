@@ -40,6 +40,11 @@ logger = logging.getLogger(__name__)
 
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 
+
+def _skip_boards() -> bool:
+    return os.getenv("BOARD") in ("bh-galaxy", "loudbox", "quietbox2")
+
+
 # Constant memory addresses we can read from SMC
 PING_DMFW_DURATION_REG_ADDR = 0x80030448
 
@@ -76,7 +81,10 @@ def tt_smi_reset():
     return smi_reset_result
 
 
-@pytest.mark.skipif(os.getenv("BOARD") == "galaxy", reason="Galaxy lacks a DMC")
+@pytest.mark.skipif(
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
+)
 def test_arc_watchdog(arc_chip_dut, asic_id):
     """
     Validates that the DMC firmware watchdog for the ARC will correctly
@@ -103,7 +111,10 @@ def test_arc_watchdog(arc_chip_dut, asic_id):
     )
 
 
-@pytest.mark.skipif(os.getenv("BOARD") == "galaxy", reason="Galaxy lacks a DMC")
+@pytest.mark.skipif(
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
+)
 def test_pcie_fw_load_time(arc_chip_dut, asic_id):
     """
     Checks PCIe firmware load time is within 40ms.
@@ -161,7 +172,7 @@ def test_smi_reset(arc_chip_dut, asic_id):
             continue
 
         arc_chip = pyluwen.detect_chips()[asic_id]
-        if os.getenv("BOARD") != "galaxy":
+        if not _skip_boards():
             response = arc_chip.arc_msg(TT_SMC_MSG_PING_DM, True, False, 0, 0, 1000)
             if response[0] != 1 or response[1] != 0:
                 logger.warning(f"Ping failed on iteration {i}")
@@ -178,7 +189,7 @@ def test_smi_reset(arc_chip_dut, asic_id):
         # Delete arc_chip so we don't hold an open FD
         del arc_chip
 
-    if os.getenv("BOARD") != "galaxy":
+    if not _skip_boards():
         logger.info(
             f"Average DMFW ping time (after reset): {dmfw_ping_avg:.2f} ms, "
             f"Max DMFW ping time (after reset): {dmfw_ping_max:.2f} ms."
@@ -216,7 +227,10 @@ def test_smi_reset_with_eth(arc_chip_dut, asic_id):
     )
 
 
-@pytest.mark.skipif(os.getenv("BOARD") == "galaxy", reason="Galaxy lacks a DMC")
+@pytest.mark.skipif(
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 have no STLink for dirty reset",
+)
 def test_dirty_reset():
     """
     Checks that the SMC comes up correctly after a "dirty" reset, where the
@@ -248,7 +262,10 @@ def test_dirty_reset():
     )
 
 
-@pytest.mark.skipif(os.getenv("BOARD") == "galaxy", reason="Galaxy lacks a DMC")
+@pytest.mark.skipif(
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Galaxy lacks a DMC; Loudbox/Quietbox2 excluded from DMC-dependent stress tests",
+)
 def test_dmc_ping(arc_chip_dut, asic_id):
     """
     Repeatedly pings the DMC from the SMC to see what the average response time
@@ -282,12 +299,15 @@ def test_dmc_ping(arc_chip_dut, asic_id):
     assert fail_count == 0, "DMC ping test failed a non-zero number of times."
 
 
-def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut):
+def test_upgrade_from_18x(
+    tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut, asic_id
+):
     upgrade_from_version_test(
         arc_chip_dut,
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.10.0",
         (13 << 16),
         (19 << 16),
@@ -298,6 +318,7 @@ def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_d
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.11.0",
         (14 << 16),
         (20 << 16),
@@ -308,9 +329,26 @@ def test_upgrade_from_18x(tmp_path: Path, board_name, unlaunched_dut, arc_chip_d
         tmp_path,
         board_name,
         unlaunched_dut,
+        asic_id,
         "18.12.0",
         (15 << 16),
         (21 << 16),
+    )
+
+
+def test_upgrade_from_19_00(
+    arc_chip_dut, tmp_path: Path, board_name, unlaunched_dut, asic_id
+):
+    upgrade_from_version_test(
+        arc_chip_dut,
+        tmp_path,
+        board_name,
+        unlaunched_dut,
+        asic_id,
+        "19.0.0",
+        (16 << 16),
+        (22 << 16),
+        replace_bootloader=True,
     )
 
 
@@ -387,7 +425,8 @@ def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
 
 
 @pytest.mark.skipif(
-    os.getenv("BOARD") == "galaxy", reason="Burnin not stable on Galaxy"
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
 def test_power_virus(arc_chip_dut, asic_id):
     """
@@ -482,12 +521,13 @@ def test_power_virus(arc_chip_dut, asic_id):
 
 
 @pytest.mark.skipif(
-    os.getenv("BOARD") == "galaxy", reason="Burnin not stable on Galaxy"
+    "os.getenv('BOARD') in ('bh-galaxy', 'loudbox', 'quietbox2')",
+    reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
 )
 def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
     """
-    Reset every non-harvested tensix tile, then run tt-burnin and check
-    that it exits successfully.
+    Reset every non-harvested Tensix tile, then run tt-burnin and check
+    it exits successfully.
     """
     arc_chip = pyluwen.detect_chips()[asic_id]
 
@@ -498,6 +538,7 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
 
     # We want to test the tensix reset message on low power.
     # Set high power after the message to allow NOC read/write to function properly.
+    logger.info(f"Resetting {len(all_tiles)} Tensix tiles")
     arc_chip.set_power_state("low")
     for noc_x, noc_y in all_tiles:
         response = arc_chip.arc_msg(
@@ -508,15 +549,46 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
             f"Tensix ({noc_x}, {noc_y}) reset failed with {response[1]}"
         )
     arc_chip.set_power_state("high")
+    logger.info("  Succeeded")
 
-    logger.info(f"Reset {len(all_tiles)} tensix tiles, starting burnin")
+    duration = 180
+    logger.info(f"Running tt-burnin for {duration}s")
 
-    result = subprocess.run(
+    burnin_process = subprocess.Popen(
         ["tt-burnin", "--no-reset"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        timeout=300,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
 
-    logger.info(f"tt-burnin exited with code {result.returncode}")
-    assert result.returncode == 0, "tt-burnin failed after tensix reset"
+    terminated_early = False
+    try:
+        end_time = time.time() + duration
+        while time.time() < end_time:
+            if burnin_process.poll() is not None:
+                terminated_early = True
+                break
+            time.sleep(1.0)
+    finally:
+        if burnin_process.poll() is None:
+            # Send enter key to stop tt-burnin gracefully
+            try:
+                burnin_process.stdin.write(b"\n")
+                burnin_process.stdin.flush()
+                burnin_process.wait(timeout=5)
+            except (subprocess.TimeoutExpired, BrokenPipeError):
+                logger.warning(
+                    "tt-burnin did not terminate gracefully, killing process"
+                )
+                burnin_process.terminate()
+                try:
+                    burnin_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    burnin_process.kill()
+                    burnin_process.wait()
+
+    assert not terminated_early, "tt-burnin terminated early"
+    assert burnin_process.returncode == 0, (
+        f"tt-burnin failed with {burnin_process.returncode}"
+    )
+    logger.info("  Succeeded")

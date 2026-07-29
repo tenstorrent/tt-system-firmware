@@ -7,15 +7,20 @@
 #include <zephyr/sys/util.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
+#include <zephyr/drivers/misc/bh_fwtable.h>
 
 #include "voltage.h"
 #include "regulator.h"
 #include "dvfs.h"
 
-/* TODO: Get these from SPI parameters */
-#define VDD_MIN  700
-#define VDD_MAX  900
-#define VDD_BOOT 750
+#define VDD_BOOT            750
+/* Bound checks for VDD_MAX and VDD_MIN (in mV) */
+#define VDD_MAX_UPPER_LIMIT 900U
+#define VDD_MAX_LOWER_LIMIT 700U
+#define VDD_MIN_UPPER_LIMIT 900U
+#define VDD_MIN_LOWER_LIMIT 650U
+
+static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 VoltageArbiter voltage_arbiter;
 
@@ -55,8 +60,12 @@ void CalculateTargVoltage(void)
 
 int InitVoltagePPM(void)
 {
-	voltage_arbiter.vdd_min = VDD_MIN;
-	voltage_arbiter.vdd_max = VDD_MAX;
+	voltage_arbiter.vdd_min =
+		CLAMP(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.vdd_min,
+		      VDD_MIN_LOWER_LIMIT, VDD_MIN_UPPER_LIMIT);
+	voltage_arbiter.vdd_max =
+		CLAMP(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.vdd_max,
+		      VDD_MAX_LOWER_LIMIT, VDD_MAX_UPPER_LIMIT);
 
 	/* disable forcing of VDD */
 	voltage_arbiter.forced_voltage = 0;
@@ -77,7 +86,8 @@ int InitVoltagePPM(void)
 
 uint8_t ForceVdd(uint32_t voltage)
 {
-	if ((voltage > VDD_MAX || voltage < VDD_MIN) && (voltage != 0)) {
+	if ((voltage > voltage_arbiter.vdd_max || voltage < voltage_arbiter.vdd_min) &&
+	    (voltage != 0)) {
 		return 1;
 	}
 

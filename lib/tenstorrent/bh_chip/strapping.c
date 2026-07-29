@@ -27,7 +27,7 @@ void bh_chip_set_straps(struct bh_chip *chip)
 			if (ret < 0) {
 				printk("Failed to configure strap %s: %d", strap_ptr->port->name,
 				       ret);
-				i2c_recover_bus(chip->config.arc.smbus.bus);
+				i2c_recover_bus(chip->config.arc.i2c_dev);
 				ret = gpio_pin_configure_dt(strap_ptr, GPIO_OUTPUT_ACTIVE);
 				if (ret < 0) {
 					printk("Failed to configure strap after i2c recover %s: "
@@ -69,7 +69,7 @@ BUILD_ASSERT(CONFIG_TT_I2C_STRAP_INIT_PRIORITY < CONFIG_GPIO_PCA_SERIES_INIT_PRI
 
 int i2c_straps(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		/* Enable I2C bus connection for strapping */
 		bharc_enable_i2cbus(&chip->config.arc);
 	}
@@ -78,7 +78,7 @@ int i2c_straps(void)
 
 int deinit_i2c_straps(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		/* Disable I2C bus connection for strapping */
 		bharc_disable_i2cbus(&chip->config.arc);
 	}

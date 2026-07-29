@@ -476,17 +476,6 @@ void I2CInit(I2CMode mode, uint32_t slave_addr, I2CSpeedMode speed, uint32_t id)
 	Wait(10 * WAIT_1US);
 }
 
-/* Resets the all I2C controller instances */
-void I2CReset(void)
-{
-	uint32_t i2c_cntl = ReadReg(RESET_UNIT_I2C_CNTL_REG_ADDR);
-
-	WriteReg(RESET_UNIT_I2C_CNTL_REG_ADDR, i2c_cntl | RESET_UNIT_I2C_CNTL_RESET_MASK);
-	Wait(WAIT_1US);
-	WriteReg(RESET_UNIT_I2C_CNTL_REG_ADDR, i2c_cntl & ~RESET_UNIT_I2C_CNTL_RESET_MASK);
-	Wait(WAIT_1US);
-}
-
 /* Generalized transaction function called by I2CWriteBytes and I2CReadBytes, implements SMBUS write
  * bytes and read bytes protocols, returns TX_ABRT error if any, otherwise returns 0.
  */
@@ -536,19 +525,33 @@ uint32_t I2CTransaction(uint32_t id, const uint8_t *write_data, uint32_t write_l
 uint32_t I2CWriteBytes(uint32_t id, uint16_t command, uint32_t command_byte_size,
 		       const uint8_t *p_write_buf, uint32_t data_byte_size)
 {
-	/* Combines command and data into a single buffer prior to calling the I2CTransaction
-	 * function, which treats the combined buffer as a single transaction.
-	 */
-	uint32_t combined_buf_size = command_byte_size + data_byte_size;
-	uint8_t combined_buf[combined_buf_size];
-
-	memcpy(combined_buf, &command, command_byte_size);
-	if (p_write_buf != NULL) {
-		memcpy(combined_buf + command_byte_size, p_write_buf, data_byte_size);
+	if (asic_state == A3State) {
+		return IC_ABRT_A3_STATE;
 	}
 
-	/* Calls I2CTransaction with the combined buffer */
-	return I2CTransaction(id, combined_buf, combined_buf_size, NULL, 0);
+	const uint8_t *cmd_buf = (const uint8_t *)&command;
+
+	for (uint32_t i = 0; i < command_byte_size; i++) {
+		uint32_t last_byte_flag =
+			(data_byte_size == 0 && i == command_byte_size - 1) ? IC_DATA_STOP : 0;
+
+		WriteTxFifo(id, cmd_buf[i] | IC_DATA_WRITE | last_byte_flag);
+	}
+
+	if (p_write_buf != NULL) {
+		for (uint32_t i = 0; i < data_byte_size; i++) {
+			uint32_t last_byte_flag = (i == data_byte_size - 1) ? IC_DATA_STOP : 0;
+
+			WriteTxFifo(id, p_write_buf[i] | IC_DATA_WRITE | last_byte_flag);
+		}
+	}
+
+	/* This is a write-only transaction, so wait for completion and aborts. */
+	if ((command_byte_size > 0) || (data_byte_size > 0)) {
+		return WaitAllTxDone(id);
+	}
+
+	return 0;
 }
 
 uint32_t I2CReadBytes(uint32_t id, uint16_t command, uint32_t command_byte_size,
@@ -601,69 +604,4 @@ uint32_t I2CRMWV(uint32_t id, uint16_t command, uint32_t command_byte_size, cons
 	}
 
 	return 0;
-}
-
-void SetI2CSlaveCallbacks(uint32_t id, const struct i2c_target_callbacks *cb)
-{
-	i2c_target_config[id].callbacks = cb;
-}
-/*
- * Keep calling this function in a loop as an alternative to interrupt-based I2C slave handling
- * It uses the Zephyr i2c target callback API.
- */
-void PollI2CSlave(uint32_t id)
-{
-	const struct i2c_target_callbacks *cb = i2c_target_config[id].callbacks;
-
-	if (!cb) {
-		return;
-	}
-
-	DW_APB_I2C_IC_RAW_INTR_STAT_reg_u raw_intr_stat = {
-		.val = ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_RAW_INTR_STAT)))};
-
-	/* Handle error interrupts first */
-	if (raw_intr_stat.f.tx_abrt) {
-		ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_CLR_TX_ABRT)));
-		if (cb->stop) {
-			cb->stop(&i2c_target_config[id]);
-		}
-		return;
-	}
-
-	if (raw_intr_stat.f.rx_over) {
-		/* If we get this interrupt, we lost data */
-		ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_CLR_RX_OVER)));
-		if (cb->stop) {
-			cb->stop(&i2c_target_config[id]);
-		}
-		return;
-	}
-
-	/* We should never get RX_UNDER/TX_OVER, unless there is a SW bug */
-	/* Don't clear them, so we know if it happens */
-
-	/* Handle normal interrupts */
-	uint8_t data;
-
-	if (raw_intr_stat.f.rx_full) {
-		data = ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_DATA_CMD)));
-		if (cb->write_received) {
-			cb->write_received(&i2c_target_config[id], data);
-		}
-	} else if (raw_intr_stat.f.rd_req) {
-		ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_CLR_RD_REQ)));
-		if (cb->read_requested) {
-			if (cb->read_requested(&i2c_target_config[id], &data)) {
-				/* Error condition, just send 0xFF */
-				data = 0xFF;
-			}
-			WriteTxFifo(id, data);
-		}
-	} else if (raw_intr_stat.f.stop_det) {
-		ReadReg(GetI2CRegAddr(id, GET_I2C_OFFSET(IC_CLR_STOP_DET)));
-		if (cb->stop) {
-			cb->stop(&i2c_target_config[id]);
-		}
-	}
 }

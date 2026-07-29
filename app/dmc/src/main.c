@@ -40,7 +40,8 @@
 
 LOG_MODULE_REGISTER(main, CONFIG_TT_APP_LOG_LEVEL);
 
-BUILD_ASSERT(FIXED_PARTITION_EXISTS(bmfw), "bmfw fixed-partition does not exist");
+BUILD_ASSERT(IS_ENABLED(CONFIG_TT_BH_ARC_EMUL) || PARTITION_EXISTS(bmfw),
+	     "bmfw fixed-partition does not exist");
 
 struct bh_chip BH_CHIPS[BH_CHIP_COUNT] = {DT_FOREACH_PROP_ELEM(DT_PATH(chips), chips, INIT_CHIP)};
 
@@ -70,7 +71,7 @@ void update_fan_speed(bool notify_smcs)
 		uint8_t fan_speed = 0;
 		uint8_t forced_fan_speed = 0;
 
-		ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+		ARRAY_FOR_EACH_BH_CHIP(chip) {
 			fan_speed = MAX(fan_speed, chip->data.fan_speed);
 			forced_fan_speed =
 				MAX(forced_fan_speed,
@@ -87,7 +88,7 @@ void update_fan_speed(bool notify_smcs)
 
 		if (notify_smcs) {
 			/* Broadcast final speed to all SMCs for telemetry */
-			ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+			ARRAY_FOR_EACH_BH_CHIP(chip) {
 				bharc_smbus_word_data_write(&chip->config.arc, CMFW_SMBUS_FAN_SPEED,
 							    fan_speed);
 			}
@@ -217,6 +218,25 @@ static bool process_led_blink_request(struct bh_chip *chip, uint8_t msg_id, uint
 	return false;
 }
 
+static bool process_gddr_therm_trip(struct bh_chip *chip, uint8_t msg_id, uint32_t msg_data)
+{
+	switch (msg_data) {
+	case kGddrThermTripReasonInstantaneous:
+		LOG_ERR("GDDR thermal trip: instantaneous temp >= %dC",
+			GDDR_THERM_TRIP_CRITICAL_TEMP);
+		break;
+	case kGddrThermTripReasonSustained:
+		LOG_ERR("GDDR thermal trip: sustained temp >= %dC for %d minute(s)",
+			GDDR_THERM_TRIP_TEMP, GDDR_THERM_TRIP_DURATION_MIN);
+		break;
+	default:
+		LOG_ERR("GDDR thermal trip: unknown reason %u", msg_data);
+		break;
+	}
+
+	return false;
+}
+
 void process_cm2dm_message(struct bh_chip *chip)
 {
 	typedef bool (*msg_processor_t)(struct bh_chip *chip, uint8_t msg_id, uint32_t msg_data);
@@ -230,6 +250,7 @@ void process_cm2dm_message(struct bh_chip *chip)
 		[kCm2DmMsgIdAutoResetTimeoutUpdate] = process_auto_reset_timeout_update,
 		[kCm2DmMsgTelemHeartbeatUpdate] = process_heartbeat_update,
 		[kCm2DmMsgIdLedBlink] = process_led_blink_request,
+		[kCm2DmMsgIdGddrThermTrip] = process_gddr_therm_trip,
 	};
 
 	for (uint32_t i = 0U; i < kCm2DmMsgCount; i++) {
@@ -278,7 +299,7 @@ void ina228_power_update(void)
 	/* Only use integer part of sensor value */
 	int16_t power = sensor_val.val1 & 0xFFFF;
 
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		bh_chip_set_input_power(chip, power);
 	}
 }
@@ -334,12 +355,13 @@ static int bh_chip_run_smbus_tests(struct bh_chip *chip)
 	uint32_t app_version;
 
 	/* Test SMBUS telemetry by selecting TAG_DM_APP_FW_VERSION and reading it back */
-	ret = bharc_smbus_byte_data_write(&chip->config.arc, 0x26, 26);
+	ret = bharc_smbus_byte_data_write(&chip->config.arc, CMFW_SMBUS_TELEMETRY_READ_CRC, 26);
 	if (ret < 0) {
 		LOG_DBG("Failed to write to SMBUS telemetry register");
 		return ret;
 	}
-	ret = bharc_smbus_block_read(&chip->config.arc, 0x27, &count, data);
+	ret = bharc_smbus_block_read(&chip->config.arc, CMFW_SMBUS_TELEMETRY_READ_CRC_DATA, &count,
+				     data);
 	if (ret < 0) {
 		LOG_DBG("Failed to read from SMBUS telemetry register");
 		return ret;
@@ -389,7 +411,7 @@ static int bh_chip_run_smbus_tests(struct bh_chip *chip)
 
 static void handle_therm_trip(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (chip->data.therm_trip_triggered) {
 			chip->data.therm_trip_triggered = false;
 
@@ -433,7 +455,7 @@ static void handle_therm_trip(void)
 
 static void handle_watchdog_reset(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (chip->data.arc_wdog_triggered) {
 			chip->data.arc_wdog_triggered = false;
 			bh_chip_cancel_bus_transfer_clear(chip);
@@ -466,7 +488,7 @@ static void handle_watchdog_reset(void)
 
 static void handle_perst(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (atomic_set(&chip->data.trigger_reset, false)) {
 			chip->data.performing_reset = true;
 			chip->data.last_cm2dm_seq_num_valid = false;
@@ -499,14 +521,14 @@ static void handle_perst(void)
 
 static void handle_pgood_change(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		handle_pgood_event(chip, board_fault_led);
 	}
 }
 
 static void send_init_data(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (chip->data.arc_needs_init_msg) {
 			if (bh_chip_set_static_info(chip, &static_info) == 0 &&
 			    bh_chip_set_input_power_lim(chip, max_power) == 0 &&
@@ -536,7 +558,7 @@ static void fan_rpm_feedback(void)
 
 		rpm = (uint16_t)data.val1;
 
-		ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+		ARRAY_FOR_EACH_BH_CHIP(chip) {
 			bh_chip_set_fan_rpm(chip, rpm);
 		}
 	}
@@ -544,7 +566,7 @@ static void fan_rpm_feedback(void)
 
 static void handle_cm2dm_messages(void)
 {
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		process_cm2dm_message(chip);
 	}
 }
@@ -597,7 +619,7 @@ int main(void)
 		}
 	}
 
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		chip->data.fan_speed = INITIAL_FAN_SPEED;
 	}
 
@@ -613,7 +635,7 @@ int main(void)
 	}
 
 	/* Force all spi_muxes back to arc control */
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (chip->config.spi_mux.port != NULL) {
 			gpio_pin_configure_dt(&chip->config.spi_mux, GPIO_OUTPUT_ACTIVE);
 		}
@@ -624,7 +646,7 @@ int main(void)
 		gpio_pin_configure_dt(&board_fault_led, GPIO_OUTPUT_INACTIVE);
 	}
 
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		ret = therm_trip_gpio_setup(chip);
 		if (ret != 0) {
 			LOG_ERR("%s() failed: %d", "therm_trip_gpio_setup", ret);
@@ -643,7 +665,7 @@ int main(void)
 	max_power = detect_max_power();
 
 	if (IS_ENABLED(CONFIG_JTAG_LOAD_BOOTROM)) {
-		ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+		ARRAY_FOR_EACH_BH_CHIP(chip) {
 			ret = jtag_bootrom_init(chip);
 			if (ret != 0) {
 				LOG_ERR("%s() failed: %d", "jtag_bootrom_init", ret);
@@ -666,7 +688,7 @@ int main(void)
 		LOG_DBG("Bootrom workaround successfully applied");
 	}
 
-	ARRAY_FOR_EACH_PTR(BH_CHIPS, chip) {
+	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		const struct device *smbus = chip->config.arc.smbus.bus;
 
 		smbus_configure(smbus, SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC);

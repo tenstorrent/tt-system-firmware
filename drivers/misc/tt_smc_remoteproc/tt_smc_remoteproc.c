@@ -21,7 +21,7 @@ BUILD_ASSERT(CONFIG_TT_SMC_REMOTEPROC_INIT_PRIO > CONFIG_I3C_CONTROLLER_INIT_PRI
 	     "TT_SMC_REMOTEPROC_INIT_PRIO must be higher than I3C_CONTROLLER_INIT_PRIORITY");
 
 struct tt_smc_remoteproc_config {
-	const struct gpio_dt_spec boot_gpio; /* GPIO to signal remote ROM is ready */
+	const struct gpio_dt_spec boot_gpio; /* Optional GPIO to signal remote ROM is ready */
 };
 
 struct tt_smc_remoteproc_data {
@@ -59,36 +59,41 @@ int tt_smc_remoteproc_init(const struct device *dev)
 	struct i3c_device_id remote_id = {
 		.pid = data->i3c_dev->pid,
 	};
+	bool has_boot_gpio = config->boot_gpio.port != NULL;
 	int ret;
 	k_timepoint_t timeout;
 
-	if (!device_is_ready(config->boot_gpio.port)) {
-		return -ENODEV;
-	}
-
-	gpio_pin_configure_dt(&config->boot_gpio, GPIO_INPUT);
-
-	timeout = sys_timepoint_calc(K_MSEC(SMC_BOOT_TIMEOUT_MS));
-	/* Wait for remote GPIO to rise */
-	while (gpio_pin_get_dt(&config->boot_gpio) == 0) {
-		/* wait */
-		if (sys_timepoint_expired(timeout)) {
-			LOG_ERR("Timeout waiting for remote SMC ROM to be ready");
-			return -ETIMEDOUT;
+	if (has_boot_gpio) {
+		if (!device_is_ready(config->boot_gpio.port)) {
+			return -ENODEV;
 		}
-	}
 
-	LOG_INF("Remote SMC ROM is ready");
+		gpio_pin_configure_dt(&config->boot_gpio, GPIO_INPUT);
 
-	/*
-	 * Remote SMC is now on the I3C bus, run dynamic address assignment
-	 * once more so that the controller discovers it
-	 */
+		timeout = sys_timepoint_calc(K_MSEC(SMC_BOOT_TIMEOUT_MS));
+		/* Wait for remote GPIO to rise */
+		while (gpio_pin_get_dt(&config->boot_gpio) == 0) {
+			/* wait */
+			if (sys_timepoint_expired(timeout)) {
+				LOG_ERR("Timeout waiting for remote SMC ROM to be ready");
+				return -ETIMEDOUT;
+			}
+		}
 
-	ret = i3c_do_daa(data->i3c_dev->bus);
-	if (ret != 0) {
-		LOG_INF("I3C dynamic address assignment failed: %d", ret);
-		return ret;
+		LOG_INF("Remote SMC ROM is ready");
+
+		/*
+		 * Remote SMC is now on the I3C bus, run dynamic address assignment
+		 * once more so that the controller discovers it
+		 */
+
+		ret = i3c_do_daa(data->i3c_dev->bus);
+		if (ret != 0) {
+			LOG_INF("I3C dynamic address assignment failed: %d", ret);
+			return ret;
+		}
+	} else {
+		LOG_INF("boot-gpios not configured; skipping GPIO wait and DAA");
 	}
 
 	/* Now that DAA is complete, find the device on the bus */
@@ -112,7 +117,7 @@ int tt_smc_remoteproc_init(const struct device *dev)
 
 #define TT_SMC_REMOTEPROC_DEFINE(inst)                                                             \
 	const struct tt_smc_remoteproc_config tt_smc_remoteproc_config_##inst = {                  \
-		.boot_gpio = GPIO_DT_SPEC_INST_GET(inst, boot_gpios),                              \
+		.boot_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, boot_gpios, {0}),                      \
 	};                                                                                         \
                                                                                                    \
 	struct i3c_device_desc tt_smc_remoteproc_i3c_dev_##inst[] = {                              \

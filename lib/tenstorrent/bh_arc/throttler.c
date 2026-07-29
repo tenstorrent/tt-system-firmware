@@ -14,6 +14,7 @@
 #include <tenstorrent/msgqueue.h>
 #include "cm2dm_msg.h"
 #include <zephyr/drivers/misc/bh_fwtable.h>
+#include <zephyr/tracing/tracing.h>
 #include "telemetry_internal.h"
 #include "telemetry.h"
 #include "noc2axi.h"
@@ -26,6 +27,15 @@ static bool doppler_slow;
 static bool doppler_t2;
 static bool doppler_t3;
 static const bool thermal_throttling = true;
+
+/*
+ * Kernel-throttler-at-AICLK-floor configuration. The defaults are sourced from
+ * the firmware table at init (feature_enable.kernel_throttler_at_floor_en and
+ * chip_limits.kernel_throttler_stop_nops_freq), so they can be persisted in SPI
+ * flash and overridden via bh-mod.
+ */
+static uint32_t kernel_throttler_stop_nops_freq;
+static uint32_t kernel_throttler_stop_nops_freq_default;
 
 #define kThrottlerAiclkScaleFactor 500.0F
 #define DEFAULT_BOARD_POWER_LIMIT  150
@@ -159,12 +169,17 @@ static uint32_t throttle_counter;
 static const uint32_t kKernelThrottleAddress = 0x10;
 static bool tensixes_enabled = true;
 
+static uint32_t nop_on_since_ms;      /* uptime when NOP last turned on */
+static uint32_t nop_on_accum_ms;      /* total ms NOP's been on until now */
+static uint32_t prev_nop_on_accum_ms; /* total ms NOP's been on until prev telemetry update */
+
 static void BroadcastKernelThrottleState(void)
 {
 	const uint8_t kNocRing = 0;
 	const uint8_t kNocTlb = 1;
 
 	if (tensixes_enabled) {
+		sys_trace_named_event("kernel_throttle", throttle_counter & 1, 0);
 		NOC2AXITensixBroadcastTlbSetup(kNocRing, kNocTlb, kKernelThrottleAddress,
 					       kNoc2AxiOrderingStrict);
 		NOC2AXIWrite32(kNocRing, kNocTlb, kKernelThrottleAddress, throttle_counter);
@@ -174,6 +189,9 @@ static void BroadcastKernelThrottleState(void)
 static void InitKernelThrottling(void)
 {
 	throttle_counter = 0;
+	nop_on_since_ms = 0;
+	nop_on_accum_ms = 0;
+	prev_nop_on_accum_ms = 0;
 
 	BroadcastKernelThrottleState();
 }
@@ -188,6 +206,16 @@ static void SendKernelThrottlingMessage(bool throttle)
 	throttle_counter++;
 	if ((throttle_counter & 1) != throttle) {
 		throttle_counter++;
+	}
+
+	/* Accumulate NOP-on time: stamp the start on the rising edge, bank the
+	 * elapsed interval on the falling edge. Centralised here so every edge
+	 * (kernel throttler, Doppler, and feature-disable paths) is accounted for.
+	 */
+	if (throttle) {
+		nop_on_since_ms = k_uptime_get_32();
+	} else {
+		nop_on_accum_ms += k_uptime_get_32() - nop_on_since_ms;
 	}
 
 	BroadcastKernelThrottleState();
@@ -211,6 +239,26 @@ void InitThrottlers(void)
 	doppler_slow = doppler;
 	doppler_t2 = doppler;
 	doppler_t3 = doppler;
+
+	kernel_throttler_stop_nops_freq_default =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)
+			->chip_limits.kernel_throttler_stop_nops_freq;
+	/* A non-zero stop frequency must be within the valid AICLK floor range.
+	 * An out-of-range value (e.g. from a board table or ccfgovr override)
+	 * could otherwise leave kernel NOPs permanently engaged, so treat it as
+	 * 0 (fall back to the effective minimum arbiter frequency at runtime).
+	 */
+	if (kernel_throttler_stop_nops_freq_default != 0U &&
+	    (kernel_throttler_stop_nops_freq_default < (uint32_t)AICLK_FMIN_MIN ||
+	     kernel_throttler_stop_nops_freq_default > (uint32_t)AICLK_FMIN_MAX)) {
+		LOG_WRN("Invalid fwtable kernel_throttler_stop_nops_freq=%u MHz; using 0 (auto)",
+			kernel_throttler_stop_nops_freq_default);
+		kernel_throttler_stop_nops_freq_default = 0U;
+	}
+	kernel_throttler_stop_nops_freq = kernel_throttler_stop_nops_freq_default;
+	UpdateTelemetryKernelThrottler(tt_bh_fwtable_get_fw_table(fwtable_dev)
+					       ->feature_enable.kernel_throttler_at_floor_en,
+				       kernel_throttler_stop_nops_freq);
 
 	SetThrottlerLimit(kThrottlerTDP,
 			  tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.tdp_limit);
@@ -342,6 +390,43 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
 	EnableArbMax(aiclk_arb_max_doppler_critical, critical_throttling);
 }
 
+/* Update kernel throttler NOPs state when running at the AICLK floor.
+ *
+ * This path is enabled when TAG_FW_ACTIVE_CONFIG_0 bit 0
+ * (kernel_nops_at_aiclk_fmin) is set. The bit is seeded from the fwtable at
+ * telemetry init and may later be changed at runtime via the characterization
+ * message path.
+ *
+ * The stop frequency comes from kernel_throttler_stop_nops_freq. When that
+ * value is 0, FW falls back to the effective minimum arbiter frequency.
+ */
+static void UpdateKernelThrottler(float current_power, float tdp_limit)
+{
+	telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
+	bool start_nops = false;
+	bool stop_nops = false;
+	enum aiclk_arb_min arb;
+
+	if (active_config.kernel_nops_at_aiclk_fmin) {
+		start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
+
+		uint32_t stop_freq = kernel_throttler_stop_nops_freq;
+
+		if (stop_freq == 0U) {
+			stop_freq = get_aiclk_effective_arb_min(&arb);
+		}
+
+		stop_nops = GetAiclkTarg() >= stop_freq && current_power < tdp_limit;
+	}
+
+	bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
+
+	if (new_kernel_nops_enabled != kernel_nops_enabled) {
+		kernel_nops_enabled = new_kernel_nops_enabled;
+		SendKernelThrottlingMessage(kernel_nops_enabled);
+	}
+}
+
 void CalculateThrottlers(void)
 {
 	TelemetryInternalData telemetry_internal_data;
@@ -355,14 +440,67 @@ void CalculateThrottlers(void)
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerBoardPower, GetInputPower());
+
+		float current_power = telemetry_internal_data.vcore_power;
+		float tdp_limit = throttler[kThrottlerTDP].limit;
+
+		UpdateKernelThrottler(current_power, tdp_limit);
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
-	UpdateThrottler(kThrottlerGDDRThm, GetMaxGDDRTemp());
+	UpdateThrottler(kThrottlerGDDRThm, telemetry_internal_data.gddr_temps.max_temp);
 
 	for (ThrottlerId i = 0; i < kThrottlerCount; i++) {
 		UpdateThrottlerArb(i);
 	}
+}
+
+uint8_t ThrottlerSetKernelThrottlerEnabled(uint32_t enabled)
+{
+	if (enabled > 1) {
+		return 1;
+	}
+
+	LOG_INF("kernel throttler at aiclk floor %s", enabled ? "enabled" : "disabled");
+
+	/* Release NOPs immediately if the feature is being disabled while active. */
+	if (!enabled && kernel_nops_enabled) {
+		kernel_nops_enabled = false;
+		SendKernelThrottlingMessage(false);
+	}
+
+	UpdateTelemetryKernelThrottler((bool)enabled, kernel_throttler_stop_nops_freq);
+	return 0;
+}
+
+uint8_t ThrottlerSetKernelThrottlerStopFreq(uint32_t frequency)
+{
+	/* 0 restores the fwtable-provided default (which may itself be 0, meaning
+	 * fall back to the effective minimum arbiter frequency at runtime).
+	 */
+	if (frequency == 0) {
+		telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
+
+		kernel_throttler_stop_nops_freq = kernel_throttler_stop_nops_freq_default;
+		LOG_INF("kernel throttler stop nops frequency restored to fwtable default %u MHz",
+			kernel_throttler_stop_nops_freq);
+		UpdateTelemetryKernelThrottler(active_config.kernel_nops_at_aiclk_fmin,
+					       kernel_throttler_stop_nops_freq);
+		return 0;
+	}
+
+	/* Reject if outside valid range [AICLK_FMIN_MIN, AICLK_FMIN_MAX] */
+	if (frequency > (uint32_t)AICLK_FMIN_MAX || frequency < (uint32_t)AICLK_FMIN_MIN) {
+		return 1;
+	}
+
+	telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
+
+	kernel_throttler_stop_nops_freq = frequency;
+	LOG_INF("kernel throttler stop nops frequency set to %u MHz", frequency);
+	UpdateTelemetryKernelThrottler(active_config.kernel_nops_at_aiclk_fmin,
+				       kernel_throttler_stop_nops_freq);
+	return 0;
 }
 
 int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size)
@@ -411,6 +549,54 @@ static uint8_t set_tdp_limit_handler(const union request *request, struct respon
 	UpdateTelemetryTdpLimit(throttler[kThrottlerTDP].limit);
 
 	return 0;
+}
+
+uint32_t GetStartNOPCount(void)
+{
+	/* throttle_counter increments on every throttle-state change.
+	 * Need to convert transition count to NOP start count
+	 */
+	return (throttle_counter + 1) >> 1;
+}
+
+uint32_t GetNOPOnAccumulatedTime(void)
+{
+	/* If NOPs are currently enabled, add time since they were last turned on to
+	 * accumulated time. Wraps at ~49.7 days of cumulative NOP-on time; consumers
+	 * must difference samples with unsigned (modular) arithmetic.
+	 */
+	if (kernel_nops_enabled) {
+		return nop_on_accum_ms + (k_uptime_get_32() - nop_on_since_ms);
+	} else {
+		return nop_on_accum_ms;
+	}
+}
+
+uint32_t GetNOPOnDuration(uint32_t window_ms)
+{
+	/* NOP-on time accrued since the previous call. Unsigned subtraction stays
+	 * correct across accumulator wrap, since one window's delta is tiny relative
+	 * to the 32-bit millisecond range.
+	 */
+	uint32_t accumulated_time = GetNOPOnAccumulatedTime();
+	uint32_t duration = accumulated_time - prev_nop_on_accum_ms;
+
+	prev_nop_on_accum_ms = accumulated_time;
+
+	/* On the first call prev_nop_on_accum_ms is still 0 from init, so the delta is
+	 * the entire NOP-on time banked since boot rather than a single window. Clamp
+	 * that bootstrap sample to the window length. `seeded` makes this one-shot:
+	 * later samples are returned unclamped so their running sum stays faithful to
+	 * the true cumulative NOP-on time.
+	 */
+	static bool seeded;
+
+	if (!seeded) {
+		seeded = true;
+		duration = MIN(duration, window_ms);
+	}
+
+	return duration;
 }
 
 REGISTER_MESSAGE(TT_SMC_MSG_SET_TDP_LIMIT, set_tdp_limit_handler);

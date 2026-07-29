@@ -230,8 +230,13 @@ struct power_setting_rqst {
 		 */
 		uint16_t l2cpu_enable: 1;
 
+		/** @brief 1 - @ref pcie_gen "Set PCIE gen to 5"
+		 * <br> 0 - @ref pcie_gen "Set PCIE gen to 1"
+		 */
+		uint16_t pcie_gen: 1;
+
 		/** @brief Future use flags currently not supported*/
-		uint16_t future_use: 11;
+		uint16_t future_use: 10;
 
 		/** @brief Reserved*/
 		uint16_t reserved: 1;
@@ -570,6 +575,47 @@ enum gddr_reset_err {
 	GDDR_RESET_ERR_POWERDOWN = 6,
 };
 
+/** @brief Host request to reset and reinitialize one or more ETH tiles
+ *
+ * The handler performs the appropriate sequencing to reset and (optionally)
+ * restart ERISC FW on the requested ethernet tiles.
+ *
+ * Request: @ref eth_inst_mask is a bitmask of ETH instance indices (bit N selects ETH N).
+ * Bits for harvested instances are silently dropped. An empty effective mask returns success
+ * (no-op). Only bits 0-13 are valid, setting other bits will return the error
+ * @ref ETH_RESET_ERR_INVALID_MASK.
+ * When `no_fw_reload` is 1, SPI FW/cfg reload and `ReleaseEthReset` are skipped.
+ *
+ * On failure, response `data[0]` exit code is 1 and `data[1]` contains @ref eth_reset_err.
+ * On success, response `data[0]` exit code is 0 and `data[1]` is the bitmask of the
+ * successfully reset tiles.
+ */
+struct eth_tile_reset_rqst {
+	/** @brief Command code @ref TT_SMC_MSG_TOGGLE_ETH_RESET */
+	uint8_t command_code;
+
+	/** @brief Padding */
+	uint8_t pad[3];
+
+	/** @brief Bitmask of ETH instances to reset (bit N -> ETH N) */
+	uint32_t eth_inst_mask;
+
+	/** @brief If 1, tile/RISC reset only; skip SPI FW/cfg reload and ReleaseEthReset */
+	uint8_t no_fw_reload: 1;
+};
+
+/** @brief Error codes in response data[1] for @ref TT_SMC_MSG_TOGGLE_ETH_RESET */
+enum eth_reset_err {
+	ETH_RESET_ERR_INVALID_MASK = 1,
+	ETH_RESET_ERR_CABLE_FAULT = 2,
+	ETH_RESET_ERR_NO_FLASH = 3,
+	ETH_RESET_ERR_FW_LOOKUP = 4,
+	ETH_RESET_ERR_FW_LOAD = 5,
+	ETH_RESET_ERR_CFG_LOOKUP = 6,
+	ETH_RESET_ERR_CFG_SIZE = 7,
+	ETH_RESET_ERR_CFG_LOAD = 8,
+};
+
 /** @brief Host request to trigger a chip reset
  * @details Messages of this type are processed by @ref reset_dm_handler.
  *
@@ -735,10 +781,34 @@ struct characterisation_set_fmin_submsg {
 	uint32_t value;
 };
 
+/** @brief Submessage for enabling/disabling kernel throttler at AICLK floor
+ * @details Payload is a single uint32_t:
+ * - Value == 0: Disable kernel throttler at AICLK floor
+ * - Value == 1: Enable kernel throttler at AICLK floor
+ */
+struct char_throttle_enabled_submsg {
+	/** @brief 0 to disable, 1 to enable */
+	uint32_t enabled;
+};
+
+/** @brief Submessage for setting kernel throttler stop NOPs frequency
+ * @details Payload is a single uint32_t with two interpretations:
+ * - Value == 0: Restore the FW-controlled stop limit
+ * - Value in [200, 1400]: Stop NOPs at this frequency in MHz
+ */
+struct char_throttle_stop_freq_submsg {
+	/** @brief 0 to restore FW control, or frequency in MHz where NOPs stop (200-1400) */
+	uint32_t frequency;
+};
+
 /** @brief Union of all possible characterization submessage payloads */
 union characterisation_submsg_data {
 	/** @brief Set host-requested minimum frequency floor */
 	struct characterisation_set_fmin_submsg fmin_value;
+	/** @brief Enable/disable kernel throttler at AICLK floor */
+	struct char_throttle_enabled_submsg throttler_enabled;
+	/** @brief Set frequency limit for stopping kernel throttler */
+	struct char_throttle_stop_freq_submsg throttler_stop_freq;
 	/* add to this union to define more sub-message payloads */
 	/** @brief Generic fallback for raw access */
 	uint8_t raw_data[4];
@@ -845,6 +915,36 @@ struct confirm_flashed_spi_rqst {
 	uint32_t challenge_data;
 };
 
+/** @brief Host request to setup/release FW logging
+ * @details Messages of this type are processed by the logging handler.
+ *
+ * For SETUP sub-command, buffer_addr_lo/hi specify the host DMA buffer IOVA
+ * and buffer_size specifies the size in bytes. For RELEASE sub-command,
+ * only subcmd is used - other fields are ignored.
+ */
+struct tt_pcie_log_rqst {
+	/** @brief The command code corresponding to @ref TT_SMC_MSG_TT_PCIE_LOG */
+	uint8_t command_code;
+
+	/** @brief tt_pcie_log sub-command: 1=SETUP, 2=RELEASE */
+	uint8_t subcmd;
+
+	/** @brief Host version for tt_pcie_log protocol (for SETUP) */
+	uint8_t version;
+
+	/** @brief One byte of padding */
+	uint8_t pad;
+
+	/** @brief Lower 32 bits of host buffer IOVA (for SETUP) */
+	uint32_t buffer_addr_lo;
+
+	/** @brief Upper 32 bits of host buffer IOVA (for SETUP) */
+	uint32_t buffer_addr_hi;
+
+	/** @brief Buffer size in bytes (for SETUP) */
+	uint32_t buffer_size;
+};
+
 /** @brief A tenstorrent host request*/
 union request {
 	/** @brief The interpretation of the request as an array of uint32_t entries*/
@@ -929,6 +1029,9 @@ union request {
 	/** @brief A GDDR reset request */
 	struct gddr_reset_rqst gddr_reset;
 
+	/** @brief An ETH tile reset request */
+	struct eth_tile_reset_rqst eth_tile_reset;
+
 	/** @brief A temperature sensor read request */
 	struct read_ts_rqst read_ts;
 
@@ -967,6 +1070,9 @@ union request {
 
 	/** @brief A confirm SPI flash request */
 	struct confirm_flashed_spi_rqst confirm_flashed_spi;
+
+	/** @brief A tt_pcie_log setup/release request */
+	struct tt_pcie_log_rqst tt_pcie_log;
 };
 
 /** @} */

@@ -10,6 +10,9 @@
 #include <zephyr/sys/crc.h>
 #include <zephyr/ztest.h>
 
+#include <zephyr/device.h>
+#include <zephyr/drivers/misc/bh_fwtable.h>
+
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/tt_smbus_regs.h>
@@ -21,10 +24,14 @@
 #include "aiclk_ppm.h"
 
 #include "reg_mock.h"
+#include "voltage.h"
 
 /* Custom fake for ReadReg to simulate timer progression */
 #define RESET_UNIT_REFCLK_CNT_LO_REG_ADDR         0x800300E0
 #define PLL_CNTL_WRAPPER_CLOCK_WAVE_CNTL_REG_ADDR 0x80020038
+#define ARC_NOC0_TLB_BASE_ADDR                    0xC0000000U
+#define ARC_NOC1_TLB_BASE_ADDR                    0xE0000000U
+#define ARC_NOC_TLB_WINDOW_SPAN                   0x10000000U
 static uint32_t timer_counter;
 static uint8_t i2c_read_buf_emul[256] = {0};
 static uint8_t i2c_read_buf_idx;
@@ -40,6 +47,25 @@ struct response rsp = {0};
 
 static const struct device *const i2c0_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(i2c0));
 static const uint8_t tt_i2c_addr = 0xA;
+
+/* Build-time-resolved handle for the bh_fwtable device. */
+#define FWTABLE_DEV DEVICE_DT_GET(DT_NODELABEL(fwtable))
+
+/* Runs FIRST in the msgqueue suite. ztest orders tests by SORT_BY_NAME on the
+ * symbol z_ztest_unit_test__<suite>__<fn>, so the "0_" prefix sorts this ahead
+ * of every other test. The build guarantees flash.bin exists (CMake FATAL_ERRORs
+ * when protoc is missing), so a not-ready fwtable device is a real bh_fwtable
+ * init/load regression and must FAIL — never skip.
+ */
+ZTEST(msgqueue, test_0_fwtable_device_ready)
+{
+	const struct device *dev = FWTABLE_DEV;
+
+	zassert_not_null(dev, "fwtable device pointer is NULL");
+	zassert_true(device_is_ready(dev),
+		     "fwtable device not ready — bh_fwtable init/load failed. "
+		     "flash.bin is built by CMake; check the driver's load paths.");
+}
 
 /* Helper function to simulate DMC reading posted SMBUS messages */
 static cm2dmMessage read_posted_smbus_message(void)
@@ -104,13 +130,29 @@ static void clear_pending_smbus_messages(void)
 	} while (msg.msg_id != 0 && attempts > 0);
 }
 
-static void push_msg_success(void)
-{
-	msgqueue_request_push(0, &req);
-	process_message_queues();
-	msgqueue_response_pop(0, &rsp);
-	zexpect_equal(rsp.data[0], 0);
-}
+/*
+ * These variadic macros can be used to attach a printf-style context
+ * message describing a specific sub-case inside a ZTEST, instead of
+ * 1 message per ZTEST
+ *
+ * Uses zexpect_* (soft assertions) so a single sub-case failure doesn't
+ * short-circuit the rest of the test
+ */
+#define push_msg_success(...)                                                                      \
+	do {                                                                                       \
+		msgqueue_request_push(0, &req);                                                    \
+		process_message_queues();                                                          \
+		msgqueue_response_pop(0, &rsp);                                                    \
+		zexpect_equal(rsp.data[0], 0, ##__VA_ARGS__);                                      \
+	} while (0)
+
+#define push_msg_failure(...)                                                                      \
+	do {                                                                                       \
+		msgqueue_request_push(0, &req);                                                    \
+		process_message_queues();                                                          \
+		msgqueue_response_pop(0, &rsp);                                                    \
+		zexpect_not_equal(rsp.data[0], 0, ##__VA_ARGS__);                                  \
+	} while (0)
 
 static uint32_t ReadReg_msgqueue_fake(uint32_t addr)
 {
@@ -153,7 +195,10 @@ static void WriteReg_msgqueue_fake(uint32_t addr, uint32_t value)
 		clock_wave_value = value;
 	}
 
-	if (addr == 0xC0000000) {
+	if ((addr >= ARC_NOC0_TLB_BASE_ADDR &&
+	     addr < ARC_NOC0_TLB_BASE_ADDR + ARC_NOC_TLB_WINDOW_SPAN) ||
+	    (addr >= ARC_NOC1_TLB_BASE_ADDR &&
+	     addr < ARC_NOC1_TLB_BASE_ADDR + ARC_NOC_TLB_WINDOW_SPAN)) {
 		noc_2_axi_last_write = value;
 	}
 }
@@ -515,33 +560,53 @@ ZTEST(msgqueue, test_msg_type_read_eeprom_no_flash)
 
 ZTEST(msgqueue, test_msg_type_force_vdd)
 {
-	/* Force a valid voltage */
-	req.force_vdd.command_code = TT_SMC_MSG_FORCE_VDD;
-	req.force_vdd.forced_voltage = 800;
+	/* Exercises TT_SMC_MSG_FORCE_VDD. Handler under test: ForceVddHandler
+	 * (lib/.../voltage.c). The handler's gate is:
+	 *   if ((v > vdd_max || v < vdd_min) && v != 0) return 1;   // reject
+	 *   else                                        return 0;   // accept
+	 * All test inputs are derived from the loaded fw_table so this test is
+	 * board-portable.
+	 */
+	(void)InitVoltagePPM();
 
-	push_msg_success();
+	const uint32_t vdd_min = voltage_arbiter.vdd_min;
+	const uint32_t vdd_max = voltage_arbiter.vdd_max;
 
-	/* Disable forcing with 0 */
+	zassert_true(vdd_min > 0 && vdd_max > vdd_min,
+		     "Invalid voltage envelope from fw_table: vdd_min=%u, vdd_max=%u", vdd_min,
+		     vdd_max);
+
+	const uint32_t valid = (vdd_min + vdd_max) / 2U; /* in range, nonzero */
+	const uint32_t too_high = vdd_max + 1U;          /* out of range, high */
+	const uint32_t too_low = vdd_min - 1U;           /* out of range, low (vdd_min ≥ 650) */
+
+	/* Case 1: in-range — accept */
 	req = (union request){0};
 	rsp = (struct response){0};
+	req.force_vdd.command_code = TT_SMC_MSG_FORCE_VDD;
+	req.force_vdd.forced_voltage = valid;
+	push_msg_success("in-range %u (envelope [%u, %u])", valid, vdd_min, vdd_max);
 
+	/* Case 2: release sentinel 0 — accept */
+	req = (union request){0};
+	rsp = (struct response){0};
 	req.force_vdd.command_code = TT_SMC_MSG_FORCE_VDD;
 	req.force_vdd.forced_voltage = 0;
+	push_msg_success("forced_voltage=0 (release sentinel)");
 
-	push_msg_success();
-
-	/* Out-of-range voltage should be rejected */
+	/* Case 3: above vdd_max — reject */
 	req = (union request){0};
 	rsp = (struct response){0};
-
 	req.force_vdd.command_code = TT_SMC_MSG_FORCE_VDD;
-	req.force_vdd.forced_voltage = 9999;
+	req.force_vdd.forced_voltage = too_high;
+	push_msg_failure("above-range %u (envelope [%u, %u])", too_high, vdd_min, vdd_max);
 
-	msgqueue_request_push(0, &req);
-	process_message_queues();
-	msgqueue_response_pop(0, &rsp);
-
-	zassert_equal(rsp.data[0], 1, "Out-of-range voltage should fail");
+	/* Case 4: below vdd_min — reject */
+	req = (union request){0};
+	rsp = (struct response){0};
+	req.force_vdd.command_code = TT_SMC_MSG_FORCE_VDD;
+	req.force_vdd.forced_voltage = too_low;
+	push_msg_failure("below-range %u (envelope [%u, %u])", too_low, vdd_min, vdd_max);
 }
 
 ZTEST(msgqueue, test_msg_type_pcie_dma_chip_to_host)

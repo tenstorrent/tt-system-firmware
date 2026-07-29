@@ -42,6 +42,8 @@ static float max_gddr_temp;
 static float max_asic_temp;
 static float alpha = CONFIG_TT_BH_ARC_FAN_CTRL_ALPHA / 100.0f;
 
+static float effective_gddr_temp = -1.0f;
+
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 STATIC uint32_t fan_curve(float max_asic_temp, float max_gddr_temp)
@@ -50,22 +52,38 @@ STATIC uint32_t fan_curve(float max_asic_temp, float max_gddr_temp)
 	uint32_t fan_speed1;
 	uint32_t fan_speed2;
 
-	if (max_asic_temp < 49) {
-		fan_speed1 = 35;
+	if (max_asic_temp < 60) {
+		fan_speed1 = 20;
+	} else if (max_asic_temp < 72) {
+		fan_speed1 = (uint32_t)(0.833f * max_asic_temp - 29.98f);
+	} else if (max_asic_temp < 75) {
+		fan_speed1 = (uint32_t)(3.333f * max_asic_temp - 209.976f);
 	} else if (max_asic_temp < 90) {
-		fan_speed1 =
-			(uint32_t)(0.03867f * (max_asic_temp - 49.0f) * (max_asic_temp - 49.0f)) +
-			35;
+		fan_speed1 = (uint32_t)(4.0f * max_asic_temp - 260.0f);
 	} else {
 		fan_speed1 = 100;
 	}
 
-	if (max_gddr_temp < 43) {
-		fan_speed2 = 35;
-	} else if (max_gddr_temp < 82) {
-		fan_speed2 =
-			(uint32_t)(0.04274f * (max_gddr_temp - 43.0f) * (max_gddr_temp - 43.0f)) +
-			35;
+	/* GDDR Hysteresis: track peak temp since last decrease */
+	if (effective_gddr_temp < 0) {
+		effective_gddr_temp = max_gddr_temp;
+	} else {
+		if (max_gddr_temp > effective_gddr_temp) {
+			/* Rising temp, follow it immediately for safety. */
+			effective_gddr_temp = max_gddr_temp;
+		} else if (max_gddr_temp <= effective_gddr_temp - 5.0f) {
+			/* If temperature has dropped by 5 degrees or more (cumulatively), */
+			/* drop effective temp */
+			effective_gddr_temp = max_gddr_temp;
+		}
+	}
+
+	if (effective_gddr_temp < 45) {
+		fan_speed2 = 20;
+	} else if (effective_gddr_temp < 60) {
+		fan_speed2 = (uint32_t)(effective_gddr_temp - 25.0f);
+	} else if (effective_gddr_temp < 82) {
+		fan_speed2 = (uint32_t)(2.955f * effective_gddr_temp - 142.3f);
 	} else {
 		fan_speed2 = 100;
 	}
@@ -85,7 +103,8 @@ static void update_fan_speed(void)
 		alpha * telemetry_internal_data.asic_temperature + (1 - alpha) * max_asic_temp;
 
 	if (IS_ENABLED(CONFIG_TT_BH_ARC_FAN_CTRL_GDDR_TEMP)) {
-		max_gddr_temp = alpha * GetMaxGDDRTemp() + (1 - alpha) * max_gddr_temp;
+		max_gddr_temp = alpha * telemetry_internal_data.gddr_temps.max_temp +
+				(1 - alpha) * max_gddr_temp;
 	} else {
 		max_gddr_temp = 0;
 	}

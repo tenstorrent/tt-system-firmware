@@ -5,14 +5,17 @@
 		flash-dev = <&flashcontroller0>;
 	};
 
-	pll0: pll0
-	{
+	pll0: pll0 {
 		compatible = "tenstorrent,clock-control-emul";
 		status = "okay";
 	};
 
-	pll4: pll4
-	{
+	pll1: pll1 {
+		compatible = "tenstorrent,clock-control-emul";
+		status = "okay";
+	};
+
+	pll4: pll4 {
 		compatible = "tenstorrent,clock-control-emul";
 		status = "okay";
 	};
@@ -21,12 +24,19 @@
 		status = "okay";
 	};
 
-	pvt: pvt@80030700 {
-		compatible = "tenstorrent,bh-pvt";
-		reg = <0x80030700 0x4>;
+	pvt: pvt {
+		compatible = "tenstorrent,bh-pvt-emul";
 		num_pd = <16>;
 		num_vm = <8>;
 		num_ts = <8>;
+		pd-raw = <15300>;
+		vm-raw = <11795>;
+		ts-raw = <1142>;
+		status = "okay";
+	};
+
+	efuse: efuse {
+		compatible = "tenstorrent,bh-efuse-emul";
 		status = "okay";
 	};
 

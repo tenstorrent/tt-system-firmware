@@ -115,18 +115,14 @@ After the build completes successfully, run these commands to deploy and connect
 
 .. code-block:: shell
 
-    # Build the TT console utility (for board communication)
-    make -j -C scripts/tooling OUTDIR=/tmp tt-console
-
     # Flash the firmware to your board
     west flash -r tt_flash --force
 
-    # Reset the board and refresh PCIe connectivity
-    tt-smi -r
-    ./scripts/rescan-pcie.sh
+    # Build the TT firmware terminal utility (for board communication)
+    make -j -C scripts/tooling OUTDIR=/tmp tt-fw-terminal
 
     # Connect to the board console
-    /tmp/tt-console
+    /tmp/tt-fw-terminal
 
 .. tip::
    The ``--sysbuild`` option automatically builds both SMC and DMC firmware together, which is the recommended approach for most users.

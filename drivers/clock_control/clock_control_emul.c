@@ -109,7 +109,7 @@ static enum clock_control_status clock_control_emul_get_status(const struct devi
 	return data->clock_enabled[subsys_id] ? CLOCK_CONTROL_STATUS_ON : CLOCK_CONTROL_STATUS_OFF;
 }
 
-static const struct clock_control_driver_api clock_control_emul_api = {
+static DEVICE_API(clock_control, clock_control_emul_api) = {
 	.on = clock_control_emul_on,
 	.off = clock_control_emul_off,
 	.get_rate = clock_control_emul_get_rate,

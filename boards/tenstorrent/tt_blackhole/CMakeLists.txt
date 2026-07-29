@@ -26,6 +26,7 @@ set(OUTPUT_DIR ${ZEPHYR_BINARY_DIR}/python_proto_files)
 file(MAKE_DIRECTORY ${OUTPUT_DIR})
 set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
   COMMAND ${PROTOC} --python_out=${OUTPUT_DIR} ${SPIROM_PROTOBUFS}/fw_table.proto -I ${SPIROM_PROTOBUFS}
+  COMMAND ${PROTOC} --python_out=${OUTPUT_DIR} ${SPIROM_PROTOBUFS}/fw_table_override.proto -I ${SPIROM_PROTOBUFS}
   COMMAND ${PROTOC} --python_out=${OUTPUT_DIR} ${SPIROM_PROTOBUFS}/read_only.proto -I ${SPIROM_PROTOBUFS}
   COMMAND ${PROTOC} --python_out=${OUTPUT_DIR} ${SPIROM_PROTOBUFS}/flash_info.proto -I ${SPIROM_PROTOBUFS}
 )

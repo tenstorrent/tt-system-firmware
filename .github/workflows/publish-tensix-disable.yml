@@ -18,15 +18,12 @@ jobs:
   gen-config:
     runs-on: ubuntu-24.04
     outputs:
-      matrix-config: ${{ steps.gen-config.outputs.matrix-config }}
+      matrix-config: ${{ steps.gen.outputs.matrix-config }}
     steps:
       - uses: actions/checkout@v4
-      - id: gen-config
-        shell: bash
+      - id: gen
         run: |
-          # Filter to only P150 boards (board == "p150a"), then remove the product field
-          MATRIX_CONFIG="$(jq -c '[.[] | select(.board == "p150a") | del(.product)]' .github/ci_boards.json)"
-          echo "matrix-config=$MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
+          echo "matrix-config=$(jq -c '[.bh[] | select(.board == "p150a")]' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
   build_package:
     name: Build tt-update-tensix-disable_count package
@@ -66,9 +63,9 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
-    runs-on: ${{ matrix.config.runs-on }}
+    runs-on: ${{ matrix.config.board }}
     container:
-      image: ghcr.io/tenstorrent/tt-zephyr-platforms/ci-image:v18.12.0-rc1
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/

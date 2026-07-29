@@ -1,4 +1,5 @@
-# SPDX-License-Identifier: Apache-2.0
+#  Copyright (c) 2026 Tenstorrent AI ULC
+#  SPDX-License-Identifier: Apache-2.0
 
 add_subdirectory(misc)
 
@@ -11,6 +12,7 @@ add_subdirectory_ifdef(CONFIG_GPIO gpio)
 add_subdirectory_ifdef(CONFIG_JTAG jtag)
 add_subdirectory_ifdef(CONFIG_MBOX mbox)
 add_subdirectory_ifdef(CONFIG_MFD mfd)
+add_subdirectory_ifdef(CONFIG_PLDM pmci)
 add_subdirectory_ifdef(CONFIG_PWM pwm)
 add_subdirectory_ifdef(CONFIG_RESET reset)
 add_subdirectory_ifdef(CONFIG_SENSOR sensor)

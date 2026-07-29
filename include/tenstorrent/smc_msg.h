@@ -136,6 +136,9 @@ enum tt_smc_msg {
 	/** @brief @ref toggle_tensix_reset_rqst "Toggle Tensix reset request" */
 	TT_SMC_MSG_TOGGLE_TENSIX_RESET = 0xAF,
 
+	/** @brief @ref eth_tile_reset_rqst "Toggle ETH tile reset request" */
+	TT_SMC_MSG_TOGGLE_ETH_RESET = 0xB0,
+
 	/** @brief @ref gddr_reset_rqst "Toggle GDDR reset request" */
 	TT_SMC_MSG_TOGGLE_GDDR_RESET = 0xB6,
 
@@ -162,12 +165,19 @@ enum tt_smc_msg {
 
 	/** @brief @ref characterisation_rqst "Generic characterization message" */
 	TT_SMC_MSG_CHARACTERISATION = 0xC6,
+
+	/** @brief @ref tt_pcie_log_rqst "FW logging setup/release request" */
+	TT_SMC_MSG_TT_PCIE_LOG = 0xC7,
 };
 
 /** @brief Enumeration of characterization submessage IDs */
 enum char_submsg_ids {
 	/** @brief Set host-requested minimum frequency (AICLK) */
 	TT_SUB_MSG_SET_HOST_REQUESTED_FMIN = 0x1,
+	/** @brief Enable/disable kernel throttler at AICLK floor */
+	TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED = 0x2,
+	/** @brief Set frequency limit for stopping kernel throttler */
+	TT_SUB_MSG_SET_KERNEL_THROTTLER_STOP_NOPS_FREQ = 0x3,
 };
 
 /** @} */

@@ -7,6 +7,7 @@
 import os
 import sys
 import argparse
+import zlib
 from typing import Optional
 from google.protobuf import text_format
 from tt_boot_fs import cksum
@@ -50,6 +51,24 @@ def write_bin_to_file(in_folder, out_folder, bin_file_name, encoded_data):
     with open(f"{out_folder}/{in_folder}/{bin_file_name}", "wb") as f:
         f.write(encoded_data)
     return f"{out_folder}/{in_folder}/{bin_file_name}"
+
+
+CCFGOVR_MAGIC = 0x564F4343
+CCFGOVR_HDR_VERSION = 0
+
+
+def build_empty_ccfgovr_bin() -> bytes:
+    seq = 0
+    body_len = 0
+    body = b""
+    header_no_cksum = (
+        CCFGOVR_MAGIC.to_bytes(4, "little")
+        + seq.to_bytes(4, "little")
+        + body_len.to_bytes(4, "little")
+        + CCFGOVR_HDR_VERSION.to_bytes(4, "little")
+    )
+    crc = zlib.crc32(header_no_cksum + body)
+    return header_no_cksum + crc.to_bytes(4, "little") + body
 
 
 # Override is a set of key, value pairs used to override normal text fields...
@@ -171,6 +190,11 @@ def main():
         read_only_pb2.ReadOnly,
         False,
     )
+
+    ccfgovr_path = write_bin_to_file(
+        args.board, args.output, "ccfgovr.bin", build_empty_ccfgovr_bin()
+    )
+    print(f"CCFGOVR initial empty bank written to {ccfgovr_path}")
 
 
 if __name__ == "__main__":

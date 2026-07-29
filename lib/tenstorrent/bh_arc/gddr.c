@@ -12,6 +12,9 @@
 #include "noc_init.h"
 #include "noc2axi.h"
 #include "reg.h"
+#include "status_reg.h"
+
+#include <stddef.h>
 
 #include <tenstorrent/bh_power.h>
 #include <tenstorrent/msgqueue.h>
@@ -39,8 +42,18 @@ static const struct device *const arc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELAB
 #endif
 static const struct device *dma_noc = DEVICE_DT_GET(DT_NODELABEL(dma1));
 
-/* This is the noc2axi instance we want to run the MRISC FW on */
+/* This is the default noc2axi instance we want to run the MRISC FW on */
 #define MRISC_FW_NOC2AXI_PORT 0
+
+/*
+ * gddr0 runs its MRISC FW on noc2axi port 2 (NoC 0-11) instead of the default
+ * port 0 (NoC 0-0); all other GDDR instances stay on the default port.
+ */
+uint8_t get_gddr_mrisc_noc2axi_port(uint8_t gddr_inst)
+{
+	return (gddr_inst == 0) ? 2 : MRISC_FW_NOC2AXI_PORT;
+}
+
 #define MRISC_SETUP_TLB       13
 #define MRISC_L1_ADDR         (1ULL << 37)
 #define MRISC_REG_ADDR        (1ULL << 40)
@@ -57,6 +70,7 @@ LOG_MODULE_REGISTER(gddr, CONFIG_TT_APP_LOG_LEVEL);
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static struct gddr_bist_info gddr_bist;
+static uint8_t gddr_telemetry_version_ok;
 
 struct gddr_bist_info get_gddr_bist_info(void)
 {
@@ -70,11 +84,16 @@ static uint32_t GetGddrSpeedFromCfg(uint8_t *fw_cfg_image)
 	return fw_cfg_dw[1];
 }
 
+static void GetGddrMriscNocCoords(uint8_t gddr_inst, uint8_t noc_id, uint8_t *x, uint8_t *y)
+{
+	GetGddrNocCoords(gddr_inst, get_gddr_mrisc_noc2axi_port(gddr_inst), noc_id, x, y);
+}
+
 static volatile void *SetupMriscL1Tlb(uint8_t gddr_inst)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	return GetTlbWindowAddr(0, MRISC_SETUP_TLB, MRISC_L1_ADDR);
 }
@@ -83,7 +102,7 @@ static uint32_t MriscL1Read32(uint8_t gddr_inst, uint32_t addr)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	return NOC2AXIRead32(0, MRISC_SETUP_TLB, MRISC_L1_ADDR + addr);
 }
@@ -92,7 +111,7 @@ static void MriscL1Write32(uint8_t gddr_inst, uint32_t addr, uint32_t val)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_L1_ADDR);
 	NOC2AXIWrite32(0, MRISC_SETUP_TLB, MRISC_L1_ADDR + addr, val);
 }
@@ -101,7 +120,7 @@ static uint32_t MriscRegRead32(uint8_t gddr_inst, uint32_t addr)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_REG_ADDR + addr);
 	return NOC2AXIRead32(0, MRISC_SETUP_TLB, MRISC_REG_ADDR + addr);
 }
@@ -110,7 +129,7 @@ static void MriscRegWrite32(uint8_t gddr_inst, uint32_t addr, uint32_t val)
 {
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, MRISC_REG_ADDR + addr);
 	NOC2AXIWrite32(0, MRISC_SETUP_TLB, MRISC_REG_ADDR + addr, val);
 }
@@ -148,7 +167,7 @@ static void ReleaseMriscReset(uint8_t gddr_inst)
 	const uint32_t kSoftReset0Addr = 0xFFB121B0;
 	uint8_t x, y;
 
-	GetGddrNocCoords(gddr_inst, MRISC_FW_NOC2AXI_PORT, 0, &x, &y);
+	GetGddrMriscNocCoords(gddr_inst, 0, &x, &y);
 	NOC2AXITlbSetup(0, MRISC_SETUP_TLB, x, y, kSoftReset0Addr);
 
 	volatile uint32_t *soft_reset_0 = GetTlbWindowAddr(0, MRISC_SETUP_TLB, kSoftReset0Addr);
@@ -220,6 +239,57 @@ static uint32_t GetDramMask(void)
 		dram_mask &= tt_bh_fwtable_get_fw_table(fwtable_dev)->dram_table.dram_mask;
 	}
 	return dram_mask;
+}
+
+/* Read the top and bottom DRAM die temperatures (degrees Celsius) for a single GDDR instance. */
+static int read_gddr_temperature(uint8_t gddr_inst, struct gddr_inst_temp *temp)
+{
+	if (gddr_inst >= NUM_GDDR || temp == NULL) {
+		return -EINVAL;
+	}
+	if (!IS_BIT_SET(gddr_telemetry_version_ok, gddr_inst)) {
+		return -ENOTSUP;
+	}
+	/* dram_temperature_top and dram_temperature_bottom are adjacent uint16_t fields that */
+	/* share a single 32-bit word: [15:0] = top, [31:16] = bottom */
+	uint32_t temps = MriscL1Read32(
+		gddr_inst,
+		GDDR_TELEMETRY_TABLE_ADDR + offsetof(gddr_telemetry_table_t, dram_temperature_top));
+	temp->top = temps & 0xff;
+	temp->bottom = (temps >> 16) & 0xff;
+	return 0;
+}
+
+int get_gddr_temps(struct gddr_temps *temps)
+{
+	if (temps == NULL) {
+		return -EINVAL;
+	}
+
+	*temps = (struct gddr_temps){0};
+	uint32_t dram_mask = GetDramMask();
+
+	int ret = 0;
+
+	for (int i = 0; i < NUM_GDDR; i++) {
+		if (!IS_BIT_SET(dram_mask, i)) {
+			continue;
+		}
+
+		int rc = read_gddr_temperature(i, &temps->inst[i]);
+
+		if (rc < 0) {
+			LOG_WRN_ONCE("Failed to read GDDR %d temperature while updating telemetry",
+				     i);
+			ret = rc;
+			continue;
+		}
+
+		temps->max_temp =
+			MAX(temps->max_temp, MAX(temps->inst[i].top, temps->inst[i].bottom));
+	}
+
+	return ret;
 }
 
 static int check_mrisc_busy(uint8_t gddr_inst)
@@ -322,38 +392,31 @@ static void wipe_l1(void)
 
 	GetEnabledTensix(&tensix_x, &tensix_y);
 
-	struct tt_bh_dma_noc_coords coords = tt_bh_dma_noc_coords_init(tensix_x, tensix_y, 0, 0);
-
 	struct dma_block_config block = {
 		.source_address = addr,
 		.dest_address = addr,
 		.block_size = MRISC_L1_SIZE,
 	};
 
-	struct dma_config config = {
-		.channel_direction = PERIPHERAL_TO_MEMORY,
-		.source_data_size = 1,
-		.dest_data_size = 1,
-		.source_burst_length = 1,
-		.dest_burst_length = 1,
-		.block_count = 1,
-		.head_block = &block,
-		.user_data = &coords,
-	};
+	struct dma_config config = {.channel_direction = PERIPHERAL_TO_MEMORY,
+				    .source_data_size = 1,
+				    .dest_data_size = 1,
+				    .source_burst_length = 1,
+				    .dest_burst_length = 1,
+				    .block_count = 1,
+				    .head_block = &block};
+
+	struct tt_bh_dma_noc_coords coords = {.source_x = tensix_x, .source_y = tensix_y};
 
 	for (uint32_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
 		if (IS_BIT_SET(dram_mask, gddr_inst)) {
 			for (uint32_t noc2axi_port = 0; noc2axi_port < NUM_MRISC_NOC2AXI_PORT;
 			     noc2axi_port++) {
-				uint8_t x, y;
-
-				GetGddrNocCoords(gddr_inst, noc2axi_port, noc_id, &x, &y);
-
-				coords.dest_x = x;
-				coords.dest_y = y;
+				GetGddrNocCoords(gddr_inst, noc2axi_port, noc_id, &coords.dest_x,
+						 &coords.dest_y);
 
 				/* AXI enable must not be set, using MRISC address 0 */
-				dma_config(dma_noc, 1, &config);
+				tt_dma_config(dma_noc, 1, &config, &coords);
 				dma_start(dma_noc, 1);
 			}
 		}
@@ -380,7 +443,8 @@ static int InitMrisc(void)
 	/* Load MRISC (DRAM RISC) FW to all DRAMs in the middle NOC node */
 
 	for (uint8_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
-		for (uint8_t noc2axi_port = 0; noc2axi_port < 3; noc2axi_port++) {
+		for (uint8_t noc2axi_port = 0; noc2axi_port < NUM_MRISC_NOC2AXI_PORT;
+		     noc2axi_port++) {
 			SetAxiEnable(gddr_inst, noc2axi_port, true);
 		}
 	}
@@ -397,6 +461,7 @@ static int InitMrisc(void)
 	rc = tt_boot_fs_find_fd_by_tag(flash, MRISC_FW_TAG, &tag_fd);
 	if (rc < 0) {
 		LOG_ERR("%s (%s) failed: %d", "tt_boot_fs_find_fd_by_tag", MRISC_FW_TAG, rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 	image_size = tag_fd.flags.f.image_size;
@@ -406,6 +471,7 @@ static int InitMrisc(void)
 		if (IS_BIT_SET(dram_mask, gddr_inst)) {
 			if (LoadMriscFw(gddr_inst, buf, SCRATCHPAD_SIZE, spi_address, image_size)) {
 				LOG_ERR("%s(%d) failed: %d", "LoadMriscFw", gddr_inst, -EIO);
+				record_init_failure(INIT_STAGE_MRISC_LOAD);
 				return -EIO;
 			}
 		}
@@ -414,6 +480,7 @@ static int InitMrisc(void)
 	rc = tt_boot_fs_find_fd_by_tag(flash, MRISC_FW_CFG_TAG, &tag_fd);
 	if (rc < 0) {
 		LOG_ERR("%s (%s) failed: %d", "tt_boot_fs_find_fd_by_tag", MRISC_FW_CFG_TAG, rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 	image_size = tag_fd.flags.f.image_size;
@@ -427,6 +494,7 @@ static int InitMrisc(void)
 	rc = flash_read(flash, spi_address, buf, image_size);
 	if (rc < 0) {
 		LOG_ERR("%s() failed: %d", "flash_read", rc);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return rc;
 	}
 
@@ -441,6 +509,7 @@ static int InitMrisc(void)
 		    pll_dev_3, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_GDDRMEMCLK,
 		    (clock_control_subsys_rate_t)(gddr_speed / GDDR_SPEED_TO_MEMCLK_RATIO))) {
 		LOG_ERR("%s(%d) failed: %d", "SetGddrMemClk", gddr_speed, -EIO);
+		record_init_failure(INIT_STAGE_MRISC_LOAD);
 		return -EIO;
 	}
 
@@ -449,6 +518,7 @@ static int InitMrisc(void)
 			if (LoadMriscFwCfg(gddr_inst, buf, SCRATCHPAD_SIZE, spi_address,
 					   image_size)) {
 				LOG_ERR("%s(%d) failed: %d", "LoadMriscFwCfg", gddr_inst, -EIO);
+				record_init_failure(INIT_STAGE_MRISC_LOAD);
 				return -EIO;
 			}
 			MriscRegWrite32(gddr_inst, MRISC_INIT_STATUS, MRISC_INIT_BEFORE);
@@ -462,10 +532,24 @@ SYS_INIT_APP(InitMrisc);
 
 static int CheckGddrTraining(uint8_t gddr_inst, k_timepoint_t timeout)
 {
+	gddr_telemetry_version_ok &= ~BIT(gddr_inst);
+
 	do {
 		uint32_t poll_val = MriscRegRead32(gddr_inst, MRISC_INIT_STATUS);
 
 		if (poll_val == MRISC_INIT_FINISHED) {
+			uint32_t version =
+				MriscL1Read32(gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
+								 offsetof(gddr_telemetry_table_t,
+									  telemetry_table_version));
+
+			if (version != GDDR_TELEMETRY_TABLE_T_VERSION) {
+				LOG_ERR("%s[%d]: version mismatch: %d (expected %d)",
+					"GDDR telemetry table", gddr_inst, version,
+					GDDR_TELEMETRY_TABLE_T_VERSION);
+				return -ENOTSUP;
+			}
+			gddr_telemetry_version_ok |= BIT(gddr_inst);
 			return 0;
 		}
 		if (poll_val == MRISC_INIT_FAILED) {
@@ -562,8 +646,11 @@ static int gddr_training(void)
 		/* this is needed to securely wipe DRAM */
 		if (CheckGddrHwTest() < 0) {
 			LOG_ERR("GDDR HW test failed");
+			record_init_failure(INIT_STAGE_GDDR_TRAIN);
 			return -EIO;
 		}
+	} else {
+		record_init_failure(INIT_STAGE_GDDR_TRAIN);
 	}
 
 	return 0;

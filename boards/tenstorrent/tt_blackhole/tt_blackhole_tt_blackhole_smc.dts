@@ -26,6 +26,49 @@
 	aliases {
 		dmc-vuart = &vuart2;
 	};
+
+	pinctrl: pinctrl {
+		compatible = "tenstorrent,bh-pinctrl";
+
+		i2c0_scl_default: i2c0_scl_default {
+			/* pin 0, AF1 */
+			pinmux = <0 1>;
+			drive-strength = <127>;
+			input-enable;
+		};
+
+		i2c0_sda_default: i2c0_sda_default {
+			/* pin 1, AF1 */
+			pinmux = <1 1>;
+			drive-strength = <127>;
+			input-enable;
+		};
+
+		spi0_sclk_default: spi0_sclk_default {
+			/* Placeholder SPI SCLK pin state; BH pinctrl backend no-ops for SPI */
+			pinmux = <2 0>;
+			drive-strength = <127>;
+		};
+
+		spi0_cs0_default: spi0_cs0_default {
+			/* Placeholder SPI CS0 pin state; BH pinctrl backend no-ops for SPI */
+			pinmux = <3 0>;
+			drive-strength = <127>;
+		};
+
+		spi0_mosi_default: spi0_mosi_default {
+			/* Placeholder SPI MOSI pin state; BH pinctrl backend no-ops for SPI */
+			pinmux = <4 0>;
+			drive-strength = <127>;
+		};
+
+		spi0_miso_default: spi0_miso_default {
+			/* Placeholder SPI MISO pin state; BH pinctrl backend no-ops for SPI */
+			pinmux = <5 0>;
+			drive-strength = <127>;
+			input-enable;
+		};
+	};
 };
 
 &dma1 {
@@ -38,6 +81,8 @@
 
 &spi0 {
 	status = "okay";
+	pinctrl-0 = <&spi0_sclk_default &spi0_cs0_default &spi0_mosi_default &spi0_miso_default>;
+	pinctrl-names = "default";
 
 	spi_flash: eeprom@0 {
 		compatible = "jedec,mspi-nor";
@@ -55,9 +100,9 @@
 		use-4byte-addressing;
 		mspi-endian = "MSPI_BIG_ENDIAN";
 		quad-enable-requirements = "NONE";
-		read-command = <0xEC>;
+		read-command = <0xec>;
 		rx-dummy = <10>;
-		write-command = <0x3E>;
+		write-command = <0x3e>;
 
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -79,6 +124,8 @@
 
 &i2c0 {
 	status = "okay";
+	pinctrl-0 = <&i2c0_scl_default &i2c0_sda_default>;
+	pinctrl-names = "default";
 
 	smbus_target0: smbus@a {
 		status = "okay";
@@ -191,6 +238,15 @@
 	status = "okay";
 };
 
+/ {
+	efuse: efuse@80040000 {
+		compatible = "tenstorrent,bh-efuse";
+		reg = <0x80040000 0x8000>, <0x80048000 0x8000>;
+		reg-names = "mem", "cntl";
+		status = "okay";
+	};
+};
+
 &nv_flash {
-	#include "tt_blackhole_fixed_partitions.dtsi"
+#include "tt_blackhole_fixed_partitions.dtsi"
 };

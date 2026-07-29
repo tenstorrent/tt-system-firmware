@@ -24,30 +24,18 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		timebase-frequency = <1000000>;
+
 		cpu@0 {
 			clock-frequency = <0>;
 			compatible = "sifive,rocket0", "riscv";
-			d-cache-block-size = <64>;
-			d-cache-sets = <32>;
-			d-cache-size = <4096>;
-			d-tlb-sets = <1>;
-			d-tlb-size = <32>;
 			device_type = "cpu";
-			hardware-exec-breakpoint-count = <16>;
-			i-cache-block-size = <64>;
-			i-cache-sets = <32>;
-			i-cache-size = <4096>;
-			i-tlb-sets = <1>;
-			i-tlb-size = <32>;
-			mmu-type = "riscv,sv57";
-			next-level-cache = <&ram0 &rom>;
+			mmu-type = "riscv,sv48";
 			reg = <0x0>;
-			riscv,isa = "rv64imafdczicond_zicsr_zifencei_zihpm_xrocket";
-			riscv,pmpgranularity = <4>;
-			riscv,pmpregions = <8>;
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "m", "a", "f", "d", "c", "zicond", "zicsr",
+					       "zifencei", "zihpm", "xrocket";
 			status = "okay";
-			timebase-frequency = <1000000>;
-			tlb-split;
+
 			cpu0_intc: interrupt-controller {
 				#address-cells = <0>;
 				#interrupt-cells = <1>;
@@ -55,30 +43,18 @@
 				interrupt-controller;
 			};
 		};
+
 		cpu@1 {
 			clock-frequency = <0>;
 			compatible = "sifive,rocket0", "riscv";
-			d-cache-block-size = <64>;
-			d-cache-sets = <32>;
-			d-cache-size = <4096>;
-			d-tlb-sets = <1>;
-			d-tlb-size = <32>;
 			device_type = "cpu";
-			hardware-exec-breakpoint-count = <16>;
-			i-cache-block-size = <64>;
-			i-cache-sets = <32>;
-			i-cache-size = <4096>;
-			i-tlb-sets = <1>;
-			i-tlb-size = <32>;
-			mmu-type = "riscv,sv57";
-			next-level-cache = <&ram0 &rom>;
-			reg = <0x1>;
-			riscv,isa = "rv64imafdczicond_zicsr_zifencei_zihpm_xrocket";
-			riscv,pmpgranularity = <4>;
-			riscv,pmpregions = <8>;
+			mmu-type = "riscv,sv48";
+			reg = <0x0>;
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "m", "a", "f", "d", "c", "zicond", "zicsr",
+					       "zifencei", "zihpm", "xrocket";
 			status = "okay";
-			timebase-frequency = <1000000>;
-			tlb-split;
+
 			cpu1_intc: interrupt-controller {
 				#address-cells = <0>;
 				#interrupt-cells = <1>;
@@ -86,30 +62,18 @@
 				interrupt-controller;
 			};
 		};
+
 		cpu@2 {
 			clock-frequency = <0>;
 			compatible = "sifive,rocket0", "riscv";
-			d-cache-block-size = <64>;
-			d-cache-sets = <32>;
-			d-cache-size = <4096>;
-			d-tlb-sets = <1>;
-			d-tlb-size = <32>;
 			device_type = "cpu";
-			hardware-exec-breakpoint-count = <16>;
-			i-cache-block-size = <64>;
-			i-cache-sets = <32>;
-			i-cache-size = <4096>;
-			i-tlb-sets = <1>;
-			i-tlb-size = <32>;
-			mmu-type = "riscv,sv57";
-			next-level-cache = <&ram0 &rom>;
-			reg = <0x2>;
-			riscv,isa = "rv64imafdczicond_zicsr_zifencei_zihpm_xrocket";
-			riscv,pmpgranularity = <4>;
-			riscv,pmpregions = <8>;
+			mmu-type = "riscv,sv48";
+			reg = <0x0>;
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "m", "a", "f", "d", "c", "zicond", "zicsr",
+					       "zifencei", "zihpm", "xrocket";
 			status = "okay";
-			timebase-frequency = <1000000>;
-			tlb-split;
+
 			cpu2_intc: interrupt-controller {
 				#address-cells = <0>;
 				#interrupt-cells = <1>;
@@ -117,30 +81,18 @@
 				interrupt-controller;
 			};
 		};
+
 		cpu@3 {
 			clock-frequency = <0>;
 			compatible = "sifive,rocket0", "riscv";
-			d-cache-block-size = <64>;
-			d-cache-sets = <32>;
-			d-cache-size = <4096>;
-			d-tlb-sets = <1>;
-			d-tlb-size = <32>;
 			device_type = "cpu";
-			hardware-exec-breakpoint-count = <16>;
-			i-cache-block-size = <64>;
-			i-cache-sets = <32>;
-			i-cache-size = <4096>;
-			i-tlb-sets = <1>;
-			i-tlb-size = <32>;
-			mmu-type = "riscv,sv57";
-			next-level-cache = <&ram0 &rom>;
-			reg = <0x3>;
-			riscv,isa = "rv64imafdczicond_zicsr_zifencei_zihpm_xrocket";
-			riscv,pmpgranularity = <4>;
-			riscv,pmpregions = <8>;
+			mmu-type = "riscv,sv48";
+			reg = <0x0>;
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "m", "a", "f", "d", "c", "zicond", "zicsr",
+					       "zifencei", "zihpm", "xrocket";
 			status = "okay";
-			timebase-frequency = <1000000>;
-			tlb-split;
+
 			cpu3_intc: interrupt-controller {
 				#address-cells = <0>;
 				#interrupt-cells = <1>;
@@ -149,24 +101,28 @@
 			};
 		};
 	};
+
 	/* note: ram0-ram7 are separated into 128KB regions */
 	ram0: memory@c0060000 {
 		device_type = "memory";
 		reg = <0x0 0xc0060000 0x0 0x100000>;
 	};
+
 	soc {
 		#address-cells = <2>;
 		#size-cells = <2>;
 		compatible = "tenstorrent,rocket0-soc", "simple-bus";
 		ranges;
+
 		clint: clint@c8000000 {
 			compatible = "sifive,clint0";
 			interrupts-extended = <&cpu0_intc 3 &cpu0_intc 7 &cpu1_intc 3
-					&cpu1_intc 7 &cpu2_intc 3 &cpu2_intc 7
-					&cpu3_intc 3 &cpu3_intc 7>;
+					       &cpu1_intc 7 &cpu2_intc 3 &cpu2_intc 7
+					       &cpu3_intc 3 &cpu3_intc 7>;
 			reg = <0x0 0xc8000000 0x0 0x10000>;
 			reg-names = "control";
 		};
+
 		uart0: uart@c000a000 {
 			compatible = "ns16550";
 			reg-shift = <2>;
@@ -175,6 +131,7 @@
 			reg = <0x0 0xc000a000 0x0 0x1000>;
 			status = "disabled";
 		};
+
 		uart1: uart@c000a400 {
 			compatible = "ns16550";
 			reg-shift = <2>;
@@ -183,6 +140,7 @@
 			reg = <0x0 0xc000a400 0x0 0x1000>;
 			status = "disabled";
 		};
+
 		uart2: uart@c000a800 {
 			compatible = "ns16550";
 			reg-shift = <2>;
@@ -191,6 +149,7 @@
 			reg = <0x0 0xc000a800 0x0 0x1000>;
 			status = "disabled";
 		};
+
 		uart3: uart@c000ac00 {
 			compatible = "ns16550";
 			reg-shift = <2>;
@@ -199,6 +158,7 @@
 			reg = <0x0 0xc000ac00 0x0 0x1000>;
 			status = "disabled";
 		};
+
 		/* Split GPIO across 3 banks- we have 72 gpio in total */
 		/* GPIO bank 0: GPIO 0-31 */
 		gpio0: gpio@c0004000 {
@@ -208,6 +168,7 @@
 			#gpio-cells = <2>;
 			ngpios = <32>;
 		};
+
 		/* GPIO bank 1: GPIO 32-63 */
 		gpio1: gpio@c0004200 {
 			compatible = "tenstorrent,grendel-gpio";
@@ -216,6 +177,7 @@
 			#gpio-cells = <2>;
 			ngpios = <32>;
 		};
+
 		/* GPIO bank 2: GPIO 64-71 */
 		gpio2: gpio@c0004400 {
 			compatible = "tenstorrent,grendel-gpio";
@@ -224,6 +186,7 @@
 			#gpio-cells = <2>;
 			ngpios = <8>;
 		};
+
 		i3c0: i3c@c0005000 {
 			compatible = "cdns,i3c";
 			interrupts = <141 1>;
@@ -233,6 +196,7 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		i3c1: i3c@c0005400 {
 			compatible = "cdns,i3c";
 			interrupts = <142 1>;
@@ -242,6 +206,7 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		i3c2: i3c@c0005800 {
 			compatible = "cdns,i3c";
 			interrupts = <143 1>;
@@ -251,6 +216,7 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		i3c3: i3c@c0005c00 {
 			compatible = "cdns,i3c";
 			interrupts = <144 1>;
@@ -260,6 +226,7 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		i3c4: i3c@c0006000 {
 			compatible = "cdns,i3c";
 			interrupts = <145 1>;
@@ -269,6 +236,7 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		i3c5: i3c@c0006400 {
 			compatible = "cdns,i3c";
 			interrupts = <146 1>;
@@ -278,26 +246,29 @@
 			#size-cells = <0>;
 			status = "disabled";
 		};
+
 		mtimer: timer@c800bff8 {
 			compatible = "riscv,machine-timer";
 			interrupts-extended = <&cpu0_intc 7 &cpu0_intc 7>;
 			reg = <0x0 0xc800bff8 0x0 0x8 0x0 0xc8004000 0x0 0x8>;
 			reg-names = "mtime", "mtimecmp";
 		};
+
 		plic: interrupt-controller@c4000000 {
 			#address-cells = <0>;
 			#interrupt-cells = <2>;
 			compatible = "sifive,plic-1.0.0";
 			interrupt-controller;
 			interrupts-extended = <&cpu0_intc 11 &cpu0_intc 9
-						&cpu1_intc 11 &cpu1_intc 9
-						&cpu2_intc 11 &cpu2_intc 9
-						&cpu3_intc 11 &cpu3_intc 9>;
+					       &cpu1_intc 11 &cpu1_intc 9
+					       &cpu2_intc 11 &cpu2_intc 9
+					       &cpu3_intc 11 &cpu3_intc 9>;
 			reg = <0x0 0xc4000000 0x0 0x4000000>;
 			reg-names = "control";
 			riscv,max-priority = <7>;
 			riscv,ndev = <198>;
 		};
+
 		dma0: dma@c0038000 {
 			compatible = "tenstorrent,grendel-smc-dma";
 			reg = <0x0 0xc0038000 0x0 0x138>;
@@ -305,11 +276,13 @@
 			#dma-cells = <1>;
 			status = "okay";
 		};
+
 		rom: rom@c0040000 {
 			compatible = "sifive,rom0";
 			reg = <0x0 0xc0040000 0x0 0x8000>;
 			reg-names = "mem";
 		};
+
 		wdt0: wdt@c0000000 {
 			clocks = <&pclk>;
 			compatible = "sifive,wdt";
@@ -318,6 +291,7 @@
 			reg = <0x0 0xc0000000 0x0 0x400>;
 			reg-names = "control";
 		};
+
 		wdt1: wdt@c0000400 {
 			clocks = <&pclk>;
 			compatible = "sifive,wdt";
@@ -326,6 +300,7 @@
 			reg = <0x0 0xc0000400 0x0 0x400>;
 			reg-names = "control";
 		};
+
 		wdt2: wdt@c0000800 {
 			clocks = <&pclk>;
 			compatible = "sifive,wdt";
@@ -334,6 +309,7 @@
 			reg = <0x0 0xc0000800 0x0 0x400>;
 			reg-names = "control";
 		};
+
 		wdt3: wdt@c0000c00 {
 			clocks = <&pclk>;
 			compatible = "sifive,wdt";
@@ -342,16 +318,17 @@
 			reg = <0x0 0xc0000c00 0x0 0x400>;
 			reg-names = "control";
 		};
+
 		mbox0: mbox@c0018000 {
 			compatible = "tenstorrent,grendel-mbox";
 			reg = <0x0 0xc0018000 0x0 0x20000>;
 			interrupts = <157 1>, <158 1>, <159 1>, <160 1>, <161 1>,
-				<162 1>, <163 1>, <164 1>, <165 1>, <166 1>,
-				<167 1>, <168 1>, <169 1>, <170 1>, <171 1>,
-				<172 1>, <173 1>, <174 1>, <175 1>, <176 1>,
-				<177 1>, <178 1>, <179 1>, <180 1>, <181 1>,
-				<182 1>, <183 1>, <184 1>, <185 1>, <186 1>,
-				<187 1>, <188 1>;
+				     <162 1>, <163 1>, <164 1>, <165 1>, <166 1>,
+				     <167 1>, <168 1>, <169 1>, <170 1>, <171 1>,
+				     <172 1>, <173 1>, <174 1>, <175 1>, <176 1>,
+				     <177 1>, <178 1>, <179 1>, <180 1>, <181 1>,
+				     <182 1>, <183 1>, <184 1>, <185 1>, <186 1>,
+				     <187 1>, <188 1>;
 			interrupt-parent = <&plic>;
 			channel-pairs = <32>;
 			#mbox-cells = <1>;

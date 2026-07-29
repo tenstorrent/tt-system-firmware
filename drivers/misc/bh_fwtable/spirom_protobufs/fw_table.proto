@@ -36,6 +36,7 @@ message FwTable {
     uint32 board_power_limit = 14;
     uint32 additional_board_power = 15;
     uint32 max_tdp_limit = 16;
+    uint32 kernel_throttler_stop_nops_freq = 17;
   }
 
   message FeatureEnable {
@@ -48,6 +49,7 @@ message FwTable {
     bool harvesting_en = 7;
     bool fan_ctrl_en = 8;
     bool doppler_en = 9;
+    bool kernel_throttler_at_floor_en = 10;
   }
 
   message FanTable{

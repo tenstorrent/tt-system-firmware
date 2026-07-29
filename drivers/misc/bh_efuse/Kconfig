@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_BH_EFUSE
+	bool "Tenstorrent Blackhole eFuse driver"
+	default y
+	depends on DT_HAS_TENSTORRENT_BH_EFUSE_ENABLED || DT_HAS_TENSTORRENT_BH_EFUSE_EMUL_ENABLED
+	help
+	  Enable the Tenstorrent Blackhole eFuse driver API.
+
+if TT_BH_EFUSE
+
+config TT_BH_EFUSE_INIT_PRIORITY
+	int "Tenstorrent Blackhole eFuse init priority"
+	default 80
+	help
+	  Set initialization priority for the eFuse driver.
+
+config TT_BH_EFUSE_EMUL
+	bool "Tenstorrent Blackhole eFuse emulation backend"
+	default y
+	depends on DT_HAS_TENSTORRENT_BH_EFUSE_EMUL_ENABLED
+	help
+	  Enable emulated eFuse backend where values are supplied by devicetree.
+
+module = TT_BH_EFUSE
+module-str = tt_bh_efuse
+source "subsys/logging/Kconfig.template.log_config"
+
+endif

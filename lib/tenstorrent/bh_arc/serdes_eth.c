@@ -29,25 +29,6 @@ static inline void SetupSerdesTlb(uint32_t serdes_inst, uint32_t ring, uint64_t 
 	NOC2AXITlbSetup(ring, SERDES_ETH_SETUP_TLB, x, y, addr);
 }
 
-static int NOC2AxiWrite32SerdesReg(const uint8_t *src, uint8_t *dst, size_t len)
-{
-	const SerdesRegData *reg_table = (const SerdesRegData *)src;
-	uint32_t reg_count = len / sizeof(SerdesRegData);
-
-	for (uint32_t i = 0; i < reg_count; i++) {
-		NOC2AXIWrite32(0, SERDES_ETH_SETUP_TLB, reg_table[i].addr, reg_table[i].data);
-	}
-	return 0;
-}
-
-void LoadSerdesEthRegs(uint32_t serdes_inst, uint32_t ring, uint8_t *buf, size_t buf_size,
-		       size_t spi_address, size_t image_size)
-{
-	SetupSerdesTlb(serdes_inst, ring, SERDES_INST_BASE_ADDR(serdes_inst) + CMN_OFFSET);
-	spi_transfer_by_parts(flash, spi_address, image_size, buf, buf_size, NULL,
-			      NOC2AxiWrite32SerdesReg);
-}
-
 int LoadSerdesEthFw(uint32_t serdes_inst, uint32_t ring, uint8_t *buf, size_t buf_size,
 		    size_t spi_address, size_t image_size)
 {

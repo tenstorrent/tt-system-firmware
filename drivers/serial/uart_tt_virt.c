@@ -307,9 +307,8 @@ static int uart_tt_virt_irq_tx_ready(const struct device *dev)
 	return available;
 }
 
-static int uart_tt_virt_irq_update(const struct device *dev)
+static void uart_tt_virt_irq_update(const struct device *dev)
 {
-	return 1;
 }
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 

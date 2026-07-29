@@ -4,6 +4,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * Telemetry table plus the small accessors that the always-compiled message
+ * handlers use (e.g. cm2dm_msg reads tags, noc_init records the NOC-translation
+ * state) are built unconditionally so they are available to SMC recovery.
+ *
+ * The periodic collection of dynamic telemetry (clocks, GDDR, ETH, power, fan,
+ * ...) and one-time population of the static values depend on the SPI firmware
+ * tables and many mission-only subsystems, so that code is compiled only when
+ * CONFIG_BH_FWTABLE is set (mission firmware, not recovery).
+ */
+
+#include "telemetry.h"
+
+#include <float.h> /* for FLT_MAX */
+#include <math.h>  /* for floor */
+#include <stdint.h>
+
+#include <zephyr/logging/log.h>
+
+#ifdef CONFIG_BH_FWTABLE
 #include "aiclk_ppm.h"
 #include "cat.h"
 #include "cm2dm_msg.h"
@@ -13,32 +33,23 @@
 #include "reg.h"
 #include "regulator.h"
 #include "status_reg.h"
-#include "telemetry.h"
+#include "throttler.h"
 #include "telemetry_internal.h"
 #include "gddr.h"
 #include "eth.h"
 
-#include <float.h> /* for FLT_MAX */
-#include <math.h>  /* for floor */
-#include <stdint.h>
 #include <string.h>
 
 #include <tenstorrent/post_code.h>
-#include <zephyr/logging/log.h>
+#include <tenstorrent/smbus_target.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control/clock_control_tt_bh.h>
 #include <zephyr/drivers/clock_control.h>
+#endif
 
 LOG_MODULE_REGISTER(telemetry, CONFIG_TT_APP_LOG_LEVEL);
-
-#define RESET_UNIT_STRAP_REGISTERS_L_REG_ADDR 0x80030D20
-
-static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
-static const struct device *const pll_dev_0 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll0));
-static const struct device *const pll_dev_1 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll1));
-static const struct device *const pll_dev_4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
 
 /**
  * @defgroup telemetry_table Telemetry Table
@@ -86,21 +97,6 @@ struct telemetry_table {
 	 */
 	uint32_t telemetry[TAG_COUNT];
 };
-
-/* Global variables */
-
-/**
- * @brief Documentation for telemetry table variables.
- *
- * This page contains detailed documentation for the telemetry table and its associated buffer.
- */
-
-/**
- * @brief Global telemetry table containing metadata and telemetry data.
- *
- * This table is used to store telemetry information, including tag mappings and data values.
- * The address of this table is published in the @ref TELEMETRY_TABLE_REG_ADDR register.
- */
 
 /* clang-format off */
 static struct telemetry_table telemetry_table = {
@@ -170,6 +166,15 @@ static struct telemetry_table telemetry_table = {
 		[63] = {TAG_ENABLED_MAX_ARB, TELEM_OFFSET(TAG_ENABLED_MAX_ARB)},
 		[64] = {TAG_AICLK_PPM_INFO, TELEM_OFFSET(TAG_AICLK_PPM_INFO)},
 		[65] = {TAG_HOST_AICLK_LIMIT, TELEM_OFFSET(TAG_HOST_AICLK_LIMIT)},
+		[66] = {TAG_SMBUS_ERRORS, TELEM_OFFSET(TAG_SMBUS_ERRORS)},
+		[67] = {TAG_GDDR_MRISC_NOC2AXI_PORT, TELEM_OFFSET(TAG_GDDR_MRISC_NOC2AXI_PORT)},
+		[68] = {TAG_GDDR_WEST_IO_POWER, TELEM_OFFSET(TAG_GDDR_WEST_IO_POWER)},
+		[69] = {TAG_GDDR_EAST_IO_POWER, TELEM_OFFSET(TAG_GDDR_EAST_IO_POWER)},
+		[70] = {TAG_KERNEL_THROTTLER, TELEM_OFFSET(TAG_KERNEL_THROTTLER)},
+		[71] = {TAG_NOP_START_COUNT, TELEM_OFFSET(TAG_NOP_START_COUNT)},
+		[72] = {TAG_NOP_ON_DURATION, TELEM_OFFSET(TAG_NOP_ON_DURATION)},
+		[73] = {TAG_FW_CAPABILITIES_0, TELEM_OFFSET(TAG_FW_CAPABILITIES_0)},
+		[74] = {TAG_FW_ACTIVE_CONFIG_0, TELEM_OFFSET(TAG_FW_ACTIVE_CONFIG_0)},
 	},
 };
 /* clang-format on */
@@ -181,12 +186,6 @@ static struct telemetry_table telemetry_table = {
  * is published in the @ref TELEMETRY_DATA_REG_ADDR register.
  */
 static uint32_t *telemetry = &telemetry_table.telemetry[0];
-
-/** @} */ /* end of telemetry_table group */
-
-static struct k_timer telem_update_timer;
-static struct k_work telem_update_worker;
-static int telem_update_interval = 100;
 
 uint32_t ConvertFloatToTelemetry(float value)
 {
@@ -218,6 +217,83 @@ float ConvertTelemetryToFloat(int32_t value)
 	}
 }
 
+void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version)
+{
+	telemetry[TAG_DM_BL_FW_VERSION] = bl_version;
+	telemetry[TAG_DM_APP_FW_VERSION] = app_version;
+}
+
+void UpdateTelemetryNocTranslation(bool translation_enabled)
+{
+	/* Note that this may be called before init_telemetry. */
+	telemetry[TAG_NOC_TRANSLATION] = translation_enabled;
+}
+
+void UpdateTelemetryBoardPowerLimit(uint32_t power_limit)
+{
+	telemetry[TAG_BOARD_POWER_LIMIT] = power_limit;
+}
+
+void UpdateTelemetryTdpLimit(uint32_t tdp_limit)
+{
+	telemetry[TAG_TDP_LIMIT_MAX] = tdp_limit;
+}
+
+void UpdateTelemetryThermTripCount(uint16_t therm_trip_count)
+{
+	telemetry[TAG_THERM_TRIP_COUNT] = therm_trip_count;
+}
+
+void UpdateTelemetryHostAiclkLimit(uint32_t fmax)
+{
+	telemetry[TAG_HOST_AICLK_LIMIT] = fmax;
+}
+
+void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq)
+{
+	telemetry_feature_flags_0_t active_config = {
+		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
+	};
+
+	active_config.bits.kernel_nops_at_aiclk_fmin = enabled ? 1U : 0U;
+	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
+	telemetry[TAG_KERNEL_THROTTLER] = (enabled ? 1U : 0U) | ((stop_nops_freq & 0xFFFFU) << 16U);
+}
+
+telemetry_feature_flags_bits_0_t GetActiveFeatures(void)
+{
+	telemetry_feature_flags_0_t active_config = {
+		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
+	};
+
+	return active_config.bits;
+}
+
+bool GetTelemetryTagValid(uint16_t tag)
+{
+	return tag < TAG_COUNT;
+}
+
+uint32_t GetTelemetryTag(uint16_t tag)
+{
+	if (tag >= TAG_COUNT) {
+		return -1;
+	}
+	return telemetry[tag];
+}
+
+#ifdef CONFIG_BH_FWTABLE
+static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
+static const struct device *const pll_dev_0 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll0));
+static const struct device *const pll_dev_1 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll1));
+static const struct device *const pll_dev_4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
+static const struct device *const smbus_target_dev =
+	DEVICE_DT_GET_OR_NULL(DT_NODELABEL(smbus_target0));
+
+static struct k_timer telem_update_timer;
+static struct k_work telem_update_worker;
+static int telem_update_interval = 100;
+
 static void UpdateEthTelemetry(void)
 {
 	/* ETH live status lower 16 bits: heartbeat status,
@@ -231,7 +307,6 @@ static void UpdateEthTelemetry(void)
 
 static void UpdateGddrTelemetry(void)
 {
-	uint32_t temperature[NUM_GDDR / 2] = {0};
 	uint32_t corr_errs[NUM_GDDR / 2] = {0};
 	uint32_t uncorr_errs = 0;
 	uint32_t status = 0;
@@ -249,17 +324,7 @@ static void UpdateGddrTelemetry(void)
 			status |= (gddr_telemetry.training_complete << (i * 2)) |
 				  (gddr_telemetry.gddr_error << (i * 2 + 1));
 
-			/* DDR_x_y_TEMP:
-			 * [31:24] GDDR y top
-			 * [23:16] GDDR y bottom
-			 * [15:8]  GDDR x top
-			 * [7:0]   GDDR x bottom
-			 */
 			int shift_val = (i % 2) * 16;
-
-			temperature[i / 2] |=
-				((gddr_telemetry.dram_temperature_top & 0xff) << (8 + shift_val)) |
-				((gddr_telemetry.dram_temperature_bottom & 0xff) << shift_val);
 
 			/* GDDR_x_y_CORR_ERRS:
 			 * [31:24] GDDR y Corrected Write EDC errors
@@ -293,7 +358,6 @@ static void UpdateGddrTelemetry(void)
 
 	/* Update telemetry atomically after accumulation. */
 	for (int i = 0; i < NUM_GDDR / 2; i++) {
-		telemetry[TAG_GDDR_0_1_TEMP + i] = temperature[i];
 		telemetry[TAG_GDDR_0_1_CORR_ERRS + i] = corr_errs[i];
 	}
 	telemetry[TAG_GDDR_UNCORR_ERRS] = uncorr_errs;
@@ -301,23 +365,46 @@ static void UpdateGddrTelemetry(void)
 	telemetry[TAG_GDDR_SPEED] = speed;
 }
 
-int GetMaxGDDRTemp(void)
+/* Pack per-instance GDDR die temperatures into the host telemetry wire format. Each word holds
+ * one GDDR pair, with each die temperature stored as an 8-bit value using the same bit layout as
+ * TAG_GDDR_X_Y_TEMP.
+ */
+static void pack_gddr_temps(const struct gddr_temps *temps, uint32_t *packed)
 {
-	int max_gddr_temp = 0;
+	for (int i = 0; i < NUM_GDDR / 2; i++) {
+		packed[i] = 0;
+	}
 
 	for (int i = 0; i < NUM_GDDR; i++) {
 		int shift_val = (i % 2) * 16;
-		int gddr_temp = telemetry[TAG_GDDR_0_1_TEMP + i / 2];
 
-		max_gddr_temp = MAX(max_gddr_temp, (gddr_temp >> shift_val) & 0xFF);
-		max_gddr_temp = MAX(max_gddr_temp, (gddr_temp >> (shift_val + 8)) & 0xFF);
+		packed[i / 2] |= ((uint32_t)temps->inst[i].top << (8 + shift_val)) |
+				 ((uint32_t)temps->inst[i].bottom << shift_val);
+	}
+}
+
+static uint32_t get_gddr_mrisc_endpoints(void)
+{
+	uint32_t packed = 0U;
+
+	for (uint8_t i = 0; i < NUM_GDDR; i++) {
+		uint8_t port = 0xF; /* Default to disabled/harvested */
+
+		if (IS_BIT_SET(tile_enable.gddr_enabled, i)) {
+			port = get_gddr_mrisc_noc2axi_port(i);
+		}
+
+		packed |= (uint32_t)port << (i * 4);
 	}
 
-	return max_gddr_temp;
+	return packed;
 }
 
 static void write_static_telemetry(uint32_t app_version)
 {
+	telemetry_feature_flags_0_t fw_capabilities = {0};
+	telemetry_feature_flags_0_t active_config = {0};
+
 	telemetry_table.version = TELEMETRY_VERSION; /* v0.1.0 - Only update when redefining the
 						      * meaning of an existing tag
 						      */
@@ -382,6 +469,16 @@ static void write_static_telemetry(uint32_t app_version)
 	 */
 
 	telemetry[TAG_ASIC_LOCATION] = tt_bh_fwtable_get_asic_location(fwtable_dev);
+
+	telemetry[TAG_GDDR_MRISC_NOC2AXI_PORT] = get_gddr_mrisc_endpoints();
+
+	fw_capabilities.bits.kernel_nops_at_aiclk_fmin = 1U;
+	telemetry[TAG_FW_CAPABILITIES_0] = fw_capabilities.u32_all;
+
+	active_config.bits.kernel_nops_at_aiclk_fmin =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)
+			->feature_enable.kernel_throttler_at_floor_en;
+	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 }
 
 static void update_telemetry(void)
@@ -453,12 +550,30 @@ static void update_telemetry(void)
 					     * yet), lower 16 bits - current L2CPUCLK3
 					     */
 
-	telemetry[TAG_FAN_SPEED] = GetFanSpeed(); /* Target fan speed - reported in percentage */
-	telemetry[TAG_FAN_RPM] = GetFanRPM();     /* Actual fan RPM */
+	bool fan_ctrl_en = tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.fan_ctrl_en;
+
+	/*Target fan speed - reported in percentage */
+	telemetry[TAG_FAN_SPEED] = fan_ctrl_en ? GetFanSpeed() : 0xFFFFFFFFU;
+
+	/* Actual fan RPM */
+	telemetry[TAG_FAN_RPM] = fan_ctrl_en ? GetFanRPM() : 0xFFFFFFFFU;
 	UpdateEthTelemetry();
 	UpdateGddrTelemetry();
-	telemetry[TAG_MAX_GDDR_TEMP] = GetMaxGDDRTemp();
+	uint32_t gddr_packed[NUM_GDDR / 2];
+
+	pack_gddr_temps(&telemetry_internal_data.gddr_temps, gddr_packed);
+	for (int i = 0; i < NUM_GDDR / 2; i++) {
+		telemetry[TAG_GDDR_0_1_TEMP + i] = gddr_packed[i];
+	}
+	telemetry[TAG_MAX_GDDR_TEMP] = telemetry_internal_data.gddr_temps.max_temp;
 	telemetry[TAG_INPUT_POWER] = GetInputPower(); /* Input power - reported in W */
+	telemetry[TAG_SMBUS_ERRORS] = smbus_target_get_error_count(smbus_target_dev);
+	/* reported in W, truncated to uint32_t */
+	telemetry[TAG_GDDR_WEST_IO_POWER] = telemetry_internal_data.gddr_io_power_west;
+	/* reported in W, truncated to uint32_t */
+	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
+	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
+	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telem_update_interval);
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);
 }
@@ -504,48 +619,4 @@ void StartTelemetryTimer(void)
 	k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
 		      K_MSEC(telem_update_interval));
 }
-
-void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version)
-{
-	telemetry[TAG_DM_BL_FW_VERSION] = bl_version;
-	telemetry[TAG_DM_APP_FW_VERSION] = app_version;
-}
-
-void UpdateTelemetryNocTranslation(bool translation_enabled)
-{
-	/* Note that this may be called before init_telemetry. */
-	telemetry[TAG_NOC_TRANSLATION] = translation_enabled;
-}
-
-void UpdateTelemetryBoardPowerLimit(uint32_t power_limit)
-{
-	telemetry[TAG_BOARD_POWER_LIMIT] = power_limit;
-}
-
-void UpdateTelemetryTdpLimit(uint32_t tdp_limit)
-{
-	telemetry[TAG_TDP_LIMIT_MAX] = tdp_limit;
-}
-
-void UpdateTelemetryThermTripCount(uint16_t therm_trip_count)
-{
-	telemetry[TAG_THERM_TRIP_COUNT] = therm_trip_count;
-}
-
-void UpdateTelemetryHostAiclkLimit(uint32_t fmax)
-{
-	telemetry[TAG_HOST_AICLK_LIMIT] = fmax;
-}
-
-bool GetTelemetryTagValid(uint16_t tag)
-{
-	return tag < TAG_COUNT;
-}
-
-uint32_t GetTelemetryTag(uint16_t tag)
-{
-	if (tag >= TAG_COUNT) {
-		return -1;
-	}
-	return telemetry[tag];
-}
+#endif /* CONFIG_BH_FWTABLE */

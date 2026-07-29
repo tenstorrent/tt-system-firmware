@@ -13,4 +13,5 @@ config DMC_BOARD
 	default "tt_blackhole@p300a/tt_blackhole/dmc" if $(BOARD_REVISION) = "p300a"
 	default "tt_blackhole@p300b/tt_blackhole/dmc" if $(BOARD_REVISION) = "p300b"
 	default "tt_blackhole@p300c/tt_blackhole/dmc" if $(BOARD_REVISION) = "p300c"
+	default "tt_blackhole_glx2_dmc" if $(BOARD_REVISION) = "galaxy_2"
 	default "tt_blackhole@orion_slt/tt_blackhole/dmc" if $(BOARD_REVISION) = "orion_slt"

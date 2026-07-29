@@ -34,6 +34,7 @@ ContinuationIndentWidth: 8
 ForEachMacros:
   - 'ARRAY_FOR_EACH'
   - 'ARRAY_FOR_EACH_PTR'
+  - 'ARRAY_FOR_EACH_BH_CHIP'
   - 'FOR_EACH'
   - 'FOR_EACH_FIXED_ARG'
   - 'FOR_EACH_IDX'

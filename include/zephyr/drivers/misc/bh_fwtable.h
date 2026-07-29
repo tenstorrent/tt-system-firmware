@@ -6,6 +6,7 @@
 #ifndef BH_FWTABLE_H
 #define BH_FWTABLE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/device.h>
 
@@ -14,12 +15,16 @@ extern "C" {
 #endif
 
 /*
- * FIXME: these proto files as well as all of the entities within them need to be namespaced
- * with a tt_bh_fwtable_ prefix (or something unique and similar).
+ * The generated nanopb headers only exist when the bh_fwtable driver is built.
+ * SMC recovery builds disable the driver (see drivers/misc/bh_fwtable/Kconfig),
+ * but still pull in this header transitively for the plain chip enums below
+ * (e.g. PcbType via regulator.h).
  */
+#ifdef CONFIG_BH_FWTABLE
 #include "fw_table.pb.h"
 #include "flash_info.pb.h"
 #include "read_only.pb.h"
+#endif
 
 const struct _FwTable *tt_bh_fwtable_get_fw_table(const struct device *dev);
 const struct _FlashInfoTable *tt_bh_fwtable_get_flash_info_table(const struct device *dev);
@@ -49,6 +54,7 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev);
 uint8_t tt_bh_fwtable_get_board_type(const struct device *dev);
 bool tt_bh_fwtable_is_p300_left_chip(void);
 uint32_t tt_bh_fwtable_get_asic_location(const struct device *dev);
+void tt_bh_fwtable_apply_ccfgovr(const struct device *dev);
 
 #ifdef __cplusplus
 }

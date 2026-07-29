@@ -1,0 +1,15 @@
+#  Copyright (c) 2026 Tenstorrent AI ULC
+#  SPDX-License-Identifier: Apache-2.0
+
+config BH_ARC_TELEMETRY
+	bool "Tenstorrent BH-arc live telemetry sensor"
+	default y
+	depends on DT_HAS_TENSTORRENT_BH_ARC_TELEMETRY_ENABLED
+	depends on SMBUS
+	help
+	  Enable Zephyr sensor driver that reads live telemetry from a
+	  tenstorrent,bh-arc (SMC) device node via SMBus.  Each sample issues a
+	  byte-data write to CMFW_SMBUS_TELEMETRY_READ_CRC followed by a block
+	  read from CMFW_SMBUS_TELEMETRY_READ_CRC_DATA.  Reads are served
+	  through the RTIO submit API.  Channel-to-telemetry-tag mappings are defined in the
+	  device tree.

@@ -15,6 +15,7 @@ chip_limits {
   bus_peak_limit: 0
   frequency_margin: 0
   gddr_thm_limit: 89
+  kernel_throttler_stop_nops_freq: 0
   max_tdp_limit: 200
 }
 
@@ -28,6 +29,7 @@ feature_enable {
   fan_ctrl_en: false
   harvesting_en: true
   doppler_en: false
+  kernel_throttler_at_floor_en: false
 }
 
 fan_table {

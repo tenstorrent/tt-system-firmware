@@ -211,7 +211,7 @@ static int tt_grendel_mbox_set_enabled(const struct device *dev, mbox_channel_id
 	return 0;
 }
 
-static const struct mbox_driver_api tt_grendel_mbox_api = {
+static DEVICE_API(mbox, tt_grendel_mbox_api) = {
 	.send = tt_grendel_mbox_send,
 	.mtu_get = tt_grendel_mbox_mtu_get,
 	.max_channels_get = tt_grendel_mbox_max_channels_get,

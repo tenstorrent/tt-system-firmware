@@ -7,3 +7,10 @@ config PVT_TT_BH
 	depends on DT_HAS_TENSTORRENT_BH_PVT_ENABLED
 	help
 		Enable the Tenstorrent Blackhole process, voltage and temperature driver.
+
+config PVT_TT_BH_EMUL
+	bool "Tenstorrent Blackhole PVT emulator driver"
+	default y
+	depends on DT_HAS_TENSTORRENT_BH_PVT_EMUL_ENABLED
+	help
+		Enable the emulated Tenstorrent Blackhole process, voltage and temperature driver.

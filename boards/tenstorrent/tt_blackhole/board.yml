@@ -13,6 +13,7 @@ boards:
     - name: "p300b"
     - name: "p300c"
     - name: "galaxy"
+    - name: "galaxy_2"
     - name: "galaxy_revc"
     - name: "orion_slt"
   socs:

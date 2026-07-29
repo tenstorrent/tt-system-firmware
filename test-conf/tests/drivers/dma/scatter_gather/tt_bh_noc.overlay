@@ -5,6 +5,7 @@
 
 tst_dma0: &dma1 {
 	status = "okay";
+	dma-buf-addr-alignment = <64>;
 };
 
 /* Increase CSM for scatter_gather test buffers */

@@ -17,11 +17,25 @@ config TT_BH_ARC
 
 if TT_BH_ARC
 
+config TT_BH_ARC_EMUL
+	bool "BH ARC emulation"
+	default y if BOARD_NATIVE_SIM
+	help
+	  Generic flag that BH ARC is emulated.
+	  Enabled by default on native_sim and can be enabled on other
+	  boards that need emulated ARC behavior.
+
 config TT_BH_ARC_NUM_MSG_CODES
 	int "Number of message codes"
-	default 199
+	default 200
 	help
 	  The number of message codes
+
+config TT_BH_ARC_MSGQUEUE_ENABLED
+	bool "Enable BH ARC message queue"
+	default y
+	help
+	  Enable initialization and implementation of the BH ARC message queue.
 
 config TT_SHELL
 	bool "Tenstorrent Blackhole shell driver"
@@ -41,6 +55,13 @@ config TT_BH_ARC_FAN_CTRL_GDDR_TEMP
 	default y
 	help
 	  Enable to use GDDR temp in fan speed calculation
+
+config TT_BH_ARC_GDDR_THERM_TRIP_ACTION
+	bool "Engage CATMON thermal trip on GDDR over-temperature"
+	default n
+	help
+	  Enable to trigger a CATMON thermal trip (shutting the ASIC down)
+	  on GDDR over-temperature.
 
 config TT_BH_ARC_I2C_TIMEOUT
 	bool "Time out if I2C transaction exceeds given duration"
@@ -78,6 +99,17 @@ config TT_BH_ARC_SCRATCHPAD_SIZE
 	  Size of scratchpad memory in bytes. This is mainly used as a temporary buffer for
 	  loading images from SPI flash.
 
+config TT_BH_ARC_RUNTIME_TELEMETRY_SIZE
+	int "Runtime telemetry reserved BSS size in bytes"
+	default 1024
+	range 0 65536
+	help
+	  Bytes carved from BSS for host runtime telemetry use. Must be a multiple
+	  of 32. Set to 0 to disable runtime telemetry.
+
+config TT_BH_ARC_RUNTIME_TELEMETRY
+	def_bool TT_BH_ARC_RUNTIME_TELEMETRY_SIZE > 0
+
 config TT_BH_ARC_DMFW_PING_TIMEOUT
 	int "Timeout for DMFW ping in milliseconds"
 	default 200
@@ -88,5 +120,7 @@ config TT_BH_ARC_DMFW_PING_TIMEOUT
 module = BH_ARC
 module-str = bh_arc
 source "subsys/logging/Kconfig.template.log_config"
+
+rsource "Kconfig.tt_pcie_log"
 
 endif

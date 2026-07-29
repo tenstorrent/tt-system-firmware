@@ -28,7 +28,7 @@ jobs:
       - id: gen-config
         shell: bash
         run: |
-          echo "ci-boards=$(jq -c "[ .[] | .board ]" .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "ci-boards=$(jq -c "[ .[][] | .board ]" .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
   ci-stats:
     needs: [gen-config]

@@ -25,14 +25,14 @@ slot1_partition: &smc_recovery {};
 		compatible = "zephyr,memory-region", "mmio-sram";
 		zephyr,memory-region = "CSM-MCUBOOT";
 		device_type = "memory";
-		reg = <0x10000000 0x10000>; /* 64  KiB for MCUBoot */
+		reg = <0x10000000 0x18000>; /* 96  KiB for MCUBoot */
 	};
 
 	csm_app: memory@10010000 {
 		compatible = "zephyr,memory-region", "mmio-sram";
 		zephyr,memory-region = "CSM-APP";
 		device_type = "memory";
-		reg = <0x10010000 0x6f000>; /* 444 KiB for application */
+		reg = <0x10018000 0x67000>; /* 416 KiB for application */
 	};
 
 	csm_shared: memory@1007f000 {

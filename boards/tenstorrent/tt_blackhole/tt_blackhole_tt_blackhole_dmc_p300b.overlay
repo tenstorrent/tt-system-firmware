@@ -4,3 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "tt_blackhole_tt_blackhole_dmc_p300a.overlay"
+
+&max6639 {
+	status = "disabled";
+};

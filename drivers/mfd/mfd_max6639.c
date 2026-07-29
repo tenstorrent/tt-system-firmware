@@ -30,28 +30,28 @@ static int max6639_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	/* enable PWM manual mode, RPM to max */
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_1, 0x83);
+	/* disable spin-up, disable pulse stretching, deassert THERM, set PWM frequency to high */
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_3, 0xA3);
 	if (result != 0) {
 		return result;
 	}
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_1, 0x83);
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_3, 0xA3);
+	if (result != 0) {
+		return result;
+	}
+
+	/* enable PWM manual mode, RPM to max */
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_1, 0x82);
+	if (result != 0) {
+		return result;
+	}
+	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_1, 0x82);
 	if (result != 0) {
 		return result;
 	}
 
 	/* select high PWM frequency output range */
 	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_GLOBAL_CONFIG, 0x38);
-	if (result != 0) {
-		return result;
-	}
-
-	/* disable pulse stretching, deassert THERM, set PWM frequency to high */
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_1_CONFIG_3, 0x23);
-	if (result != 0) {
-		return result;
-	}
-	result = i2c_reg_write_byte_dt(&config->i2c, MAX6639_REG_CHANNEL_2_CONFIG_3, 0x23);
 	if (result != 0) {
 		return result;
 	}

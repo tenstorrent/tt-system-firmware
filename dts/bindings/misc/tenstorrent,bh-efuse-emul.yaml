@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent Blackhole eFuse emulation backend
+
+compatible: "tenstorrent,bh-efuse-emul"
+
+include: base.yaml
+
+properties:
+  dft0-dwords:
+    type: array
+    description: |
+      Optional sparse array of (offset, value) pairs for DFT0 efuse box reads.
+      Each pair specifies a dword offset and its 32-bit value.
+      Example: <50 0xDEADBEEF  51 0xCAFEBABE>
+
+  dft1-dwords:
+    type: array
+    description: |
+      Optional sparse array of (offset, value) pairs for DFT1 efuse box reads.
+      Each pair specifies a dword offset and its 32-bit value.
+
+  func-dwords:
+    type: array
+    description: |
+      Optional sparse array of (offset, value) pairs for functional efuse box reads.
+      Each pair specifies a dword offset and its 32-bit value.
+      Example: <50 0xDEADBEEF> sets dword 50 (ASIC_ID_LOW) to 0xDEADBEEF.

@@ -38,4 +38,8 @@ void set_gddr_vddr(PcbType board_type, uint32_t voltage_in_mv);
 float GetVcoreCurrent(void);
 float GetVcorePower(void);
 void SwitchVoutControl(enum VoltageCmdSource source);
+float GetGddrWestIoCurrent(void);
+float GetGddrEastIoCurrent(void);
+float GetGddrWestIoPower(void);
+float GetGddrEastIoPower(void);
 #endif
