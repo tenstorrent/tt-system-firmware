@@ -113,6 +113,29 @@ static size_t encode_kernel_throttler_override(uint8_t *out, size_t out_size, bo
 	return total;
 }
 
+static size_t encode_gddr_therm_trip_override(uint8_t *out, size_t out_size, bool enabled)
+{
+	FwTableOverride ovr = FwTableOverride_init_zero;
+
+	ovr.has_feature_enable = true;
+	ovr.feature_enable.has_gddr_therm_trip_en = true;
+	ovr.feature_enable.gddr_therm_trip_en = enabled;
+
+	pb_ostream_t stream = pb_ostream_from_buffer(out, out_size);
+
+	zassert_true(pb_encode_ex(&stream, FwTableOverride_fields, &ovr, PB_ENCODE_NULLTERMINATED),
+		     "pb_encode_ex failed: %s", PB_GET_ERROR(&stream));
+
+	size_t total = stream.bytes_written;
+
+	/* Pad to 4 byte alignment for ccfgovr header requirement */
+	while ((total % 4U) != 0U) {
+		zassert_true(total < out_size, "padded body overruns buffer");
+		out[total++] = 0x00U;
+	}
+	return total;
+}
+
 static void write_bank(uint32_t addr, struct ccfgovr_bank_hdr *hdr, const uint8_t *body,
 		       size_t body_len)
 {
@@ -220,6 +243,22 @@ ZTEST(bh_fwtable_ccfgovr, test_kernel_throttler_override_applies)
 	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)
 			      ->chip_limits.kernel_throttler_stop_nops_freq,
 		      800U, "expected override to set kernel_throttler_stop_nops_freq=800");
+}
+
+/**
+ * @brief Test that the GDDR thermal-trip action feature can be overridden
+ */
+ZTEST(bh_fwtable_ccfgovr, test_gddr_therm_trip_override_applies)
+{
+	uint8_t body[16];
+	size_t body_len = encode_gddr_therm_trip_override(body, sizeof(body), true);
+	struct ccfgovr_bank_hdr hdr = {.magic = CCFGOVR_MAGIC, .seq = 2};
+
+	write_bank(BANK_A_ADDR, &hdr, body, body_len);
+
+	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
+	zassert_true(tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.gddr_therm_trip_en,
+		     "expected override to enable gddr_therm_trip_en");
 }
 
 /**
