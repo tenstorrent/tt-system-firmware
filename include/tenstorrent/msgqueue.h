@@ -230,13 +230,8 @@ struct power_setting_rqst {
 		 */
 		uint16_t l2cpu_enable: 1;
 
-		/** @brief 1 - @ref pcie_gen "Set PCIE gen to 5"
-		 * <br> 0 - @ref pcie_gen "Set PCIE gen to 1"
-		 */
-		uint16_t pcie_gen: 1;
-
 		/** @brief Future use flags currently not supported*/
-		uint16_t future_use: 10;
+		uint16_t future_use: 11;
 
 		/** @brief Reserved*/
 		uint16_t reserved: 1;

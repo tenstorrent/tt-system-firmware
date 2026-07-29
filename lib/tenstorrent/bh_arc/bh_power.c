@@ -18,15 +18,15 @@
 #include "aiclk_ppm.h"
 #include "gddr.h"
 #include "bh_reset.h"
-#include "pciesd.h"
 
 LOG_MODULE_REGISTER(power, CONFIG_TT_APP_LOG_LEVEL);
 static const struct device *pll4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
 
 static bool power_state[BH_POWER_DOMAIN_COUNT] = {
-	[BH_POWER_DOMAIN_AICLK] = false,   [BH_POWER_DOMAIN_MRISC] = true,
-	[BH_POWER_DOMAIN_TENSIX] = true,   [BH_POWER_DOMAIN_L2CPU] = true,
-	[BH_POWER_DOMAIN_PCIE_GEN] = true,
+	[BH_POWER_DOMAIN_AICLK] = false,
+	[BH_POWER_DOMAIN_MRISC] = true,
+	[BH_POWER_DOMAIN_TENSIX] = true,
+	[BH_POWER_DOMAIN_L2CPU] = true,
 };
 
 int32_t bh_set_l2cpu_enable(bool enable)
@@ -109,15 +109,6 @@ static int32_t apply_power_settings(const struct power_setting_rqst *power_setti
 			power_setting->power_flags_bitfield.mrisc_phy_power;
 	}
 
-	if (power_setting->power_flags_valid > BH_POWER_DOMAIN_PCIE_GEN) {
-		if (IS_ENABLED(CONFIG_ARC)) {
-			ChangeLinkSpeed(power_setting->power_flags_bitfield.pcie_gen ? 5 : 1);
-		}
-
-		power_state[BH_POWER_DOMAIN_PCIE_GEN] =
-			power_setting->power_flags_bitfield.pcie_gen;
-	}
-
 	return ret;
 }
 
@@ -132,10 +123,9 @@ static uint8_t power_setting_msg_handler(const union request *request, struct re
 	const struct power_setting_rqst *power_setting = &request->power_setting;
 
 	apply_power_settings(power_setting);
-	LOG_DBG("Power State: GDDR-%u Tensix-%u AICLK-%u, L2CPU-%u, PCIE-GEN-%u",
+	LOG_DBG("Power State: GDDR-%u Tensix-%u AICLK-%u, L2CPU-%u",
 		power_state[BH_POWER_DOMAIN_MRISC], power_state[BH_POWER_DOMAIN_TENSIX],
-		power_state[BH_POWER_DOMAIN_AICLK], power_state[BH_POWER_DOMAIN_L2CPU],
-		power_state[BH_POWER_DOMAIN_PCIE_GEN]);
+		power_state[BH_POWER_DOMAIN_AICLK], power_state[BH_POWER_DOMAIN_L2CPU]);
 
 	return 0;
 }

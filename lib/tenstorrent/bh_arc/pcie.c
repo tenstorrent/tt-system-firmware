@@ -15,8 +15,6 @@
 #include "status_reg.h"
 #include "timer.h"
 
-#include "arc_dma.h"
-
 #include <stdbool.h>
 
 #include <tenstorrent/post_code.h>
@@ -56,9 +54,6 @@
 LOG_MODULE_DECLARE(bh_arc);
 
 static const struct device *const arc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(dma0));
-
-/* Verify prototype of ArcDmaTransfer, because it's used by libpciesd.a. */
-static __unused bool (*verify_ArcDmaTransfer)(const void *, void *, uint32_t) = ArcDmaTransfer;
 
 typedef struct {
 	uint32_t tlp_type: 5;
@@ -247,7 +242,7 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t v
 	*param = (struct CntlInitV2Param){
 		.board_id = board_id,
 		.vendor_id = vendor_id,
-		.num_serdes_instance = pcitable->num_serdes,
+		.serdes_inst = pcitable->num_serdes,
 		.max_pcie_speed = pcitable->max_pcie_speed,
 		.pcie_inst = pcie_inst,
 		/* pcie_mode - 1 to match with definition in pcie.h for PCIeDeviceType */
@@ -365,7 +360,7 @@ static PCIeInitStatus PCIeInitComm(const struct CntlInitV2Param *param)
 	ConfigurePCIeTlbs(param->pcie_inst);
 
 	PCIeInitStatus status =
-		SerdesInit(param->pcie_inst, param->device_type, param->num_serdes_instance);
+		SerdesInit(param->pcie_inst, param->device_type, param->serdes_inst);
 
 	if (status != PCIeInitOk) {
 		return status;
