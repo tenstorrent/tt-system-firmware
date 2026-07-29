@@ -37,6 +37,9 @@ message FwTable {
     uint32 additional_board_power = 15;
     uint32 max_tdp_limit = 16;
     uint32 kernel_throttler_stop_nops_freq = 17;
+    uint32 gddr_therm_trip_temp = 18;
+    uint32 gddr_therm_trip_critical_temp = 19;
+    uint32 gddr_therm_trip_duration_min = 20;
   }
 
   message FeatureEnable {
@@ -50,6 +53,7 @@ message FwTable {
     bool fan_ctrl_en = 8;
     bool doppler_en = 9;
     bool kernel_throttler_at_floor_en = 10;
+    bool gddr_therm_trip_en = 11;
   }
 
   message FanTable{

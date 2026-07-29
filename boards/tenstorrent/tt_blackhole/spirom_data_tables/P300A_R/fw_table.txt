@@ -16,6 +16,9 @@ chip_limits {
   frequency_margin: 0
   gddr_thm_limit: 89
   kernel_throttler_stop_nops_freq: 0
+  gddr_therm_trip_temp: 95
+  gddr_therm_trip_critical_temp: 110
+  gddr_therm_trip_duration_min: 1
   board_power_limit: 450
 }
 
@@ -30,6 +33,7 @@ feature_enable {
   harvesting_en: true
   doppler_en: false
   kernel_throttler_at_floor_en: false
+  gddr_therm_trip_en: false
 }
 
 fan_table {
