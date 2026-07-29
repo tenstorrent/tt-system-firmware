@@ -169,13 +169,74 @@ static int post_display_raw(const uint8_t segs[8])
  */
 static const uint8_t post_pos_to_dig[8] = {4, 5, 6, 7, 0, 1, 2, 3};
 
+/*
+ * 180-degree rotation, for a fixture that mounts the board upside down.
+ *
+ * Two independent transforms, and both are needed -- doing either alone leaves
+ * the display unreadable:
+ *
+ *   X: the digit order reverses. What was the leftmost physical position is now
+ *      the viewer's rightmost.
+ *   Y: each glyph is rotated, which on seven segments is a segment swap:
+ *      a<->d, b<->e, c<->f, with g mapping to itself. The decimal point has no
+ *      rotated counterpart and is left where it is.
+ *
+ * Rotating is not the same as re-reading a mirrored display: some glyphs are
+ * symmetric (0 2 5 8 and blank), but others become a *different* character --
+ * 6 and 9 swap, and 7 becomes L. So the transform has to be applied to the
+ * segment data; you cannot compensate by squinting.
+ *
+ * The transform is its own inverse, so `post flip` toggles cleanly.
+ *
+ * Defaults to enabled to match the current fixture. `post flip off` restores
+ * the upright mapping without a reflash, since fixtures change more often than
+ * firmware.
+ */
+static bool post_flipped = true;
+
+static uint8_t post_rotate_segments(uint8_t segs)
+{
+	uint8_t out = segs & (SEG_G | SEG_DP);
+
+	if (segs & SEG_A) {
+		out |= SEG_D;
+	}
+	if (segs & SEG_D) {
+		out |= SEG_A;
+	}
+	if (segs & SEG_B) {
+		out |= SEG_E;
+	}
+	if (segs & SEG_E) {
+		out |= SEG_B;
+	}
+	if (segs & SEG_C) {
+		out |= SEG_F;
+	}
+	if (segs & SEG_F) {
+		out |= SEG_C;
+	}
+	return out;
+}
+
+/* The MAX7221 digit that shows reading-order position `pos`. */
+static uint8_t post_dig_for(int pos)
+{
+	return post_pos_to_dig[post_flipped ? (8 - 1 - pos) : pos];
+}
+
 /* Write segment patterns given in reading order (leftmost first). */
 static int post_display_positions(const uint8_t pos_segs[8])
 {
 	uint8_t segs[8] = {0};
 
 	for (int pos = 0; pos < 8; pos++) {
-		segs[post_pos_to_dig[pos]] = pos_segs[pos];
+		uint8_t value = pos_segs[pos];
+
+		if (post_flipped) {
+			value = post_rotate_segments(value);
+		}
+		segs[post_dig_for(pos)] = value;
 	}
 	return post_display_raw(segs);
 }
@@ -237,8 +298,7 @@ static int post_walk_digits(const struct shell *sh)
 		if (ret < 0) {
 			return ret;
 		}
-		shell_print(sh, "  position %d from left lit (DIG%d)", pos + 1,
-			    post_pos_to_dig[pos]);
+		shell_print(sh, "  position %d from left lit (DIG%d)", pos + 1, post_dig_for(pos));
 		k_sleep(K_MSEC(1200));
 	}
 	return 0;
@@ -454,6 +514,22 @@ static int cmd_post(const struct shell *sh, size_t argc, char **argv)
 		}
 	} else if (strcmp(argv[1], "walk") == 0) {
 		ret = post_walk_digits(sh);
+	} else if (strcmp(argv[1], "flip") == 0) {
+		if (argc > 2) {
+			if (strcmp(argv[2], "on") == 0) {
+				post_flipped = true;
+			} else if (strcmp(argv[2], "off") == 0) {
+				post_flipped = false;
+			} else {
+				shell_error(sh, "usage: post flip [on|off]");
+				return -EINVAL;
+			}
+		} else {
+			post_flipped = !post_flipped;
+		}
+		ret = post_code_show(0x0001);
+		shell_print(sh, "display rotation %s",
+			    post_flipped ? "ON (fixture upside down)" : "OFF (upright)");
 	} else if (strcmp(argv[1], "banner") == 0) {
 		unsigned int repeats = 1;
 
@@ -506,6 +582,8 @@ SHELL_CMD_ARG_REGISTER(
 	"       post walk         light one digit at a time\n"
 	"       post map          write numeral N into digit N\n"
 	"       post banner <str> [n]  scroll up to 32 characters, n times\n"
+	"       post flip [on|off]     180-degree rotation for a flipped\n"
+	"                              fixture; toggles when given no argument\n"
 	"       post text <str>   show up to 8 characters, e.g. post text DANIEL\n"
 	"                         A-Z, 0-9, space and - _ = . ? * are renderable\n"
 	"                         B D N R T show lowercase; K M V W X are approximations",
