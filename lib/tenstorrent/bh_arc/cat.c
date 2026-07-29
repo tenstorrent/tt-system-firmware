@@ -57,8 +57,6 @@ typedef union {
 
 static const int gddr_therm_trip_interval = 100;
 
-static bool gddr_therm_trip_enabled;
-
 /* Live trip thresholds, seeded from chip_limits at init */
 static int gddr_therm_trip_temp;
 static int gddr_therm_trip_critical_temp;
@@ -273,6 +271,13 @@ static void gddr_therm_trip_trigger_handler(struct k_work *work)
 
 static K_WORK_DELAYABLE_DEFINE(gddr_therm_trip_trigger_work, gddr_therm_trip_trigger_handler);
 
+uint8_t CatSetGddrThermTripEnabled(bool enabled)
+{
+	LOG_INF("GDDR thermal trip action %s", enabled ? "enabled" : "disabled");
+	UpdateTelemetryGddrThermTrip(enabled);
+	return 0;
+}
+
 static void gddr_therm_trip_work_handler(struct k_work *work)
 {
 	ARG_UNUSED(work);
@@ -284,7 +289,7 @@ static void gddr_therm_trip_work_handler(struct k_work *work)
 
 	int max_temp = MonitorGddrThermTrip(k_uptime_get(), GetTelemetryTag(TAG_MAX_GDDR_TEMP));
 
-	if (max_temp && gddr_therm_trip_enabled) {
+	if (max_temp && GetActiveFeatures().gddr_therm_trip) {
 		/* Notify DMC, then trigger therm trip after delay so DMC can read the message */
 		trip_pending = true;
 		ReportGddrThermTrip(max_temp >= gddr_therm_trip_critical_temp &&
@@ -310,8 +315,6 @@ static K_TIMER_DEFINE(gddr_therm_trip_timer, gddr_therm_trip_timer_handler, NULL
 void StartGddrThermTripMonitor(void)
 {
 	const FwTable *fw_table = tt_bh_fwtable_get_fw_table(fwtable_dev);
-
-	gddr_therm_trip_enabled = fw_table->feature_enable.gddr_therm_trip_en;
 
 	/* Thresholds come straight from chip_limits. A value of 0 means "unset"
 	 * and disables that trip path in MonitorGddrThermTrip

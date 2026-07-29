@@ -7,6 +7,8 @@
 #ifndef CAT_H
 #define CAT_H
 
+#include <stdbool.h>
+
 #include <tenstorrent/bh_arc.h>
 
 #define T_J_SHUTDOWN 110 /* BH Prod Spec 7.3 */
@@ -28,5 +30,12 @@ void StartGddrThermTripMonitor(void);
  */
 int EvaluateGddrThermTrip(int64_t now, int max_temp, int trip_temp, int critical_temp,
 			  int64_t duration_ms);
+
+/** @brief Enable or disable the GDDR thermal-trip action at runtime.
+ *
+ * @param enabled false to disable, true to enable.
+ * @return 0 on success.
+ */
+uint8_t CatSetGddrThermTripEnabled(bool enabled);
 
 #endif

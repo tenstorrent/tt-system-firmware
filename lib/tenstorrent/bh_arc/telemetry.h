@@ -70,8 +70,17 @@ typedef struct {
 	 */
 	uint32_t kernel_nops_at_aiclk_fmin: 1;
 
+	/** @brief GDDR thermal-trip action feature.
+	 *
+	 * When enabled, sustained or critical GDDR over-temperature engages a
+	 * CATMON thermal trip (shutting the ASIC down). This bit is controlled
+	 * at runtime by the host with @ref TT_SMC_MSG_CHARACTERISATION using
+	 * @ref TT_SUB_MSG_SET_GDDR_THERM_TRIP_ENABLED.
+	 */
+	uint32_t gddr_therm_trip: 1;
+
 	/** @brief Reserved for future use. */
-	uint32_t reserved: 31;
+	uint32_t reserved: 30;
 } telemetry_feature_flags_bits_0_t;
 
 /** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
@@ -457,6 +466,7 @@ typedef union {
  * Current assignments:
  * - bit 0 (`kernel_nops_at_aiclk_fmin`): firmware supports the
  *   kernel-throttler-at-AICLK-floor feature.
+ * - bit 1 (`gddr_therm_trip`): firmware supports the GDDR thermal-trip action.
  */
 #define TAG_FW_CAPABILITIES_0 78
 
@@ -466,10 +476,13 @@ typedef union {
  *
  * Current assignments:
  * - bit 0 (`kernel_nops_at_aiclk_fmin`): kernel-throttler-at-AICLK-floor is enabled.
+ * - bit 1 (`gddr_therm_trip`): GDDR thermal-trip action is enabled.
  *
  * Runtime control:
- * - The host can enable or disable this bit with @ref TT_SMC_MSG_CHARACTERISATION
+ * - The host can enable or disable bit 0 with @ref TT_SMC_MSG_CHARACTERISATION
  *   and @ref TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED.
+ * - The host can enable or disable bit 1 with @ref TT_SMC_MSG_CHARACTERISATION
+ *   and @ref TT_SUB_MSG_SET_GDDR_THERM_TRIP_ENABLED.
  */
 #define TAG_FW_ACTIVE_CONFIG_0 79
 
@@ -494,6 +507,8 @@ void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
+/** @brief Update the GDDR thermal-trip active-config bit in @ref TAG_FW_ACTIVE_CONFIG_0. */
+void UpdateTelemetryGddrThermTrip(bool enabled);
 /** @brief Get the current active firmware feature bits from @ref TAG_FW_ACTIVE_CONFIG_0.
  * @ingroup telemetry_feature_capabilities
  *

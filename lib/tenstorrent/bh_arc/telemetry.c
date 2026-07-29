@@ -260,6 +260,16 @@ void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq)
 	telemetry[TAG_KERNEL_THROTTLER] = (enabled ? 1U : 0U) | ((stop_nops_freq & 0xFFFFU) << 16U);
 }
 
+void UpdateTelemetryGddrThermTrip(bool enabled)
+{
+	telemetry_feature_flags_0_t active_config = {
+		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
+	};
+
+	active_config.bits.gddr_therm_trip = enabled ? 1U : 0U;
+	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
+}
+
 telemetry_feature_flags_bits_0_t GetActiveFeatures(void)
 {
 	telemetry_feature_flags_0_t active_config = {
@@ -473,11 +483,14 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_GDDR_MRISC_NOC2AXI_PORT] = get_gddr_mrisc_endpoints();
 
 	fw_capabilities.bits.kernel_nops_at_aiclk_fmin = 1U;
+	fw_capabilities.bits.gddr_therm_trip = 1U;
 	telemetry[TAG_FW_CAPABILITIES_0] = fw_capabilities.u32_all;
 
 	active_config.bits.kernel_nops_at_aiclk_fmin =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)
 			->feature_enable.kernel_throttler_at_floor_en;
+	active_config.bits.gddr_therm_trip =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.gddr_therm_trip_en;
 	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 }
 
