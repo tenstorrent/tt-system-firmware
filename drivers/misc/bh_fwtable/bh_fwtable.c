@@ -402,6 +402,13 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 			data->fw_table.has_dram_table = true;
 		}
 
+		if (ovr.has_feature_enable && ovr.feature_enable.has_gddr_therm_trip_en) {
+			LOG_INF("CCFGOVR override: feature_enable.gddr_therm_trip_en = %u",
+				ovr.feature_enable.gddr_therm_trip_en);
+			data->fw_table.feature_enable.gddr_therm_trip_en =
+				ovr.feature_enable.gddr_therm_trip_en;
+		}
+
 		return;
 	}
 

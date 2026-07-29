@@ -27,7 +27,7 @@ message FwTableOverride {
 
   message ChipLimits {
 
-    reserved 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16;
+    reserved 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20;
 
     optional uint32 tdp_limit = 5;
     optional uint32 kernel_throttler_stop_nops_freq = 17;
@@ -38,6 +38,7 @@ message FwTableOverride {
     reserved 1, 2, 3, 4, 5, 6, 7, 8, 9;
 
     optional bool kernel_throttler_at_floor_en = 10;
+    optional bool gddr_therm_trip_en = 11;
   }
 
   message DramTable {
