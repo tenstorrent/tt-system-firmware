@@ -38,11 +38,6 @@ typedef enum {
 	kGddrThermTripReasonInstantaneous = 1,
 } GddrThermTripReason;
 
-/* GDDR thermal trip thresholds */
-#define GDDR_THERM_TRIP_TEMP          95  /* sustained over-temp threshold, degrees Celsius */
-#define GDDR_THERM_TRIP_CRITICAL_TEMP 110 /* instantaneous trip threshold, degrees Celsius */
-#define GDDR_THERM_TRIP_DURATION_MIN  1   /* sustained dwell time before trip, minutes */
-
 typedef struct dmStaticInfo {
 	/*
 	 * Non-zero for valid data

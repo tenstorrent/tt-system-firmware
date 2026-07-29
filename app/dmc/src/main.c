@@ -222,12 +222,10 @@ static bool process_gddr_therm_trip(struct bh_chip *chip, uint8_t msg_id, uint32
 {
 	switch (msg_data) {
 	case kGddrThermTripReasonInstantaneous:
-		LOG_ERR("GDDR thermal trip: instantaneous temp >= %dC",
-			GDDR_THERM_TRIP_CRITICAL_TEMP);
+		LOG_ERR("GDDR thermal trip: instantaneous over-temperature");
 		break;
 	case kGddrThermTripReasonSustained:
-		LOG_ERR("GDDR thermal trip: sustained temp >= %dC for %d minute(s)",
-			GDDR_THERM_TRIP_TEMP, GDDR_THERM_TRIP_DURATION_MIN);
+		LOG_ERR("GDDR thermal trip: sustained over-temperature");
 		break;
 	default:
 		LOG_ERR("GDDR thermal trip: unknown reason %u", msg_data);

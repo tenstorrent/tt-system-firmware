@@ -17,6 +17,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/init.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/sensor.h>
@@ -55,6 +56,15 @@ typedef union {
 #ifndef CONFIG_TT_SMC_RECOVERY
 
 static const int gddr_therm_trip_interval = 100;
+
+static bool gddr_therm_trip_enabled;
+
+/* Live trip thresholds, seeded from chip_limits at init */
+static int gddr_therm_trip_temp;
+static int gddr_therm_trip_critical_temp;
+static int64_t gddr_therm_trip_duration_ms;
+
+static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static const struct device *const pvt = DEVICE_DT_GET(DT_NODELABEL(pvt));
 
@@ -208,18 +218,19 @@ static int CATInit(void)
 }
 SYS_INIT_APP(CATInit);
 
-int MonitorGddrThermTrip(int64_t now, int max_temp)
+int EvaluateGddrThermTrip(int64_t now, int max_temp, int trip_temp, int critical_temp,
+			  int64_t duration_ms)
 {
 	static bool tracking;
 	static int64_t over_temp_start_time;
 
-	if (max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP) {
-		LOG_ERR("Max GDDR temp %dC >= %dC", max_temp, CAT_GDDR_THERM_TRIP_CRITICAL_TEMP);
+	if (critical_temp != 0 && max_temp >= critical_temp) {
+		LOG_ERR("Max GDDR temp %dC >= %dC", max_temp, critical_temp);
 		tracking = false;
 		return max_temp;
 	}
 
-	if (max_temp < CAT_GDDR_THERM_TRIP_TEMP) {
+	if (trip_temp == 0 || max_temp < trip_temp) {
 		tracking = false;
 		return 0;
 	}
@@ -227,9 +238,9 @@ int MonitorGddrThermTrip(int64_t now, int max_temp)
 	if (!tracking) {
 		tracking = true;
 		over_temp_start_time = now;
-	} else if (now - over_temp_start_time >= CAT_GDDR_THERM_TRIP_DURATION_MS) {
-		LOG_ERR("Max GDDR temp %dC >= %dC for >= %d ms", max_temp, CAT_GDDR_THERM_TRIP_TEMP,
-			CAT_GDDR_THERM_TRIP_DURATION_MS);
+	} else if (now - over_temp_start_time >= duration_ms) {
+		LOG_ERR("Max GDDR temp %dC >= %dC for >= %lld ms", max_temp, trip_temp,
+			(long long)duration_ms);
 		tracking = false;
 		return max_temp;
 	}
@@ -237,7 +248,12 @@ int MonitorGddrThermTrip(int64_t now, int max_temp)
 	return 0;
 }
 
-#ifdef CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION
+static int MonitorGddrThermTrip(int64_t now, int max_temp)
+{
+	return EvaluateGddrThermTrip(now, max_temp, gddr_therm_trip_temp,
+				     gddr_therm_trip_critical_temp, gddr_therm_trip_duration_ms);
+}
+
 static void TriggerThermTrip(void)
 {
 	if (!IS_ENABLED(CONFIG_ARC)) {
@@ -256,7 +272,6 @@ static void gddr_therm_trip_trigger_handler(struct k_work *work)
 }
 
 static K_WORK_DELAYABLE_DEFINE(gddr_therm_trip_trigger_work, gddr_therm_trip_trigger_handler);
-#endif /* CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION */
 
 static void gddr_therm_trip_work_handler(struct k_work *work)
 {
@@ -269,16 +284,15 @@ static void gddr_therm_trip_work_handler(struct k_work *work)
 
 	int max_temp = MonitorGddrThermTrip(k_uptime_get(), GetTelemetryTag(TAG_MAX_GDDR_TEMP));
 
-	if (max_temp) {
+	if (max_temp && gddr_therm_trip_enabled) {
 		/* Notify DMC, then trigger therm trip after delay so DMC can read the message */
 		trip_pending = true;
-		ReportGddrThermTrip(max_temp >= CAT_GDDR_THERM_TRIP_CRITICAL_TEMP
+		ReportGddrThermTrip(max_temp >= gddr_therm_trip_critical_temp &&
+						    gddr_therm_trip_critical_temp != 0
 					    ? kGddrThermTripReasonInstantaneous
 					    : kGddrThermTripReasonSustained);
-#ifdef CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION
 		k_work_schedule(&gddr_therm_trip_trigger_work,
 				K_MSEC(GDDR_THERM_TRIP_DMC_NOTIFY_MS));
-#endif /* CONFIG_TT_BH_ARC_GDDR_THERM_TRIP_ACTION */
 	}
 }
 
@@ -295,6 +309,18 @@ static K_TIMER_DEFINE(gddr_therm_trip_timer, gddr_therm_trip_timer_handler, NULL
 
 void StartGddrThermTripMonitor(void)
 {
+	const FwTable *fw_table = tt_bh_fwtable_get_fw_table(fwtable_dev);
+
+	gddr_therm_trip_enabled = fw_table->feature_enable.gddr_therm_trip_en;
+
+	/* Thresholds come straight from chip_limits. A value of 0 means "unset"
+	 * and disables that trip path in MonitorGddrThermTrip
+	 */
+	gddr_therm_trip_temp = fw_table->chip_limits.gddr_therm_trip_temp;
+	gddr_therm_trip_critical_temp = fw_table->chip_limits.gddr_therm_trip_critical_temp;
+	gddr_therm_trip_duration_ms =
+		(int64_t)fw_table->chip_limits.gddr_therm_trip_duration_min * 60 * 1000;
+
 	k_timer_start(&gddr_therm_trip_timer, K_MSEC(gddr_therm_trip_interval),
 		      K_MSEC(gddr_therm_trip_interval));
 }
