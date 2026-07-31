@@ -18,32 +18,32 @@
 		port-write-cycles = <2>;
 	};
 
+	/* ASIC reset line */
 	mcureset {
 		compatible = "zephyr,gpio-line";
-		label = "ASIC reset line";
 		gpios = <&gpio0 5 GPIO_PULL_DOWN>;
 	};
 
+	/* Spi reset line */
 	spireset {
 		compatible = "zephyr,gpio-line";
-		label = "Spi reset line";
 		gpios = <&gpio0 6 GPIO_PULL_DOWN>;
 	};
 
+	/* Power good indicator */
 	pgood {
 		compatible = "zephyr,gpio-line";
-		label = "Power good indicator";
 		gpios = <&gpio0 8 GPIO_PULL_DOWN>;
 	};
 
+	/* Enable to select the arc jtag, disable to select rambus */
 	arc_rambus_jtag_mux_sel: arc_rambus_jtag_mux_enable {
-		label = "Enable to select the arc jtag, disable to select rambus";
 		compatible = "zephyr,gpio-line";
 		gpios = <&gpio0 9 GPIO_ACTIVE_LOW>;
 	};
 
+	/* Enable to select the arc jtag, disable to select l2cpu */
 	arc_l2_jtag_mux_sel: arc_l2_jtag_mux_enable {
-		label = "Enable to select the arc jtag, disable to select l2cpu";
 		compatible = "zephyr,gpio-line";
 		gpios = <&gpio0 10 GPIO_ACTIVE_LOW>;
 	};

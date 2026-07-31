@@ -22,44 +22,44 @@
 		watchdog0 = &iwdg;
 	};
 
+	/* LED Output to board fault indicator */
 	board_fault_led {
 		compatible = "zephyr,gpio-line";
-		label = "LED Output to board fault indicator";
 		gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;
 	};
 
 	chip0: chip0 {
 		compatible = "tenstorrent,bh-chip";
 
+		/* Power good indicator */
 		pgood {
 			compatible = "zephyr,gpio-line";
-			label = "Power good indicator";
 			gpios = <&gpioc 9 GPIO_PULL_DOWN>;
 		};
 
+		/* Line to asic reset */
 		asic_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to asic reset";
 			gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
 		};
 
+		/* Thermal trip indicator */
 		therm_trip {
 			compatible = "zephyr,gpio-line";
-			label = "Thermal trip indicator";
 			gpios = <&gpioa 2 GPIO_ACTIVE_HIGH>;
 		};
 
 		flash = <&flash1>;
 
+		/* Line to spi mux, drive low to enable dmfw -> eeprom */
 		spi_mux {
 			compatible = "zephyr,gpio-line";
-			label = "Line to spi mux, drive low to enable dmfw -> eeprom";
 			gpios = <&gpiob 0 GPIO_ACTIVE_LOW>;
 		};
 
+		/* Line to spi reset */
 		spi_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to spi reset";
 			gpios = <&gpiod 5 GPIO_ACTIVE_LOW>;
 		};
 
@@ -76,9 +76,9 @@
 		};
 	};
 
+	/* Input from PCIe card edge triggering an asic reset */
 	preset_trigger {
 		compatible = "zephyr,gpio-line";
-		label = "Input from PCIe card edge triggering an asic reset";
 		gpios = <&gpioc 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 	};
 

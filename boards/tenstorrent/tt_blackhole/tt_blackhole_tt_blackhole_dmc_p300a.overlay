@@ -43,27 +43,27 @@
 	chip1: chip1 {
 		compatible = "tenstorrent,bh-chip";
 
+		/* Line to asic reset */
 		asic_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to asic reset";
 			gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;
 		};
 
+		/* Line to SPI reset */
 		spi_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to SPI reset";
 			gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
 		};
 
+		/* PGOOD signal for asic 1 */
 		pgood {
 			compatible = "zephyr,gpio-line";
-			label = "PGOOD signal for asic 1";
 			gpios = <&gpioc 5 GPIO_PULL_DOWN>;
 		};
 
+		/* Thermal trip indicator */
 		therm_trip {
 			compatible = "zephyr,gpio-line";
-			label = "Thermal trip indicator";
 			gpios = <&gpioc 9 GPIO_ACTIVE_HIGH>;
 		};
 
@@ -79,52 +79,52 @@
 		};
 
 		strapping {
+			/* GPIO pin representing strap GPIO6_PCIE_BOOT_INSTANCE */
 			gpio6 {
 				compatible = "zephyr,gpio-line";
-				label = "GPIO pin representing strap GPIO6_PCIE_BOOT_INSTANCE";
 				gpios = <&gpiox0 4 GPIO_ACTIVE_HIGH>;
 			};
 
 			/* Use QUAD DDR SPI mode, GPIO[39:38] = 2 is QUAD mode, GPIO40 is DDR_EN */
+			/* GPIO pin representing strap GPIO38_SPI_MODE_0 */
 			gpio38 {
 				compatible = "zephyr,gpio-line";
-				label = "GPIO pin representing strap GPIO38_SPI_MODE_0";
 				gpios = <&gpiox0 13 GPIO_ACTIVE_LOW>;
 			};
 
+			/* GPIO pin representing strap GPIO39_SPI_MODE_1 */
 			gpio39 {
 				compatible = "zephyr,gpio-line";
-				label = "GPIO pin representing strap GPIO39_SPI_MODE_1";
 				gpios = <&gpiox0 14 GPIO_ACTIVE_HIGH>;
 			};
 
+			/* GPIO pin representing strap GPIO40_SPI_DDR_EN */
 			gpio40 {
 				compatible = "zephyr,gpio-line";
-				label = "GPIO pin representing strap GPIO40_SPI_DDR_EN";
 				gpios = <&gpiox0 15 GPIO_ACTIVE_HIGH>;
 			};
 		};
 
 		flash = <&chip1_flash>;
 
+		/* Line to spi mux, drive low to enable dmfw -> eeprom */
 		spi_mux {
 			compatible = "zephyr,gpio-line";
-			label = "Line to spi mux, drive low to enable dmfw -> eeprom";
 			gpios = <&gpiob 6 GPIO_ACTIVE_LOW>;
 		};
 
 		arc = <&chip1_arc>;
 	};
 
+	/* Line to SYS JTAG mux, drive low to enable dmfw -> eeprom */
 	arc_jtag_mux {
 		compatible = "zephyr,gpio-line";
-		label = "Line to SYS JTAG mux, drive low to enable dmfw -> eeprom";
 		gpios = <&gpiod 13 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* Line to SYS JTAG mux, drive low to enable dmfw -> eeprom */
 	sys_jtag_mux {
 		compatible = "zephyr,gpio-line";
-		label = "Line to SYS JTAG mux, drive low to enable dmfw -> eeprom";
 		gpios = <&gpiod 14 GPIO_ACTIVE_HIGH>;
 	};
 
@@ -217,21 +217,21 @@
 
 	strapping {
 		/* Use QUAD DDR SPI mode, GPIO[39:38] = 2 is QUAD mode, GPIO40 is DDR_EN */
+		/* GPIO pin representing strap GPIO38_SPI_MODE_0 */
 		gpio38 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO38_SPI_MODE_0";
 			gpios = <&gpiox1 13 GPIO_ACTIVE_LOW>;
 		};
 
+		/* GPIO pin representing strap GPIO39_SPI_MODE_1 */
 		gpio39 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO39_SPI_MODE_1";
 			gpios = <&gpiox1 14 GPIO_ACTIVE_HIGH>;
 		};
 
+		/* GPIO pin representing strap GPIO40_SPI_DDR_EN */
 		gpio40 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO40_SPI_DDR_EN";
 			gpios = <&gpiox1 15 GPIO_ACTIVE_HIGH>;
 		};
 	};
@@ -245,9 +245,9 @@
 &smbus1 {
 	status = "okay";
 
-	chip0_arc: bh_arc@A {
+	chip0_arc: bh_arc@a {
 		compatible = "tenstorrent,bh-arc";
-		reg = <0xA>;
+		reg = <0xa>;
 
 		gpios = <&gpiof 8 GPIO_ACTIVE_LOW>;
 	};
@@ -293,9 +293,9 @@
 &smbus3 {
 	status = "okay";
 
-	chip1_arc: bh_arc@A {
+	chip1_arc: bh_arc@a {
 		compatible = "tenstorrent,bh-arc";
-		reg = <0xA>;
+		reg = <0xa>;
 
 		gpios = <&gpiof 9 GPIO_ACTIVE_LOW>;
 	};

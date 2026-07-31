@@ -12,74 +12,74 @@
 	chip0: chip0 {
 		compatible = "tenstorrent,bh-chip";
 
+		/* Line to asic reset */
 		asic_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to asic reset";
 			gpios = <&gpiob 0 GPIO_ACTIVE_LOW>;
 		};
 
+		/* Line to spi reset */
 		spi_reset {
 			compatible = "zephyr,gpio-line";
-			label = "Line to spi reset";
 			gpios = <&gpioc 7 GPIO_ACTIVE_LOW>;
 		};
 
+		/* Power good indicator */
 		pgood {
 			compatible = "zephyr,gpio-line";
-			label = "Power good indicator";
 			gpios = <&gpioc 14 GPIO_PULL_DOWN>;
 		};
 
+		/* Thermal trip indicator */
 		therm_trip {
 			compatible = "zephyr,gpio-line";
-			label = "Thermal trip indicator";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
 		};
 
 		flash = <&flash1>;
 
+		/* Line to spi mux, drive low to enable dmfw -> eeprom */
 		spi_mux {
 			compatible = "zephyr,gpio-line";
-			label = "Line to spi mux, drive low to enable dmfw -> eeprom";
 			gpios = <&gpiob 5 GPIO_ACTIVE_LOW>;
 		};
 
 		arc = <&chip0_arc>;
 	};
 
+	/* Input from PCIe card edge triggering an asic reset */
 	preset_trigger {
 		compatible = "zephyr,gpio-line";
-		label = "Input from PCIe card edge triggering an asic reset";
 		gpios = <&gpioa 0 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 	};
 
+	/* LED Output to board fault indicator */
 	board_fault_led {
 		compatible = "zephyr,gpio-line";
-		label = "LED Output to board fault indicator";
 		gpios = <&gpioc 15 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* PSU Sense 0 from 12V-2x6 connector */
 	psu_sense0 {
 		compatible = "zephyr,gpio-line";
-		label = "PSU Sense 0 from 12V-2x6 connector";
 		gpios = <&gpioa 6 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* PSU Sense 1 from 12V-2x6 connector */
 	psu_sense1 {
 		compatible = "zephyr,gpio-line";
-		label = "PSU Sense 1 from 12V-2x6 connector";
 		gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* Board ID 0 indicator */
 	board_id0 {
 		compatible = "zephyr,gpio-line";
-		label = "Board ID 0 indicator";
 		gpios = <&gpioa 2 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* Power reset */
 	powerreset {
 		compatible = "zephyr,gpio-line";
-		label = "Power reset";
 		gpios = <&gpiod 1 GPIO_ACTIVE_LOW>;
 	};
 };
@@ -253,7 +253,7 @@
 	max6639: max6639@2c {
 		status = "okay";
 		compatible = "maxim,max6639";
-		reg = <0x2C>;
+		reg = <0x2c>;
 
 		max6639_pwm: pwm {
 			label = "max6639_pwm";
@@ -375,7 +375,7 @@
 };
 
 &nv_flash {
-	#include "tt_blackhole_fixed_partitions.dtsi"
+#include "tt_blackhole_fixed_partitions.dtsi"
 };
 
 /* Define the DMC firmware partition for MCUBoot */

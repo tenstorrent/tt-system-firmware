@@ -35,21 +35,21 @@
 
 	strapping {
 		/* Use QUAD DDR SPI mode, GPIO[39:38] = 2 is QUAD mode, GPIO40 is DDR_EN */
+		/* GPIO pin representing strap GPIO38_SPI_MODE_0 */
 		gpio38 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO38_SPI_MODE_0";
 			gpios = <&gpiox2 3 GPIO_ACTIVE_LOW>;
 		};
 
+		/* GPIO pin representing strap GPIO39_SPI_MODE_1 */
 		gpio39 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO39_SPI_MODE_1";
 			gpios = <&gpiox2 4 GPIO_ACTIVE_HIGH>;
 		};
 
+		/* GPIO pin representing strap GPIO40_SPI_DDR_EN */
 		gpio40 {
 			compatible = "zephyr,gpio-line";
-			label = "GPIO pin representing strap GPIO40_SPI_DDR_EN";
 			gpios = <&gpiox2 5 GPIO_ACTIVE_HIGH>;
 		};
 	};
@@ -100,8 +100,8 @@
 	pinctrl-0 = <&i2c3_scl_pa7 &i2c3_sda_pb4>;
 	pinctrl-names = "default";
 
-	chip0_arc: bh_arc@A {
+	chip0_arc: bh_arc@a {
 		compatible = "tenstorrent,bh-arc";
-		reg = <0xA>;
+		reg = <0xa>;
 	};
 };
