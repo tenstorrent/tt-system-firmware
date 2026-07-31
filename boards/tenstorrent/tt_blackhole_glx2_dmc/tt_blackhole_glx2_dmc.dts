@@ -154,14 +154,12 @@
 	status = "okay";
 };
 
-/*
- *&uart5 {
- *	pinctrl-0 = <&uart5_tx_pc12 &uart5_rx_pd2>;
- *	pinctrl-names = "default";
- *	current-speed = <115200>;
- *	status = "okay";
- *};
- */
+&uart5 {
+	pinctrl-0 = <&uart5_tx_pc12 &uart5_rx_pd2>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
+};
 
 &i3c1 {
 	pinctrl-0 = <&i3c1_scl_pb13 &i3c1_sda_pa1>;
