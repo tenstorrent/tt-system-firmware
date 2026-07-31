@@ -1,0 +1,50 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * MK BU DMC with BOTH I3C roles in one image: i3c1 controller, i3c2 target.
+ *
+ *   west build -p -b tt_grendel_mk_bu_dmc app/dm_test_app
+ *     -- -DEXTRA_DTC_OVERLAY_FILE=<abs path>/mk_i3c_dual.overlay
+ *
+ * This exists so switching roles stops needing a reflash. `target-mode` is a
+ * per-instance device-tree boolean resolved at build time, so a single instance
+ * cannot be both -- but the DMC has two, and nothing says they need the same
+ * role. i3c1 keeps the bench harness (PB13/PC1 out through the PI3CLS39306 and
+ * the P3S0200 to the Supernova); i3c2 (PB6/PA6) becomes the target.
+ *
+ * Note this needs the app change alongside it: main.c binds its target
+ * callbacks to DT_NODELABEL(i3c1) unconditionally, so without that it would try
+ * to register a target on the controller instance and i3c2 would be in target
+ * mode with nothing servicing it.
+ *
+ * i3c2 is unwired on this board today. Two ways to exercise it: move the
+ * harness over, or jumper PB13/PC1 to PB6/PA6 and let the DMC talk to itself --
+ * both ends are 1.8 V so no translation is needed. The second is the cheaper
+ * loopback and needs no external part.
+ */
+
+&i3c1 {
+	status = "okay";
+
+	/* Declared so the shell can address the Supernova after DAA. NOTE: a
+	 * declared peer makes this instance's *init* depend on that device
+	 * answering at boot -- with the Supernova absent, i3c1 came up DISABLED
+	 * and main() bailed on device_is_ready(). Bring the target end up first,
+	 * or comment this node out when the harness is not attached.
+	 */
+	binho_target: binho_target@2a020800000002 {
+		compatible = "tenstorrent,smc-remoteproc";
+		reg = <0x2a 0x0208 0x00000002>;
+		status = "okay";
+	};
+};
+
+&i3c2 {
+	status = "okay";
+	target-mode;
+	mipi-instance = <0x9>;   /* 0x8 is i3c1's, kept distinct */
+};

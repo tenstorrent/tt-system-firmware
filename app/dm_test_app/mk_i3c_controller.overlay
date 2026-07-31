@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * MK BU DMC as I3C *controller* on i3c1, with the Binho Supernova declared as a
+ * known target so the shell can address it after DAA.
+ *
+ *   west build -p -b tt_grendel_mk_bu_dmc app/dm_test_app
+ *     -- -DEXTRA_DTC_OVERLAY_FILE=<abs path>/mk_i3c_controller.overlay
+ *
+ * ENTDAA already works without this: MEASURED 2026-07-31, the DMC drives the
+ * bus and a target answers. What it cannot do is *address* what it found --
+ * Zephyr keys its device descriptor on the Provisioned ID, so with no node
+ * claiming that PID it allocates a descriptor per ENTDAA, attaches nothing,
+ * `i3c info` reports "No devices found", and the descriptor pool leaks (three
+ * ENTDAAs exhaust CONFIG_I3C_NUM_OF_DESC_MEM_SLABS=3; a reset clears it).
+ *
+ * The PID below is not a guess. We choose it host-side when the Supernova is
+ * initialised as a target (boardy.transports.binho.BINHO_TARGET_PID), so the
+ * two ends are set from one constant. Change one, change the other.
+ *
+ * reg encoding, per Zephyr's dts/bindings/i3c/i3c-device.yaml:
+ *   field 1: static address                    -> 0x2A
+ *   field 2: manufacturer ID << 1  (PID 47:33) -> 0x0208
+ *   field 3: lower 32 bits of the PID          -> 0x00000002
+ * Verified against the in-tree smc_remoteproc node, whose reg matches this
+ * formula applied to its own PID.
+ */
+
+&i3c1 {
+	status = "okay";
+
+	binho_target: binho_target@2a020800000002 {
+		compatible = "tenstorrent,smc-remoteproc";
+		reg = <0x2a 0x0208 0x00000002>;
+		/* NO supports-setaasa. It was tried and removed: the property made
+		 * Zephyr issue SETAASA to 0x2A at init, the Supernova answered with an
+		 * Address NACK, and the failure cascaded -- GETBCR returned -5, the
+		 * device info was never read, so bcr/dcr/mrl/mwl all stayed 0x00 and
+		 * transfers were truncated to a single byte. Having a static address
+		 * does not mean a target implements the SETAASA broadcast.
+		 */
+		status = "okay";
+	};
+};

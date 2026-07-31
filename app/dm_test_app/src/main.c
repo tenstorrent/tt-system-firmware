@@ -23,7 +23,18 @@
 LOG_MODULE_REGISTER(dm_test_app, LOG_LEVEL_INF);
 
 #ifdef CONFIG_I3C_TARGET
+/*
+ * Bind the target callbacks to whichever instance the devicetree put in target
+ * mode, instead of hardcoding i3c1. `target-mode` is a per-instance property, so
+ * one image can run i3c1 as a controller and i3c2 as a target -- but only if
+ * this follows the DT. Hardcoded, it registers a target on the controller
+ * instance and the real target is left with nothing servicing it.
+ */
+#if DT_PROP_OR(DT_NODELABEL(i3c2), target_mode, 0)
+static const struct device *i3c_dev = DEVICE_DT_GET(DT_NODELABEL(i3c2));
+#else
 static const struct device *i3c_dev = DEVICE_DT_GET(DT_NODELABEL(i3c1));
+#endif
 
 static uint8_t value;
 

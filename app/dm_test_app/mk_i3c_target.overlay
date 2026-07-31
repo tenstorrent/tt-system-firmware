@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * MK BU DMC as I3C *target* on i3c1, with the Binho Supernova as controller.
+ *
+ *   west build -p -b tt_grendel_mk_bu_dmc app/dm_test_app
+ *     -- -DEXTRA_DTC_OVERLAY_FILE=<abs path>/mk_i3c_target.overlay
+ *
+ * Why this is needed: `target-mode` is a per-instance boolean, and the MK board
+ * DTS does not set it -- so i3c1 comes up as a controller and
+ * `i3c_target_register()` in main.c has no effect. MEASURED on the running
+ * image: `i3c config_get target i3c1` reports `enabled: false` while
+ * `config_get controller i3c1` reports `is_secondary: false`.
+ *
+ * Both properties are copied from app/dm_test_app/nucleo_u385rg_q.overlay,
+ * which is the configuration the firmware author has PLDM loopback working on.
+ * `mipi-instance` fills the instance bits of the PID the DMC advertises; with
+ * it absent the DMC reports 0x020800000000, i.e. manufacturer bits only.
+ *
+ * Because the role is a build-time DTS property, this and the controller
+ * overlay are mutually exclusive -- testing both directions on the same wiring
+ * means two images.
+ */
+
+&i3c1 {
+	status = "okay";
+	target-mode;
+	mipi-instance = <0x8>;
+};
