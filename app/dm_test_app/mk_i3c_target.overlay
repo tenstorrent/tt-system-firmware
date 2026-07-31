@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* MK BU DMC as I3C target on i3c1, with the Binho Supernova as controller. */
+
+/ {
+	aliases {
+		i3c-target-dev = &i3c1;
+	};
+};
+
+&i3c1 {
+	status = "okay";
+	target-mode;
+	mipi-instance = <0x8>;
+};

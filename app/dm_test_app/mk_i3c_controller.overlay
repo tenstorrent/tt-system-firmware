@@ -1,0 +1,17 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* MK BU DMC as I3C controller on i3c1, with the Binho Supernova as a known target. */
+
+&i3c1 {
+	status = "okay";
+
+	binho_target: binho_target@2a020800000002 {
+		compatible = "tenstorrent,smc-remoteproc";
+		reg = <0x2a 0x0208 0x00000002>;
+		status = "okay";
+	};
+};

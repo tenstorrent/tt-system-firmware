@@ -15,15 +15,20 @@
 #include <zephyr/drivers/spi.h>
 #endif
 
-#ifdef CONFIG_I3C_TARGET
+/* The i3c-target-dev alias names the instance the app serves as an I3C target. */
+#if DT_HAS_ALIAS(i3c_target_dev)
 #include <zephyr/drivers/i3c.h>
 #include <zephyr/drivers/i3c/target_device.h>
 #endif
 
 LOG_MODULE_REGISTER(dm_test_app, LOG_LEVEL_INF);
 
-#ifdef CONFIG_I3C_TARGET
-static const struct device *i3c_dev = DEVICE_DT_GET(DT_NODELABEL(i3c1));
+#if DT_HAS_ALIAS(i3c_target_dev)
+BUILD_ASSERT(IS_ENABLED(CONFIG_I3C_TARGET), "i3c-target-dev needs CONFIG_I3C_TARGET");
+BUILD_ASSERT(DT_PROP_OR(DT_ALIAS(i3c_target_dev), target_mode, 0),
+	     "i3c-target-dev must point at an instance with target-mode");
+
+static const struct device *i3c_dev = DEVICE_DT_GET(DT_ALIAS(i3c_target_dev));
 
 static uint8_t value;
 
@@ -599,7 +604,7 @@ int main(void)
 	post_code_show(0x0001);
 #endif
 
-#ifdef CONFIG_I3C_TARGET
+#if DT_HAS_ALIAS(i3c_target_dev)
 	int ret;
 
 	if (!device_is_ready(i3c_dev)) {
