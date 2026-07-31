@@ -110,12 +110,19 @@ static int32_t apply_power_settings(const struct power_setting_rqst *power_setti
 	}
 
 	if (power_setting->power_flags_valid > BH_POWER_DOMAIN_PCIE_GEN) {
-		if (IS_ENABLED(CONFIG_ARC)) {
-			ChangeLinkSpeed(power_setting->power_flags_bitfield.pcie_gen ? 5 : 1);
-		}
+		/* Only honor an explicit request to raise the link to Gen5. A
+		 * defaulted pcie_gen bit (0) must NOT drop the link to Gen1: bit 4
+		 * was previously reserved 'future_use', so existing senders that set
+		 * power_flags_valid >= 5 leave it 0 and would otherwise silently
+		 * regress the PCIe link to Gen1.
+		 */
+		if (power_setting->power_flags_bitfield.pcie_gen) {
+			if (IS_ENABLED(CONFIG_ARC)) {
+				ChangeLinkSpeed(5);
+			}
 
-		power_state[BH_POWER_DOMAIN_PCIE_GEN] =
-			power_setting->power_flags_bitfield.pcie_gen;
+			power_state[BH_POWER_DOMAIN_PCIE_GEN] = true;
+		}
 	}
 
 	return ret;
