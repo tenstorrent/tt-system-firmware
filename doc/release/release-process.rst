@@ -37,6 +37,49 @@ Shared Building Blocks
 The following procedures are shared across the RC and final release flows described in
 `Release Flow`_. They are documented once here and referenced from the individual steps.
 
+Working on a Protected Release Branch
+=====================================
+
+Release branches (``vX.Y-branch``) are protected by the same repository ruleset
+as ``main``. This means you **cannot** push commits directly to a release
+branch: every change, including version bumps, must go through a pull request
+with at least one approving review. Branch deletion and force pushes are also
+blocked.
+
+Since the base of the PR is the protected release branch, your commits have to
+live somewhere else. Cut a **topic branch** from the release branch, push it to
+your fork, and open a PR whose base is the release branch. Avoid starting the
+topic branch name with ``vX.Y``, even on your fork. Put the version at the end
+instead, as in ``<topic>-vX.Y``:
+
+.. code-block:: shell
+
+   # Start from an up-to-date copy of the release branch
+   git fetch upstream
+   git checkout -b rc2-rev-bump-v19.9 upstream/v19.9-branch
+
+   # Make the change (e.g. the RC version bump), which creates the commits
+   ./scripts/update_versions.sh update-rc
+
+   # Push the topic branch to your fork and open the PR against the release branch
+   git push -u origin rc2-rev-bump-v19.9
+   gh pr create --base v19.9-branch --repo tenstorrent/tt-system-firmware
+
+Here ``upstream`` is the main tt-system-firmware repository and ``origin`` is
+your personal fork; adjust the remote names to match your setup. Note that
+``update_versions.sh`` commits to whatever branch you currently have checked out,
+so create the topic branch *before* running it.
+
+Two consequences worth remembering:
+
+* Creating the release branch for the first time is fine - the protection applies
+  to updating an existing branch, not to creating it. This is why
+  ``scripts/create-release-candidate.sh`` can push the new branch directly.
+
+* Tags are not covered by the ruleset, so signed release and RC tags are pushed
+  directly. Always tag a commit that is already merged on the release branch, not
+  a local-only commit.
+
 Signed Tags and Immutable Releases
 ==================================
 
@@ -82,10 +125,16 @@ more details, see here:
 Posting a Release to GitHub
 ===========================
 
-Once GitHub Actions creates a draft release at `GitHub Releases
-<https://github.com/tenstorrent/tt-system-firmware/releases>`_,
+Pushing a release tag (any tag starting with ``v``) to GitHub triggers the
+release workflow (``.github/workflows/release.yml``), which builds the release
+artifacts and creates a **draft** release for that tag at `GitHub Releases
+<https://github.com/tenstorrent/tt-system-firmware/releases>`_. The draft is not
+visible to users until you publish it. Once the workflow has finished and the
+draft release exists, complete the following steps:
 
-1. Edit the release. If the release is an RC, mark the release as a pre-release.
+1. Edit the release. The workflow marks every draft as a pre-release, so an RC
+   needs no change here. For a final release, uncheck "Set as a pre-release" and
+   make sure "Set as the latest release" is checked.
 
 2. Verify the release includes a verified tag. There should be a green
    "Verified" badge next to the tag in the release, indicating that the tag is
@@ -221,10 +270,13 @@ To create a new RC for validation after the first RC, follow these steps:
    next RC version (e.g. "rc2", "rc3", etc). This step can be performed using the
    command ``./scripts/update_versions.sh update-rc``.
 
-2. Merge Version Bump - Create a PR to the release branch with the change, and
-   merge after CI is successful.
+2. Merge Version Bump - Put the version commits on a topic branch cut from the
+   release branch (e.g. ``v19.9.0-rc2-rev-bump``), push it to your fork, and open
+   a PR with the base set to the release branch. Merge after CI is successful.
+   See `Working on a Protected Release Branch`_.
 
-3. RC Tagging - Tag the release branch with the new RC tag, following the format
+3. RC Tagging - Once the PR is merged, check out the release branch and pull the
+   merge commit, then tag it with the new RC tag, following the format
    ``vX.Y.Z-rcN`` where X, Y and Z are the major, minor and patch version numbers
    of the release, and N is the RC version number. For example, if the release
    branch is ``v19.9-branch`` and this is the second RC, then the new RC tag should
@@ -249,18 +301,24 @@ steps:
    be empty. This step can be performed using the command
    ``./scripts/update_versions.sh pre-release``.
 
-2. Release Tagging - Tag the release branch with the final release tag, following
-   the format ``vX.Y.Z`` where X, Y and Z are the major, minor and patch version
-   numbers of the release. For example, if the release branch is
-   ``v19.9-branch``, then the final release tag should be ``v19.9.0``. The tag can
-   be created with the command
-   ``git tag -s vX.Y.Z -m "tt-system-firmware vX.Y.Z"``, where X, Y and Z are the
-   major, minor and patch version numbers of the release.
+2. Merge Version Bump - Put the version commits on a topic branch cut from the
+   release branch (e.g. ``v19.9.0-version-finalization``), push it to your fork,
+   and open a PR with the base set to the release branch. Merge after CI is
+   successful. See `Working on a Protected Release Branch`_.
 
-3. Push to GitHub - Push the release branch and final release tag to GitHub. This
-   will start the CI process for the release from the final release tag. Once
-   this is complete, follow `Posting a Release to GitHub`_ steps to post the
-   final release to GitHub as a published stable release.
+3. Release Tagging - Once the PR is merged, check out the release branch and pull
+   the merge commit, then tag it with the final release tag, following the format
+   ``vX.Y.Z`` where X, Y and Z are the major, minor and patch version numbers of
+   the release. For example, if the release branch is ``v19.9-branch``, then the
+   final release tag should be ``v19.9.0``. The tag can be created with the
+   command ``git tag -s vX.Y.Z -m "tt-system-firmware vX.Y.Z"``, where X, Y and Z
+   are the major, minor and patch version numbers of the release.
+
+4. Push to GitHub - Push the final release tag to GitHub (the release branch
+   itself is already up to date via the merged PR in step 2). This will start the
+   CI process for the release from the final release tag. Once this is complete,
+   follow `Posting a Release to GitHub`_ steps to post the final release to
+   GitHub as a published stable release.
 
 Testing the Release Process in a Fork
 *************************************
