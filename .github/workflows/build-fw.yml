@@ -115,7 +115,7 @@ jobs:
           else
             # verify that built images for smc and dmc fw are signed
             # imgtool returns a non-zero exit code if the image is not signed
-            if ! [[ "${{ matrix.board }}" =~ ^galaxy(_revc)?$ ]]; then
+            if ! [[ "${{ matrix.board }}" =~ ^galaxy(_revc|_bin6)?$ ]]; then
               imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
             fi
             imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/recovery/zephyr/zephyr.signed.bin

@@ -18,9 +18,10 @@ if("${BUNDLE_VERSION_STRING}" STREQUAL "...")
 endif()
 
 # ======== Board validation ========
-# galaxy and galaxy_revc do not require a DMC image in bootfs
+# galaxy, galaxy_revc and galaxy_bin6 do not require a DMC image in bootfs
 set(IS_GALAXY_BOARD FALSE)
-if("${BOARD_REVISION}" STREQUAL "galaxy" OR "${BOARD_REVISION}" STREQUAL "galaxy_revc")
+if("${BOARD_REVISION}" STREQUAL "galaxy" OR "${BOARD_REVISION}" STREQUAL "galaxy_revc" OR
+   "${BOARD_REVISION}" STREQUAL "galaxy_bin6")
   set(IS_GALAXY_BOARD TRUE)
 endif()
 if("${SB_CONFIG_DMC_BOARD}" STREQUAL "" AND NOT IS_GALAXY_BOARD)
@@ -35,6 +36,8 @@ if(BOARD STREQUAL "tt_blackhole")
     set(PROD_NAME "GALAXY-1")
   elseif("${BOARD_REVISION}" STREQUAL "galaxy_revc")
     set(PROD_NAME "GALAXY-3")
+  elseif("${BOARD_REVISION}" STREQUAL "galaxy_bin6")
+    set(PROD_NAME "GALAXY-BIN6")
   else()
     string(TOUPPER ${BOARD_REVISION} BASE_NAME)
     set(PROD_NAME "${BASE_NAME}-1")

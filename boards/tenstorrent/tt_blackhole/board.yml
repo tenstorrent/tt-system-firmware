@@ -15,6 +15,7 @@ boards:
     - name: "galaxy"
     - name: "galaxy_2"
     - name: "galaxy_revc"
+    - name: "galaxy_bin6"
     - name: "orion_slt"
   socs:
   - name: tt_blackhole

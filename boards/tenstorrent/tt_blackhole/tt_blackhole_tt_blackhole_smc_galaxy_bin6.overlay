@@ -1,0 +1,27 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/delete-node/ &blupdate;
+/delete-node/ &dmfw;
+/delete-node/ &dmfwimg;
+
+/*
+ * galaxy_bin6 postdates the v19.12.0 release, so no signed MCUBoot or recovery
+ * artifacts have been published for it. Build both from source until its blobs
+ * ship in a release.
+ */
+
+&cmfw {
+	binary-path = "$BUILD_DIR/mcuboot/zephyr/zephyr.bin";
+};
+
+&smc_recovery {
+	binary-path = "$BUILD_DIR/recovery/zephyr/zephyr.signed.bin";
+};
+
+&boot_fallback {
+	binary-path = "$BUILD_DIR/mcuboot/zephyr/zephyr.bin";
+};

@@ -205,6 +205,15 @@ blobs:
           raw/refs/heads/main/zephyr/blobs/tt_blackhole_gddr_params_GALAXY_REVC.bin"
     description: "Memory Controller FW parameters"
     doc-url: https://tenstorrent.com
+  - path: tt_blackhole_gddr_params_GALAXY_BIN6.bin
+    sha256: 713dd93ad38406fa1f210f12e4f79fd7bb6b6a289eb5fef02510c575d8ae5789
+    type: img
+    version: '2.16'
+    license-path: zephyr/blobs/license.txt
+    url: "https://github.com/tenstorrent/tt-system-firmware/\
+          raw/refs/heads/main/zephyr/blobs/tt_blackhole_gddr_params_GALAXY_BIN6.bin"
+    description: "Memory Controller FW parameters"
+    doc-url: https://tenstorrent.com
   - path: tt_blackhole_nano_bootcode.bin
     sha256: 15923a962b3e36c30332fc06f171a139b5c43e672d253bd7a1abda387201108d
     type: img
