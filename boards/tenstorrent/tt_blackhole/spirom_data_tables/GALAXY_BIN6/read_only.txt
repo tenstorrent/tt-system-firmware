@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+funtest_table {
+  ft_stage: 0
+  ft1_exit_code: 0
+  ft2_exit_code: 0
+  ft_version: 0
+  ft_build_date: 0
+  ft_job_info: 0
+}
+
+reference_values_table {
+  reference_ro_08v: 0
+  aging_ro_08v: 0
+  reference_idd_08v_room_temp: 0
+  reference_temp_reading: 0
+  reference_voltage_reading: 0
+}
+vendor_id: 0x1e52
+asic_location: 0
+board_id: 0x202100000000

@@ -24,7 +24,7 @@ case "$1" in
   else
     BOARD="tt_blackhole@$1/tt_blackhole/$CLUSTER"
   fi;;
-  p100a|p150a|p150b|p150c|p300a|p300b|p300c|galaxy|galaxy_revc|orion_slt)
+  p100a|p150a|p150b|p150c|p300a|p300b|p300c|galaxy|galaxy_revc|galaxy_bin6|orion_slt)
   BOARD="tt_blackhole@$1/tt_blackhole/$CLUSTER";;
   bh-galaxy-revc)
   BOARD="tt_blackhole@galaxy_revc/tt_blackhole/$CLUSTER";;

@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Galaxy boards fit second-source flash parts; include this before the
+ * partition adjustments below, as it recreates the partitions.
+ */
+#include "tt_blackhole_smc_flash_mux.dtsi"
+
+/delete-node/ &blupdate;
+/delete-node/ &dmfw;
+/delete-node/ &dmfwimg;
+
+/* No GDDR parameter blob is published for bin6; the revc parameters apply. */
+&memfwcfg {
+	binary-path = "$BLOBS_DIR/tt_blackhole_gddr_params_GALAXY_REVC.bin";
+};

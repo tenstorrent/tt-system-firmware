@@ -26,7 +26,9 @@ BUILD_ASSERT((int)BH_PCIE_MODE_RP == FwTable_PciPropertyTable_PcieMode_RP);
 
 bool bh_chip_info_is_ubb(void)
 {
-	return tt_bh_fwtable_get_board_type(fwtable_dev) == BOARDTYPE_UBB;
+	uint8_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
+
+	return board_type == BOARDTYPE_UBB || board_type == BOARDTYPE_GALAXY_BIN6;
 }
 
 uint32_t bh_chip_info_additional_board_power(void)

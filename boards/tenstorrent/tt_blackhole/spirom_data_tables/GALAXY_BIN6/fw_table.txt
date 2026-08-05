@@ -1,0 +1,80 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+chip_limits {
+  asic_fmax: 1350
+  asic_fmin: 800
+  vdd_max: 900
+  vdd_min: 700
+  voltage_margin: 25
+  tdp_limit: 130
+  tdc_limit: 500
+  thm_limit: 90
+  tdc_fast_limit: 400
+  therm_trip_l1_limit: 0
+  bus_peak_limit: 0
+  frequency_margin: 0
+  gddr_thm_limit: 89
+  kernel_throttler_stop_nops_freq: 0
+  max_tdp_limit: 200
+}
+
+feature_enable {
+  cg_en: true
+  noc_translation_en: true
+  ddr_train_en: true
+  aiclk_ppm_en: true
+  watchdog_en: false
+  smbus_en: false
+  fan_ctrl_en: false
+  harvesting_en: true
+  doppler_en: false
+  kernel_throttler_at_floor_en: false
+}
+
+fan_table {
+  fan_table_point_x1: 0
+  fan_table_point_x2: 0
+  fan_table_point_y1: 0
+  fan_table_point_y2: 0
+}
+
+dram_table {
+  dram_mask: 0
+  dram_mask_en: false
+}
+
+chip_harvesting_table {
+  soft_harvesting_en: 0
+  soft_harvesting: 0
+}
+
+pci0_property_table {
+  max_pcie_speed: 0
+  pcie_bar0_size: 0
+  pcie_bar2_size: 0
+  pcie_bar4_size: 0
+  pcie_mode: DISABLED
+  num_serdes: 0
+}
+
+pci1_property_table {
+  max_pcie_speed: 5
+  pcie_bar0_size: 512
+  pcie_bar2_size: 1
+  pcie_bar4_size: 32768
+  pcie_mode: EP
+  num_serdes: 1
+}
+
+eth_property_table {
+  eth_disable_mask: 0
+  eth_disable_mask_en: false
+  eth_speed_override: 200
+}
+
+product_spec_harvesting {
+  dram_disable_count: 1
+  eth_disabled: false
+  tensix_col_disable_count: 1
+}

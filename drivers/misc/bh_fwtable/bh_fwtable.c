@@ -111,6 +111,7 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 		pcb_type = PcbTypeP300;
 		break;
 	case BOARDTYPE_UBB:
+	case BOARDTYPE_GALAXY_BIN6:
 		pcb_type = PcbTypeUBB;
 		break;
 	default:
