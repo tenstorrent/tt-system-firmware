@@ -9,7 +9,7 @@ description: |
   Tenstorrent Blackhole Reset Controller
 
   The Tenstorrent Blackhole reset controller is used to manage one bank of reset signals occupying
-  a 32-bit memory-mapped address.
+  a 32-bit memory-mapped address. Reset lines are active-low (bit clear asserts reset).
 
   There are 3 usage modes.
 
@@ -23,7 +23,7 @@ description: |
     };
 
   2. a mask is specified. Only the bits (id values) set high in the mask are valid. In the
-    example below, id 1 and id 2 are valid.
+    example below, id 1 and id 6 are valid.
 
     resetX: reset@abcd1234 {
         compatible = "tenstorrent,bh-reset";
@@ -33,8 +33,8 @@ description: |
         status = "okay";
     };
 
-  3. a number of resets is specified. In the example below, the least-significant 2 bits are
-     available to the reset controller instance. So id 0 and id 1 are valid.
+  3. a number of resets is specified. In the example below, the least-significant 3 bits are
+     available to the reset controller instance. So id 0, id 1, and id 2 are valid.
 
     resetX: reset@abcd1234 {
         compatible = "tenstorrent,bh-reset";
@@ -47,6 +47,21 @@ description: |
   If neither nresets, nor reset-mask is specified, then all 32 reset lines are available.
 
   Maximally one of nresets or reset-mask may be specified.
+
+  Dual-field registers (eth, ddr, l2cpu) use a single node with reset-mask covering both the
+  tile and RISC halves. Line IDs are physical bit indices; see
+  include/zephyr/dt-bindings/reset/tt-bh-reset.h for helpers (TT_BH_ETH_TILE_ID, TT_BH_ETH_RISC_ID,
+  etc.).
+
+  Example eth_reset (tile bits [13:0], RISC bits [29:16]):
+
+    eth_reset: reset@80030008 {
+        compatible = "tenstorrent,bh-reset";
+        reg = <0x80030008 0x4>;
+        #reset-cells = <1>;
+        reset-mask = <0x3fff3fff>;
+        status = "okay";
+    };
 
 
 properties:
@@ -69,12 +84,12 @@ properties:
   reset-mask:
     type: int
     description: |
-      The bitmask to write to the reset register associated with the reset controller instance.
+      The bitmask of valid reset line ids for this controller instance.
 
       This parameter is useful when the lines associated with the reset controller instance are
-      non-contiguous.
+      non-contiguous, or when a dual-field register exposes tile and RISC halves in one word.
 
-      I.e. for reset-mask = <0x3fff0000>, only lines 29..16 are affected.
+      I.e. for reset-mask = <0x3fff3fff>, tile ids 0..13 and RISC ids 16..29 are valid.
 
   "#reset-cells":
     const: 1

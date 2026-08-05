@@ -84,10 +84,6 @@ config HAS_FLASH_LOAD_OFFSET
 # config CONFIG_SPI_EXTENDED_MODES
 #	default y
 
-# pull in the reset controller driver by default
-# config RESET
-#	default y
-
 if LOG_BACKEND_RTT
 
 # Enable RTT mode overwrite for the RTT logger backend so that we never block any threads.

@@ -39,3 +39,6 @@ CONFIG_CLOCK_CONTROL=y
 
 # Enabled ARC and NOC DMA
 CONFIG_DMA=y
+
+# Reset controller (tenstorrent,bh-reset) — required for tile/NOC bringup
+CONFIG_RESET=y

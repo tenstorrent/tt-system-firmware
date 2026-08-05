@@ -572,7 +572,8 @@
 			compatible = "tenstorrent,bh-reset";
 			reg = <0x80030008 0x4>;
 			#reset-cells = <1>;
-			nresets = <14>;
+			/* Tile bits [13:0], RISC bits [29:16] */
+			reset-mask = <0x3fff3fff>;
 			status = "okay";
 		};
 
@@ -580,7 +581,8 @@
 			compatible = "tenstorrent,bh-reset";
 			reg = <0x80030010 0x4>;
 			#reset-cells = <1>;
-			nresets = <8>;
+			/* Tile bits [7:0], RISC bits [31:8] */
+			reset-mask = <0xffffffff>;
 			status = "okay";
 		};
 
@@ -588,70 +590,24 @@
 			compatible = "tenstorrent,bh-reset";
 			reg = <0x80030014 0x4>;
 			#reset-cells = <1>;
-			nresets = <4>;
+			/* Tile bits [3:0], RISC bits [7:4] */
+			reset-mask = <0xff>;
 			status = "okay";
 		};
 
-		tensix_reset0: reset@80030020 {
+		/* 8 contiguous 32-bit banks at stride 0x4; use reset_tt_bh_lines_* offset */
+		tensix_reset: reset@80030020 {
 			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030020 0x4>;
+			reg = <0x80030020 0x20>;
 			#reset-cells = <1>;
 			nresets = <32>;
 			status = "okay";
 		};
 
-		tensix_reset1: reset@80030024 {
+		tensix_risc_reset: reset@80030040 {
 			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030024 0x4>;
+			reg = <0x80030040 0x20>;
 			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset2: reset@80030028 {
-			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030028 0x4>;
-			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset3: reset@8003002c {
-			compatible = "tenstorrent,bh-reset";
-			reg = <0x8003002c 0x4>;
-			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset4: reset@80030030 {
-			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030030 0x4>;
-			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset5: reset@80030034 {
-			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030034 0x4>;
-			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset6: reset@80030038 {
-			compatible = "tenstorrent,bh-reset";
-			reg = <0x80030038 0x4>;
-			#reset-cells = <1>;
-			nresets = <32>;
-			status = "okay";
-		};
-
-		tensix_reset7: reset@8003003c {
-			compatible = "tenstorrent,bh-reset";
-			#reset-cells = <1>;
-			reg = <0x8003003c 0x4>;
 			nresets = <32>;
 			status = "okay";
 		};

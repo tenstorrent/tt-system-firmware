@@ -13,7 +13,6 @@
 #include <zephyr/drivers/reset.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_io.h>
-#include <zephyr/sys/sys_io.h>
 
 struct tt_bh_reset_config {
 	uintptr_t base;
@@ -38,13 +37,15 @@ static inline bool tt_bh_reset_is_valid_id(const struct device *dev, uint32_t id
 static int tt_bh_reset_status(const struct device *dev, uint32_t id, uint8_t *status)
 {
 	const struct tt_bh_reset_config *config = dev->config;
+	uint32_t value;
 
 	if (!tt_bh_reset_is_valid_id(dev, id)) {
 		return -EINVAL;
 	}
 
-	/* return the number of active-low reset lines that are asserted */
-	*status = POPCOUNT(~sys_read32(config->base));
+	/* Active-low: reset is asserted when the bit is clear */
+	value = sys_read32(config->base);
+	*status = !(value & BIT(id));
 
 	return 0;
 }
