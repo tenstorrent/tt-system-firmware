@@ -1,8 +1,16 @@
-# v19.13.0
+# v19.13.2
 
-> This is a working draft for the up-coming 19.13.0 release.
+We are pleased to announce the release of TT System Firmware version 19.13.2 🥳🎉.
 
-We are pleased to announce the release of TT System Firmware version 19.13.0 🥳🎉.
+This is a patch release on top of v19.13.1. It includes the following updates:
+- Added Blackhole per-instance GDDR soft-harvest support
+  - Selected GDDR channels can be harvested via a new fw_table field, also settable at runtime; boards that omit the field are unaffected
+
+
+# v19.13.1
+
+> Note: v19.13.0 was withdrawn and is superseded by v19.13.1. There are no
+> functional differences between the two; only the version numbers differ.
 
 Major enhancements with this release include:
 
@@ -62,4 +70,4 @@ An overview of required and recommended changes to make when migrating from the 
 
 The full ChangeLog from the previous v19.12.0 release can be found at the link below.
 
-https://github.com/tenstorrent/tt-system-firmware/compare/v19.12.0...v19.13.0
+https://github.com/tenstorrent/tt-system-firmware/compare/v19.12.0...v19.13.2
