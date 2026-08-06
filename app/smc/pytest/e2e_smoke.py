@@ -90,6 +90,27 @@ ARC_START_TIME_REG_ADDR = 0x80030440
 ARC_HANG_PC_REG_ADDR = 0x80030454
 TELEMETRY_DATA_REG_ADDR = 0x80030430
 
+# Blackhole reset-unit banks (active-low: 1 = deasserted / out of reset)
+# Matches DeassertTileResets / DeassertRiscvResets in lib/tenstorrent/bh_arc/reset.c
+RESET_UNIT_GLOBAL_RESET_ADDR = 0x80030000
+RESET_UNIT_ETH_RESET_ADDR = 0x80030008
+RESET_UNIT_DDR_RESET_ADDR = 0x80030010
+RESET_UNIT_L2CPU_RESET_ADDR = 0x80030014
+RESET_UNIT_TENSIX_RESET_BASE = 0x80030020
+RESET_UNIT_TENSIX_RISC_RESET_BASE = 0x80030040
+NUM_TENSIX_RESET_BANKS = 8
+
+# Expected post-init values (normal bringup; RISC halves released)
+TT_BH_GLOBAL_RESET_POST_INIT = 0x2383  # system, NOC, refclk_cnt_en, PCIe0/1, PTP
+TT_BH_ETH_TILE_MASK = 0x00003FFF  # bits [13:0]
+TT_BH_ETH_RISC_MASK = 0x3FFF0000  # bits [29:16]
+TT_BH_ETH_RESET_POST_INIT = TT_BH_ETH_TILE_MASK | TT_BH_ETH_RISC_MASK
+TT_BH_DDR_TILE_MASK = 0x000000FF  # bits [7:0]
+TT_BH_DDR_RISC_MASK = 0xFFFFFF00  # bits [31:8]
+TT_BH_DDR_RESET_POST_INIT = TT_BH_DDR_TILE_MASK | TT_BH_DDR_RISC_MASK
+TT_BH_L2CPU_TILE_MASK = 0x0000000F  # bits [3:0]; RISC [7:4] stay asserted (BH-25/28)
+TT_BH_ALL_LINES_DEASSERTED = 0xFFFFFFFF
+
 # Functional efuse MMIO mapping (32-bit words)
 EFUSE_DFT0_MEM_BASE_ADDR = 0x80040000
 EFUSE_BOX_ADDR_ALIGN = 0x2000
@@ -595,6 +616,56 @@ def test_boot_status(arc_chip_dut, asic_id):
 
     assert (status >> 1) & 0x3 == 0x2, "SMC HW boot status is not valid"
     assert err == 0, "FW Init error"
+
+
+def test_reset_unit_post_init(arc_chip_dut, asic_id):
+    """
+    Validates reset-unit register state after SMC init
+    """
+    # Re-init so register state is independent of prior tests
+    assert smi_reset_test(asic_id), "tt-smi reset failed before reset-unit check"
+    arc_chip = pyluwen.detect_chips()[asic_id]
+
+    checks = [
+        (
+            "global_reset",
+            RESET_UNIT_GLOBAL_RESET_ADDR,
+            TT_BH_GLOBAL_RESET_POST_INIT,
+        ),
+        ("eth_reset", RESET_UNIT_ETH_RESET_ADDR, TT_BH_ETH_RESET_POST_INIT),
+        ("ddr_reset", RESET_UNIT_DDR_RESET_ADDR, TT_BH_DDR_RESET_POST_INIT),
+        (
+            "l2cpu_reset",
+            RESET_UNIT_L2CPU_RESET_ADDR,
+            TT_BH_L2CPU_TILE_MASK,
+        ),
+    ]
+    for i in range(NUM_TENSIX_RESET_BANKS):
+        checks.append(
+            (
+                f"tensix_reset{i}",
+                RESET_UNIT_TENSIX_RESET_BASE + i * 4,
+                TT_BH_ALL_LINES_DEASSERTED,
+            )
+        )
+        checks.append(
+            (
+                f"tensix_risc_reset{i}",
+                RESET_UNIT_TENSIX_RISC_RESET_BASE + i * 4,
+                TT_BH_ALL_LINES_DEASSERTED,
+            )
+        )
+
+    failures = []
+    for name, addr, expected in checks:
+        actual = arc_chip.axi_read32(addr)
+        logger.info(
+            "%s @ 0x%08x = 0x%08x (expect 0x%08x)", name, addr, actual, expected
+        )
+        if actual != expected:
+            failures.append(f"{name}: got 0x{actual:08x}, want 0x{expected:08x}")
+
+    assert not failures, "Reset-unit post-init mismatch:\n  " + "\n  ".join(failures)
 
 
 def test_smbus_status(arc_chip_dut, asic_id):
