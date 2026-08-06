@@ -38,11 +38,39 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control/clock_control_tt_bh.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/reset/reset_tt_bh.h>
+#include <zephyr/dt-bindings/reset/tt-bh-reset.h>
 
 #define DT_DRV_COMPAT         tenstorrent_bh_clock_control
 #define PLL_DEVICE_INIT(inst) DEVICE_DT_INST_GET(inst),
 
+#define TENSIX_NUM_RESET_BANKS TT_BH_RESET_NUM_BANKS(DT_NODELABEL(tensix_reset))
+
+BUILD_ASSERT(TT_BH_RESET_NUM_BANKS(DT_NODELABEL(tensix_reset)) ==
+		     TT_BH_RESET_NUM_BANKS(DT_NODELABEL(tensix_risc_reset)),
+	     "tensix tile and RISC reset bank counts must match");
+
 static const struct device *const pll_devs[] = {DT_INST_FOREACH_STATUS_OKAY(PLL_DEVICE_INIT)};
+
+static const struct device *const global_reset_dev = DEVICE_DT_GET(DT_NODELABEL(global_reset));
+static const struct device *const eth_reset_dev = DEVICE_DT_GET(DT_NODELABEL(eth_reset));
+static const struct device *const ddr_reset_dev = DEVICE_DT_GET(DT_NODELABEL(ddr_reset));
+static const struct device *const l2cpu_reset_dev = DEVICE_DT_GET(DT_NODELABEL(l2cpu_reset));
+static const struct device *const tensix_reset_dev = DEVICE_DT_GET(DT_NODELABEL(tensix_reset));
+static const struct device *const tensix_risc_reset_dev =
+	DEVICE_DT_GET(DT_NODELABEL(tensix_risc_reset));
+
+/* global_reset reset-mask 0x2383 (includes DEFAULT refclk_cnt_en) */
+#define TT_BH_GLOBAL_RESET_MASK                                                                    \
+	(BIT(TT_BH_GLOBAL_SYSTEM_RESET_ID) | BIT(TT_BH_GLOBAL_NOC_RESET_ID) |                      \
+	 BIT(TT_BH_GLOBAL_REFCLK_CNT_EN_ID) | BIT(TT_BH_GLOBAL_PCIE0_RESET_ID) |                   \
+	 BIT(TT_BH_GLOBAL_PCIE1_RESET_ID) | BIT(TT_BH_GLOBAL_PTP_RESET_ID))
+
+#define TT_BH_ETH_TILE_MASK   GENMASK(13, 0)
+#define TT_BH_ETH_RISC_MASK   GENMASK(29, 16)
+#define TT_BH_DDR_TILE_MASK   GENMASK(7, 0)
+#define TT_BH_DDR_RISC_MASK   GENMASK(31, 8)
+#define TT_BH_L2CPU_TILE_MASK GENMASK(3, 0)
 
 LOG_MODULE_REGISTER(InitHW, CONFIG_TT_APP_LOG_LEVEL);
 
@@ -154,22 +182,14 @@ static int DeassertRiscvResets(void)
 					(void *)CLOCK_CONTROL_TT_BH_CONFIG_BYPASS);
 	}
 	/* Deassert RISC reset from reset_unit */
-
-	for (uint32_t i = 0; i < 8; i++) {
-		WriteReg(RESET_UNIT_TENSIX_RISC_RESET_0_REG_ADDR + i * 4, 0xffffffff);
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_deassert(tensix_risc_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+						 UINT32_MAX);
 	}
 
-	RESET_UNIT_ETH_RESET_reg_u eth_reset;
-
-	eth_reset.val = ReadReg(RESET_UNIT_ETH_RESET_REG_ADDR);
-	eth_reset.f.eth_risc_reset_n = 0x3fff;
-	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
-
-	RESET_UNIT_DDR_RESET_reg_u ddr_reset;
-
-	ddr_reset.val = ReadReg(RESET_UNIT_DDR_RESET_REG_ADDR);
-	ddr_reset.f.ddr_risc_reset_n = 0xffffff;
-	WriteReg(RESET_UNIT_DDR_RESET_REG_ADDR, ddr_reset.val);
+	/* Dual-field banks: RMW so tile bits from DeassertTileResets stay set */
+	(void)reset_tt_bh_lines_deassert(eth_reset_dev, 0, TT_BH_ETH_RISC_MASK);
+	(void)reset_tt_bh_lines_deassert(ddr_reset_dev, 0, TT_BH_DDR_RISC_MASK);
 
 	ARRAY_FOR_EACH(pll_devs, i) {
 		clock_control_set_rate(pll_devs[i],
@@ -187,17 +207,17 @@ SYS_INIT_APP(DeassertRiscvResets);
  */
 static __maybe_unused uint8_t ToggleTensixReset(const union request *req, struct response *rsp)
 {
-	/* Assert reset (active low) */
-	RESET_UNIT_TENSIX_RESET_reg_u tensix_reset = {.val = 0};
+	ARG_UNUSED(req);
+	ARG_UNUSED(rsp);
 
-	for (uint32_t i = 0; i < 8; i++) {
-		WriteReg(RESET_UNIT_TENSIX_RESET_0_REG_ADDR + i * 4, tensix_reset.val);
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_assert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+					       UINT32_MAX);
 	}
 
-	/* Deassert reset */
-	tensix_reset.val = 0xffffffff;
-	for (uint32_t i = 0; i < 8; i++) {
-		WriteReg(RESET_UNIT_TENSIX_RESET_0_REG_ADDR + i * 4, tensix_reset.val);
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_deassert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+						 UINT32_MAX);
 	}
 
 	return 0;
@@ -230,26 +250,17 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 	}
 
 	uint8_t tensix_index = (NUM_TENSIX_Y * tensix_col) + tensix_row;
-	uint8_t reg_index = tensix_index / 32;
+	uint32_t bank_offset = (tensix_index / 32) * TT_BH_RESET_BANK_STRIDE;
 	uint8_t bit_index = tensix_index % 32;
-
-	uint32_t tile_addr = RESET_UNIT_TENSIX_RESET_0_REG_ADDR + 4 * reg_index;
-	uint32_t risc_addr = RESET_UNIT_TENSIX_RISC_RESET_0_REG_ADDR + 4 * reg_index;
 
 	SetAiclkResetSafe(true);
 
 	/* RISC reset assert */
-	uint32_t risc_val = sys_read32(risc_addr);
+	(void)reset_tt_bh_lines_assert(tensix_risc_reset_dev, bank_offset, BIT(bit_index));
 
-	sys_write32(risc_val & ~BIT(bit_index), risc_addr);
-
-	/* Tile reset assert */
-	uint32_t tensix_val = sys_read32(tile_addr);
-
-	sys_write32(tensix_val & ~BIT(bit_index), tile_addr);
-
-	/* Tile reset deassert */
-	sys_write32(tensix_val | BIT(bit_index), tile_addr);
+	/* Tile reset assert then deassert */
+	(void)reset_tt_bh_lines_assert(tensix_reset_dev, bank_offset, BIT(bit_index));
+	(void)reset_tt_bh_lines_deassert(tensix_reset_dev, bank_offset, BIT(bit_index));
 
 	/* The init functions use NOC2AXITlbSetup with
 	 * physical NOC coordinates; disable ARC translation first to
@@ -268,7 +279,7 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 	RestoreArcNocTranslation();
 
 	/* RISC reset deassert */
-	sys_write32(risc_val | BIT(bit_index), risc_addr);
+	(void)reset_tt_bh_lines_deassert(tensix_risc_reset_dev, bank_offset, BIT(bit_index));
 
 	SetAiclkResetSafe(false);
 
@@ -361,37 +372,20 @@ static int DeassertTileResets(void)
 					(void *)CLOCK_CONTROL_TT_BH_CONFIG_BYPASS);
 	}
 
-	/* Always deassert NOC, system, and PCIe resets - needed for ARC-PCIe communication */
-	RESET_UNIT_GLOBAL_RESET_reg_u global_reset = {.val = RESET_UNIT_GLOBAL_RESET_REG_DEFAULT};
+	/* Always deassert NOC, system, and PCIe resets - needed for ARC-PCIe communication.
+	 * Absolute writes for dual-field / sparse banks force a known full-word state
+	 * (tile half released, RISC half still held). Full tensix banks use line RMW.
+	 */
+	(void)reset_tt_bh_write(global_reset_dev, TT_BH_GLOBAL_RESET_MASK);
+	(void)reset_tt_bh_write(eth_reset_dev, TT_BH_ETH_TILE_MASK);
 
-	global_reset.f.noc_reset_n = 1;
-	global_reset.f.system_reset_n = 1;
-	global_reset.f.pcie_reset_n = 3;
-	global_reset.f.ptp_reset_n_refclk = 1;
-	WriteReg(RESET_UNIT_GLOBAL_RESET_REG_ADDR, global_reset.val);
-
-	RESET_UNIT_ETH_RESET_reg_u eth_reset = {.val = RESET_UNIT_ETH_RESET_REG_DEFAULT};
-
-	eth_reset.f.eth_reset_n = 0x3fff;
-	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
-
-	RESET_UNIT_TENSIX_RESET_reg_u tensix_reset = {.val = RESET_UNIT_TENSIX_RESET_REG_DEFAULT};
-
-	tensix_reset.f.tensix_reset_n = 0xffffffff;
-	/* There are 8 instances of these tensix reset registers */
-	for (uint32_t i = 0; i < 8; i++) {
-		WriteReg(RESET_UNIT_TENSIX_RESET_0_REG_ADDR + i * 4, tensix_reset.val);
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_deassert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+						 UINT32_MAX);
 	}
 
-	RESET_UNIT_DDR_RESET_reg_u ddr_reset = {.val = RESET_UNIT_DDR_RESET_REG_DEFAULT};
-
-	ddr_reset.f.ddr_reset_n = 0xff;
-	WriteReg(RESET_UNIT_DDR_RESET_REG_ADDR, ddr_reset.val);
-
-	RESET_UNIT_L2CPU_RESET_reg_u l2cpu_reset = {.val = RESET_UNIT_L2CPU_RESET_REG_DEFAULT};
-
-	l2cpu_reset.f.l2cpu_reset_n = 0xf;
-	WriteReg(RESET_UNIT_L2CPU_RESET_REG_ADDR, l2cpu_reset.val);
+	(void)reset_tt_bh_write(ddr_reset_dev, TT_BH_DDR_TILE_MASK);
+	(void)reset_tt_bh_write(l2cpu_reset_dev, TT_BH_L2CPU_TILE_MASK);
 
 	return 0;
 }
