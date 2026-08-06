@@ -1,0 +1,55 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Emulated BH reset banks for native_sim / ARC-emul consumers of
+ * lib/tenstorrent/bh_arc (DEVICE_DT_GET nodelabels in reset.c / eth.c).
+ */
+
+/ {
+	global_reset: global_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		reset-mask = <0x2383>;
+		status = "okay";
+	};
+
+	eth_reset: eth_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		reset-mask = <0x3fff3fff>;
+		status = "okay";
+	};
+
+	ddr_reset: ddr_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		reset-mask = <0xffffffff>;
+		status = "okay";
+	};
+
+	l2cpu_reset: l2cpu_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		reset-mask = <0xff>;
+		status = "okay";
+	};
+
+	/* 8 banks at stride 0x4; match HW tensix_reset / tensix_risc_reset */
+	tensix_reset: tensix_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		nresets = <32>;
+		n-banks = <8>;
+		status = "okay";
+	};
+
+	tensix_risc_reset: tensix_risc_reset {
+		compatible = "tenstorrent,bh-reset-emul";
+		#reset-cells = <1>;
+		nresets = <32>;
+		n-banks = <8>;
+		status = "okay";
+	};
+};

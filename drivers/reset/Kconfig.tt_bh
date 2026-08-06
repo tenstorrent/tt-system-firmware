@@ -7,3 +7,11 @@ config RESET_TT_BH
 	depends on DT_HAS_TENSTORRENT_BH_RESET_ENABLED
 	help
 	  This option enables the Tenstorrent Blackhole reset controller.
+
+config RESET_TT_BH_EMUL
+	bool "Tenstorrent Blackhole reset controller emulation"
+	default y
+	depends on EMUL
+	depends on DT_HAS_TENSTORRENT_BH_RESET_EMUL_ENABLED
+	help
+	  Software emul of the Blackhole reset controller for native_sim.

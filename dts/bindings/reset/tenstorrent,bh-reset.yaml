@@ -53,6 +53,21 @@ description: |
   include/zephyr/dt-bindings/reset/tt-bh-reset.h for helpers (TT_BH_ETH_TILE_ID, TT_BH_ETH_RISC_ID,
   etc.).
 
+  Contiguous multi-bank regions (tensix tile / tensix RISC) use one node whose reg size covers
+  all banks (stride 0x4). Standard reset_line_* operate on bank 0; use
+  reset_tt_bh_lines_assert/deassert with a byte offset to target other banks.
+  Bank count is reg size / 4 (see TT_BH_RESET_NUM_BANKS).
+
+  Example tensix_reset (8 banks @ 0x80030020):
+
+    tensix_reset: reset@80030020 {
+        compatible = "tenstorrent,bh-reset";
+        reg = <0x80030020 0x20>;
+        #reset-cells = <1>;
+        nresets = <32>;
+        status = "okay";
+    };
+
   Example eth_reset (tile bits [13:0], RISC bits [29:16]):
 
     eth_reset: reset@80030008 {

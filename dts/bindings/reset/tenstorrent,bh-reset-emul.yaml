@@ -1,0 +1,37 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+compatible: "tenstorrent,bh-reset-emul"
+
+include: [base.yaml, reset-controller.yaml]
+
+description: |
+  Emulated Tenstorrent Blackhole reset controller for native_sim / twister.
+
+  Same line-id and reset-mask / nresets / n-banks semantics as
+  tenstorrent,bh-reset, but stores bank words in driver data instead of MMIO
+  (no reg property).
+
+properties:
+  nresets:
+    type: int
+    description: |
+      The number of reset lines associated with the reset controller instance.
+      Contiguous from bit 0. Valid range 0 <= nresets <= 32.
+
+  reset-mask:
+    type: int
+    description: |
+      The bitmask of valid reset line ids for this controller instance.
+
+  n-banks:
+    type: int
+    description: |
+      Number of 32-bit bank words this instance emulates (default 1).
+      Bank i is selected with offset = i * 4 in reset_tt_bh_lines_*.
+
+  "#reset-cells":
+    const: 1
+
+reset-cells:
+- id

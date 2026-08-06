@@ -46,6 +46,8 @@
 	};
 };
 
+#include <tenstorrent/tt_bh_reset_emul.dtsi>
+
 &i2c0 {
 	smbus_target0: smbus@0a {
 		status = "okay";

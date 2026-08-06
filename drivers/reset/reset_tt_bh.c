@@ -7,15 +7,18 @@
 #define DT_DRV_COMPAT tenstorrent_bh_reset
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/reset.h>
+#include <zephyr/drivers/reset/reset_tt_bh.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/sys_io.h>
 
 struct tt_bh_reset_config {
 	uintptr_t base;
+	size_t size;
 	uint32_t reset_mask;
 };
 
@@ -32,6 +35,13 @@ static inline bool tt_bh_reset_is_valid_id(const struct device *dev, uint32_t id
 	}
 
 	return (BIT(id) & config->reset_mask) != 0;
+}
+
+static inline bool tt_bh_reset_is_valid_offset(const struct device *dev, uint32_t offset)
+{
+	const struct tt_bh_reset_config *config = dev->config;
+
+	return (offset < config->size) && ((offset % TT_BH_RESET_BANK_STRIDE) == 0);
 }
 
 static int tt_bh_reset_status(const struct device *dev, uint32_t id, uint8_t *status)
@@ -109,6 +119,64 @@ static int tt_bh_reset_line_toggle(const struct device *dev, uint32_t id)
 	return 0;
 }
 
+int reset_tt_bh_write(const struct device *dev, uint32_t value)
+{
+	const struct tt_bh_reset_config *config = dev->config;
+	struct tt_bh_reset_data *const data = dev->data;
+
+	K_SPINLOCK(&data->lock) {
+		sys_write32(value, config->base);
+	}
+
+	return 0;
+}
+
+int reset_tt_bh_lines_assert(const struct device *dev, uint32_t offset, uint32_t mask)
+{
+	const struct tt_bh_reset_config *config = dev->config;
+	struct tt_bh_reset_data *const data = dev->data;
+	uintptr_t addr;
+	uint32_t value;
+	uint32_t lines = mask & config->reset_mask;
+
+	if (!tt_bh_reset_is_valid_offset(dev, offset) || lines == 0) {
+		return -EINVAL;
+	}
+
+	addr = config->base + offset;
+
+	K_SPINLOCK(&data->lock) {
+		value = sys_read32(addr);
+		value &= ~lines;
+		sys_write32(value, addr);
+	}
+
+	return 0;
+}
+
+int reset_tt_bh_lines_deassert(const struct device *dev, uint32_t offset, uint32_t mask)
+{
+	const struct tt_bh_reset_config *config = dev->config;
+	struct tt_bh_reset_data *const data = dev->data;
+	uintptr_t addr;
+	uint32_t value;
+	uint32_t lines = mask & config->reset_mask;
+
+	if (!tt_bh_reset_is_valid_offset(dev, offset) || lines == 0) {
+		return -EINVAL;
+	}
+
+	addr = config->base + offset;
+
+	K_SPINLOCK(&data->lock) {
+		value = sys_read32(addr);
+		value |= lines;
+		sys_write32(value, addr);
+	}
+
+	return 0;
+}
+
 static int tt_bh_reset_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
@@ -129,15 +197,20 @@ static DEVICE_API(reset, tt_bh_reset_api) = {
 	(!!DT_INST_PROP_OR(_n, nresets, 0) + !!DT_INST_PROP_OR(_n, reset_mask, 0))
 
 #define TT_BH_RESET_MASK_DEFINE(_n)                                                                \
-	((TT_BH_RESET_MASK(_n) | TT_BH_RESET_MASK_FROM_NRESETS(_n)) || (-1))
+	((TT_BH_RESET_MASK(_n) | TT_BH_RESET_MASK_FROM_NRESETS(_n))                                \
+		 ? (TT_BH_RESET_MASK(_n) | TT_BH_RESET_MASK_FROM_NRESETS(_n))                      \
+		 : UINT32_MAX)
 
 #define TT_BH_RESET_DEFINE(_n)                                                                     \
 	BUILD_ASSERT(TT_BH_NUM_RESET_SPECIFIERS(_n) <= 1,                                          \
 		     "Maximally 1 of nresets or reset-mask may be specified");                     \
+	BUILD_ASSERT((DT_INST_REG_SIZE(_n) % TT_BH_RESET_BANK_STRIDE) == 0,                        \
+		     "reg size must be a multiple of bank stride");                                \
                                                                                                    \
 	static struct tt_bh_reset_data tt_bh_reset_data_##_n;                                      \
 	static const struct tt_bh_reset_config tt_bh_reset_config_##_n = {                         \
 		.base = DT_INST_REG_ADDR(_n),                                                      \
+		.size = DT_INST_REG_SIZE(_n),                                                      \
 		.reset_mask = TT_BH_RESET_MASK_DEFINE(_n),                                         \
 	};                                                                                         \
                                                                                                    \

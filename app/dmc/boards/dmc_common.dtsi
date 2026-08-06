@@ -6,6 +6,7 @@
 
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/i2c/i2c.h>
+#include <tenstorrent/tt_bh_reset_emul.dtsi>
 
 / {
 	aliases {
