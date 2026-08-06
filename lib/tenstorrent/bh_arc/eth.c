@@ -30,8 +30,14 @@
 #include <zephyr/drivers/dma/dma_tt_bh_noc.h>
 #include <zephyr/drivers/dma/dma_arc_hs.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/reset.h>
+#include <zephyr/drivers/reset/reset_tt_bh.h>
+#include <zephyr/dt-bindings/reset/tt-bh-reset.h>
 
 LOG_MODULE_REGISTER(eth, CONFIG_TT_APP_LOG_LEVEL);
+
+static const struct device *const eth_reset_dev = DEVICE_DT_GET(DT_NODELABEL(eth_reset));
 
 #define ETH_SETUP_TLB              0
 #define ETH_FW_BASE_ADDR           0x70000
@@ -677,16 +683,25 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 
 	SetAiclkResetSafe(true);
 
-	RESET_UNIT_ETH_RESET_reg_u eth_reset = {.val = ReadReg(RESET_UNIT_ETH_RESET_REG_ADDR)};
+	/* Assert tile and risc reset for each requested instance */
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (!IS_BIT_SET(mask, eth_inst)) {
+			continue;
+		}
 
-	/* Assert tile and risc reset */
-	eth_reset.f.eth_reset_n &= ~mask;
-	eth_reset.f.eth_risc_reset_n &= ~mask;
-	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+		(void)reset_tt_bh_lines_assert(eth_reset_dev, 0,
+					       BIT(TT_BH_ETH_TILE_ID(eth_inst)) |
+						       BIT(TT_BH_ETH_RISC_ID(eth_inst)));
+	}
 
 	/* Deassert tile reset */
-	eth_reset.f.eth_reset_n |= mask;
-	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (!IS_BIT_SET(mask, eth_inst)) {
+			continue;
+		}
+
+		(void)reset_line_deassert(eth_reset_dev, TT_BH_ETH_TILE_ID(eth_inst));
+	}
 
 	/* Assert RISC soft reset via NOC for each tile. */
 	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
@@ -696,8 +711,13 @@ static uint8_t toggle_eth_reset_handler(const union request *req, struct respons
 	}
 
 	/* Deassert risc reset */
-	eth_reset.f.eth_risc_reset_n |= mask;
-	WriteReg(RESET_UNIT_ETH_RESET_REG_ADDR, eth_reset.val);
+	for (uint8_t eth_inst = 0; eth_inst < MAX_ETH_INSTANCES; eth_inst++) {
+		if (!IS_BIT_SET(mask, eth_inst)) {
+			continue;
+		}
+
+		(void)reset_line_deassert(eth_reset_dev, TT_BH_ETH_RISC_ID(eth_inst));
+	}
 
 	SetAiclkResetSafe(false);
 
