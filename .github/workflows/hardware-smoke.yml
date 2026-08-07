@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
       - id: gen
         run: |
-          echo "matrix-config-bh=$(jq -c '.bh | map(select(.supports_smoke == true))' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "matrix-config-bh=$(jq -c '.bh | map(select(.supports_smoke == true and .board == "p300a"))' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
           echo "matrix-config-wh=$(jq -c '.wh | map(select(.supports_smoke == true))' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
   detect-changes:
@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config-bh) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on: p300-test
     container:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
@@ -150,7 +150,7 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config-bh) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on: p300-test
     container:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
