@@ -13,6 +13,14 @@ Prerequisites
 A development environment should be set up following
 :ref:`Getting Started<ttzp_getting_started>`
 
+All commands on this page use paths relative to the ``tt-system-firmware``
+repository root (the checkout created by
+:ref:`Getting Started<ttzp_getting_started>`). Run them from that directory:
+
+.. code-block:: shell
+
+   cd ~/tt-system-firmware-work/tt-system-firmware
+
 A device under test (DUT) should be connected to your system, with
 the following attached:
 
@@ -42,7 +50,7 @@ In order to execute unit tests, the following command can be used:
 
 .. code-block:: shell
 
-   $TT_Z_P_BASE/scripts/ci/run-smoke.sh <board_name> -- --clobber-output
+   scripts/ci/run-smoke.sh <board_name> -- --clobber-output
 
 Note that on P300 systems, ``-p 1`` should be added as tests execute on the
 second ASIC.
@@ -57,7 +65,7 @@ In order to execute end-to-end tests, the following command can be used:
 
 .. code-block:: shell
 
-   $TT_Z_P_BASE/scripts/ci/run-e2e.sh <board_name> -- --clobber-output
+   scripts/ci/run-e2e.sh <board_name> -- --clobber-output
 
 Note that on P300 systems, ``-p 1`` should be added as tests execute on the
 second ASIC.
@@ -71,13 +79,13 @@ tested, this is possible with the following command:
 
 .. code-block:: shell
 
-   pytest $TT_Z_P_BASE/app/smc/pytest/e2e_smoke.py
+   pytest app/smc/pytest/e2e_smoke.py
 
 Pytest additionally supports running a single test instead of all, for example:
 
 .. code-block:: shell
 
-   pytest $TT_Z_P_BASE/app/smc/pytest/e2e_smoke.py::test_upgrade_from_18_10
+   pytest app/smc/pytest/e2e_smoke.py::test_boot_status
 
 Some tests might require additional parameters and might be skipped if these are not provided.
 For example, ``--board`` is required for some tests to run. You can get a list of the test options
@@ -85,7 +93,7 @@ tenstorrent exposes by looking under ``Custom options:`` of the output of the ``
 
 .. code-block:: shell
 
-   pytest $TT_Z_P_BASE/app/smc/pytest/e2e_smoke.py --help
+   pytest app/smc/pytest/e2e_smoke.py --help
 
 Stress Tests
 ************
@@ -97,7 +105,7 @@ In order to execute stress tests, the following command can be used:
 
 .. code-block:: shell
 
-   $TT_Z_P_BASE/scripts/ci/run-stress.sh <board_name> -- --clobber-output
+   scripts/ci/run-stress.sh <board_name> -- --clobber-output
 
 Note that these tests can take up to 90 minutes to execute. To reduce their
 execution time, consider editing ``MAX_TEST_ITERATIONS`` in ``e2e_stress.py``
