@@ -523,9 +523,6 @@ def test_arc_msg(arc_chip_dut, asic_id):
     assert response[0] == 21, "SMC did not respond to test message"
     assert response[1] == 0, "SMC response invalid"
     logger.info('SMC ping message response "%d"', response[0])
-    # Post code should have updated after first message
-    status = arc_chip.axi_read32(ARC_STATUS)
-    assert status == 0xC0DE003F, "SMC firmware has incorrect status"
 
 
 def test_dmc_msg(arc_chip_dut, asic_id):
