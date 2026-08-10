@@ -41,7 +41,7 @@
 #define STATUS_MSG_Q_STATUS_REG_ADDR         RESET_UNIT_SCRATCH_RAM_REG_ADDR(8)
 #define STATUS_MSG_Q_ERR_FLAGS_REG_ADDR      RESET_UNIT_SCRATCH_RAM_REG_ADDR(9)
 #define SPI_BUFFER_INFO_REG_ADDR             RESET_UNIT_SCRATCH_RAM_REG_ADDR(10)
-#define STATUS_MSG_Q_INFO_REG_ADDR           RESET_UNIT_SCRATCH_RAM_REG_ADDR(11)
+/* MSG_Q_INFO (formerly SCRATCH_RAM_11) is provided by DT msgqueue_info reg */
 /**
  * @ingroup telemetry
  * @brief Register address pointing to the telemetry data buffer.

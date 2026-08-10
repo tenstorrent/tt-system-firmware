@@ -58,6 +58,12 @@
 		status = "okay";
 	};
 
+	msgqueue_info: scratch-reg@8003042c {
+		compatible = "tenstorrent,scratch-reg";
+		reg = <0x8003042c 0x4>;
+		status = "okay";
+	};
+
 	chip0: chip0 {
 		compatible = "tenstorrent,bh-chip";
 

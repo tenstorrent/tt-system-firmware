@@ -19,7 +19,9 @@
 #include "status_reg.h"
 #include "reg.h"
 
-#define MSGQUEUE_IRQS_NODE DT_NODELABEL(msgqueue_irqs)
+#define MSGQUEUE_IRQS_NODE         DT_NODELABEL(msgqueue_irqs)
+#define MSGQUEUE_INFO_NODE         DT_NODELABEL(msgqueue_info)
+#define STATUS_MSG_Q_INFO_REG_ADDR (uintptr_t)DT_REG_ADDR(MSGQUEUE_INFO_NODE)
 
 #if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
 #define MSGQUEUE_IRQN(_name)     DT_IRQN_BY_NAME(MSGQUEUE_IRQS_NODE, _name)
