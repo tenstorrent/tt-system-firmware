@@ -29,7 +29,6 @@ zephyr_library_sources(
   pcie.c
   pcie_msi.c
   pll.c
-  post_code.c
   reset.c
   smbus_target.c
   spi_eeprom.c
@@ -42,7 +41,6 @@ zephyr_library_sources(
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED msgqueue.c)
 
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_RUNTIME_TELEMETRY runtime_telemetry.c)
-zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_EMUL reg_stub.c)
 
 # Backend for the chip-info service: the static (no-SPI) one when fwtable is
 # unavailable (recovery), the fwtable-backed one (bh_arc_mission) otherwise.

@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef REG_H
-#define REG_H
+#ifndef TT_FW_COMMON_REG_H
+#define TT_FW_COMMON_REG_H
 
 #include <stdint.h>
 
-#if CONFIG_TT_BH_ARC_EMUL
+#if CONFIG_TT_FW_COMMON_EMUL
 uint32_t ReadReg(uint32_t addr);
 void WriteReg(uint32_t addr, uint32_t val);
 #else
@@ -21,4 +21,5 @@ static inline void WriteReg(uint32_t addr, uint32_t val)
 	*((uint32_t volatile *)addr) = val;
 }
 #endif
-#endif
+
+#endif /* TT_FW_COMMON_REG_H */

@@ -5,9 +5,10 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(chip_info)
 
 set(BH_ARC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../lib/tenstorrent/bh_arc)
+set(FW_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../lib/tenstorrent/fw_common)
 
 target_sources(app PRIVATE
   src/main.c
   ${BH_ARC_DIR}/chip_info_static.c
 )
-target_include_directories(app PRIVATE ${BH_ARC_DIR})
+target_include_directories(app PRIVATE ${BH_ARC_DIR} ${FW_COMMON_DIR})

@@ -6,6 +6,7 @@ config TT_BH_ARC
 	select FLASH
 	select FLASH_PAGE_LAYOUT
 	select TT_BOOT_FS
+	select TT_FW_COMMON
 	select NANOPB
 	select CRC
 	select I2C
@@ -15,17 +16,12 @@ config TT_BH_ARC
 	help
 	  This option enables the Blackhole ARC firmware library.
 
-config TT_POST_CODE
-	bool
-	default y if BOARD_TT_BLACKHOLE
-	help
-	  Enables writing firmware post codes to the status scratch register.
-
 if TT_BH_ARC
 
 config TT_BH_ARC_EMUL
 	bool "BH ARC emulation"
 	default y if BOARD_NATIVE_SIM
+	select TT_FW_COMMON_EMUL
 	help
 	  Generic flag that BH ARC is emulated.
 	  Enabled by default on native_sim and can be enabled on other

@@ -5,14 +5,19 @@
  */
 
 #include <stdint.h>
+
 #include <tenstorrent/post_code.h>
+
 #include "reg.h"
+
+#if defined(CONFIG_TT_POST_CODE)
 #include "status_reg.h"
+#endif
 
 void SetPostCode(uint8_t fw_id, uint16_t post_code)
 {
 #if defined(CONFIG_TT_POST_CODE)
-	WriteReg(RESET_UNIT_SCRATCH_REG_ADDR(0),
+	WriteReg(STATUS_POST_CODE_REG_ADDR,
 		 (POST_CODE_PREFIX << 16) | (fw_id << 14) | (post_code & 0x3FFF));
 #endif
 }
