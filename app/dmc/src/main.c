@@ -638,10 +638,13 @@ int main(void)
 		LOG_INF("Firmware update is confirmed.");
 	}
 
-	/* Force all spi_muxes back to arc control */
+	/* Force spi_mux back to arc (flash -> BH); on GLX2 also park mux1 on DMC */
 	ARRAY_FOR_EACH_BH_CHIP(chip) {
 		if (chip->config.spi_mux.port != NULL) {
 			gpio_pin_configure_dt(&chip->config.spi_mux, GPIO_OUTPUT_ACTIVE);
+		}
+		if (chip->config.spi_mux1.port != NULL) {
+			gpio_pin_configure_dt(&chip->config.spi_mux1, GPIO_OUTPUT_ACTIVE);
 		}
 	}
 
