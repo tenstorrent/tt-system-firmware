@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_FW_COMMON
+	bool "Tenstorrent common firmware library"
+	help
+	  Portable firmware helpers shared across Tenstorrent SMC products
+	  (e.g. Blackhole and Grendel).
+
+if TT_FW_COMMON
+
+config TT_FW_COMMON_EMUL
+	bool "fw_common MMIO emulation"
+	default y if BOARD_NATIVE_SIM
+	help
+	  Provide non-inline ReadReg/WriteReg stubs (reg_stub.c) for
+	  host/native builds. Selected by TT_BH_ARC_EMUL when Blackhole
+	  ARC emulation is enabled.
+
+endif
