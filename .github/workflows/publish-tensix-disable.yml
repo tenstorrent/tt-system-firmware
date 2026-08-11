@@ -8,6 +8,10 @@ on:
         required: false
         default: false
         type: boolean
+      kmd_ref:
+        description: 'Optional tt-kmd tag, branch, or commit'
+        required: false
+        type: string
 
 jobs:
   build_fw_artifact:
@@ -84,11 +88,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: Download all the dists
         uses: actions/download-artifact@v6

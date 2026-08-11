@@ -8,9 +8,6 @@ inputs:
   app-path:
     description: 'Path to the Zephyr application to build'
     required: true
-  kmd-version:
-    description: 'Version of tt-kmd to use'
-    required: true
 
 runs:
   using: composite
@@ -60,13 +57,6 @@ runs:
 
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-    - name: Select tt-kmd
-      shell: bash
-      run: |
-        apt update && apt install -y kmod
-        rmmod tenstorrent
-        insmod /opt/tenstorrent/kmd-builds/${{ inputs.kmd-version }}/tenstorrent.ko
 
     - name: Install ipmitool
       shell: bash

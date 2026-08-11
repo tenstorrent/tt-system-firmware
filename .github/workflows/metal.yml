@@ -6,7 +6,12 @@ on:
       - labeled
   schedule:
     - cron: "0 6 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      kmd_ref:
+        description: 'Optional tt-kmd tag, branch, or commit'
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -64,14 +69,16 @@ jobs:
         shell: bash
         working-directory: ${{ env.HOME }}
     steps:
-      - name: Select tt-kmd
-        shell: bash
-        run: |
-          sudo apt update || true
-          sudo apt install -y kmod
-          sudo rmmod tenstorrent
-          sudo insmod /opt/tenstorrent/kmd-builds/${{ matrix.config.kmd_build }}/tenstorrent.ko
-          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          path: tt-system-firmware
+
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
 
       - name: Install ipmitool
         shell: bash

@@ -6,7 +6,12 @@ on:
       - labeled
   schedule:
     - cron: "0 5 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      kmd_ref:
+        description: 'Optional tt-kmd tag, branch, or commit'
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -73,11 +78,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: run-e2e-stress-test
         run: |
@@ -145,11 +155,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: 2.7.0
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: 2.7.0
 
       - name: Install the package from PyPI
         run: |
@@ -201,11 +216,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: Derive board properties
         id: board-map
