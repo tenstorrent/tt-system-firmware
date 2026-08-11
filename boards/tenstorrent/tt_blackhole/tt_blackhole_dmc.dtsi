@@ -38,7 +38,7 @@
 
 		flash = <&flash1>;
 
-		/* Line to spi mux, drive low to enable dmfw -> eeprom */
+		/* SPI flash mux: low = flash <-> BH, high = flash <-> DMC */
 		spi_mux {
 			compatible = "zephyr,gpio-line";
 			gpios = <&gpiob 5 GPIO_ACTIVE_LOW>;
