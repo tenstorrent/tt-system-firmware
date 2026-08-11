@@ -60,6 +60,38 @@ runs:
           exit 1
         fi
 
+        kernel_cc="$(
+          make -C "$kernel_build_dir" M=/tmp --no-print-directory -pn 2>/dev/null |
+            awk '$1 == "CC" && ($2 == "=" || $2 == ":=") && !found { print $3; found=1 }'
+        )"
+        if [[ -z "$kernel_cc" ]]; then
+          echo "::error::Unable to determine the compiler required by the host kernel build."
+          exit 1
+        fi
+
+        if ! command -v "$kernel_cc" >/dev/null 2>&1; then
+          case "$kernel_cc" in
+            gcc-[0-9]*|clang-[0-9]*)
+              compiler_package="$kernel_cc"
+              ;;
+            *-gcc-[0-9]*)
+              compiler_package="gcc-${kernel_cc##*-gcc-}"
+              ;;
+            *)
+              echo "::error::Host kernel requires unavailable compiler '${kernel_cc}', and its package cannot be inferred."
+              exit 1
+              ;;
+          esac
+
+          echo "Installing host kernel compiler ${compiler_package}"
+          if ! "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y "$compiler_package"; then
+            echo "::error::Unable to install compiler package ${compiler_package} required by the host kernel."
+            exit 1
+          fi
+        fi
+        echo "Host kernel compiler: $kernel_cc"
+
         source_dir="$(mktemp -d)"
         cleanup() {
           rm -rf "$source_dir"
