@@ -51,10 +51,16 @@
 
 		flash = <&flash1>;
 
-		/* Line to spi mux, drive low to enable dmfw -> eeprom */
+		/* SPI flash mux0: low = flash <-> BH, high = flash <-> secondary (mux1) */
 		spi_mux {
 			compatible = "zephyr,gpio-line";
 			gpios = <&gpiob 0 GPIO_ACTIVE_LOW>;
+		};
+
+		/* SPI flash mux1: when mux0 high, low = flash <-> DMC, high = flash <-> B2B */
+		spi_mux1 {
+			compatible = "zephyr,gpio-line";
+			gpios = <&gpiob 1 GPIO_ACTIVE_LOW>;
 		};
 
 		/* Line to spi reset */
@@ -220,6 +226,28 @@
 			reg = <0xa>;
 			status = "okay";
 		};
+	};
+};
+
+/*
+ * Boot default: mux0 high + mux1 low -> DMC <-> flash
+ *   mux0 low             -> flash <-> BH
+ *   mux0 high, mux1 low  -> flash <-> DMC
+ *   mux0 high, mux1 high -> flash <-> B2B
+ */
+&gpiob {
+	status = "okay";
+
+	spi-flash-mux0 {
+		gpio-hog;
+		gpios = <0 GPIO_ACTIVE_HIGH>;
+		output-high; /* mux0 high: secondary path (see mux1) */
+	};
+
+	spi-flash-mux1 {
+		gpio-hog;
+		gpios = <1 GPIO_ACTIVE_HIGH>;
+		output-low; /* mux1 low: DMC <-> flash */
 	};
 };
 
