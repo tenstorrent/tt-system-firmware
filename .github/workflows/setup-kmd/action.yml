@@ -61,7 +61,7 @@ runs:
         fi
 
         kernel_cc="$(
-          make -C "$kernel_build_dir" M=/tmp --no-print-directory -pn 2>/dev/null |
+          { make -C "$kernel_build_dir" M=/tmp --no-print-directory -pn 2>/dev/null || true; } |
             awk '$1 == "CC" && ($2 == "=" || $2 == ":=") && !found { print $3; found=1 }'
         )"
         if [[ -z "$kernel_cc" ]]; then
