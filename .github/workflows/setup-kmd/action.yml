@@ -43,15 +43,20 @@ runs:
           build-essential \
           git \
           kmod \
-          util-linux \
-          "linux-headers-${kernel_release}"; then
-          echo "::error::Kernel headers for ${kernel_release} are unavailable from this container's package repositories."
+          util-linux; then
+          echo "::error::Unable to install the tt-kmd build dependencies."
           exit 1
         fi
 
         kernel_build_dir="/lib/modules/${kernel_release}/build"
         if [[ ! -d "$kernel_build_dir" ]]; then
-          echo "::error::Kernel build directory ${kernel_build_dir} does not exist after installing headers."
+          echo "::error::Host kernel build directory ${kernel_build_dir} is not mounted in the container."
+          exit 1
+        fi
+
+        module_symvers="${kernel_build_dir}/Module.symvers"
+        if [[ ! -f "$module_symvers" ]]; then
+          echo "::error::Host kernel symbol versions ${module_symvers} are unavailable."
           exit 1
         fi
 
@@ -70,7 +75,8 @@ runs:
         git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
 
         kmd_commit="$(git -C "$source_dir" rev-parse HEAD)"
-        cache_root="/opt/tenstorrent/kmd-builds/${kernel_release}"
+        symvers_hash="$(sha256sum "$module_symvers" | awk '{print $1}')"
+        cache_root="/opt/tenstorrent/kmd-builds/${kernel_release}/${symvers_hash}"
         cache_dir="${cache_root}/${kmd_commit}"
         module_path="${cache_dir}/tenstorrent.ko"
         "${SUDO[@]}" mkdir -p "$cache_root"

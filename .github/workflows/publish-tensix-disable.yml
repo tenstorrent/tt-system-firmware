@@ -72,6 +72,8 @@ jobs:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
       options: '--device /dev/tenstorrent --device /dev/bus/usb --privileged'
     steps:

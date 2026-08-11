@@ -58,6 +58,8 @@ jobs:
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /dev/hugepages:/dev/hugepages
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
         - /opt/tenstorrent/hf-models/:/opt/tenstorrent/hf-models/
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
       options: ${{ matrix.config.metal-options }}
