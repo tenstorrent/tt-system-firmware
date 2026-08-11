@@ -38,8 +38,6 @@ zephyr_library_sources(
 # zephyr-keep-sorted-stop
 )
 
-zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED msgqueue.c)
-
 zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_RUNTIME_TELEMETRY runtime_telemetry.c)
 
 # Backend for the chip-info service: the static (no-SPI) one when fwtable is
@@ -55,7 +53,6 @@ endif()
 
 zephyr_library_sources_ifdef(CONFIG_TT_PCIE_LOG_BACKEND tt_pcie_log.c)
 
-zephyr_linker_sources(DATA_SECTIONS iterables.ld)
 if(CONFIG_ARC)
   zephyr_library_link_libraries(${ZEPHYR_CURRENT_MODULE_DIR}/zephyr/blobs/tt_blackhole_libpciesd.a)
 endif()

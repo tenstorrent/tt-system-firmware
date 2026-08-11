@@ -112,7 +112,7 @@ static int bh_arc_init_end(void)
 	}
 #endif
 
-#ifdef CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED
+#ifdef CONFIG_TT_MSGQUEUE
 	init_msgqueue();
 #endif
 

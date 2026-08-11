@@ -16,79 +16,42 @@
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
-#include "status_reg.h"
 #include "reg.h"
 
-#define MSGQUEUE_IRQS_NODE         DT_NODELABEL(msgqueue_irqs)
 #define MSGQUEUE_INFO_NODE         DT_NODELABEL(msgqueue_info)
 #define STATUS_MSG_Q_INFO_REG_ADDR (uintptr_t)DT_REG_ADDR(MSGQUEUE_INFO_NODE)
 
-#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
-#define MSGQUEUE_IRQN(_name)     DT_IRQN_BY_NAME(MSGQUEUE_IRQS_NODE, _name)
-#define MSGQUEUE_IRQ_PRIO(_name) DT_IRQ_BY_NAME(MSGQUEUE_IRQS_NODE, _name, priority)
+/* IRQ stack (msgqueue_irqs + arc_misc_cntl + msi_catcher) is one feature. */
+#define MSGQUEUE_HAS_IRQS DT_HAS_COMPAT_STATUS_OKAY(tenstorrent_msgqueue_irqs)
+
+#if MSGQUEUE_HAS_IRQS
+#define MSGQUEUE_IRQS_NODE           DT_NODELABEL(msgqueue_irqs)
+#define ARC_MISC_CNTL_NODE           DT_NODELABEL(arc_misc_cntl)
+#define MSI_CATCHER_NODE             DT_NODELABEL(msi_catcher)
+#define MSGQUEUE_IRQN(_name)         DT_IRQN_BY_NAME(MSGQUEUE_IRQS_NODE, _name)
+#define MSGQUEUE_IRQ_PRIO(_name)     DT_IRQ_BY_NAME(MSGQUEUE_IRQS_NODE, _name, priority)
+#define ARC_MISC_CNTL_REG_ADDR       DT_REG_ADDR(ARC_MISC_CNTL_NODE)
+#define MSI_CATCHER_BASE             DT_REG_ADDR(MSI_CATCHER_NODE)
+#define MSI_CATCHER_FIFO_REG_ADDR    (MSI_CATCHER_BASE + 0)
+#define MSI_CATCHER_FLUSH_REG_ADDR   (MSI_CATCHER_BASE + 4)
+#define MSI_CATCHER_STATUS_REG_ADDR  (MSI_CATCHER_BASE + 8)
+/* Boot status scratch (SCRATCH_RAM[2]); msg_queue_ready bit only. */
+#define STATUS_BOOT_STATUS0_REG_ADDR 0x80030408
 #endif
 
 #define MSGHANDLER_COMPAT_MASK 0x1
 
 #define MSG_ERROR_REPLY 0xff
 
-/* this should probably be pulled from Devicetree */
-#define POST_CODE_REG_ADDR 0x0060
-
-/* this should probably be pulled from Devicetree */
-#define APB_BASE_ADDR 0x80000000
-
-/* this should probably be pulled from Devicetree */
-#define RESET_UNIT_START_ADDR ((volatile uint32_t *)(APB_BASE_ADDR + RESET_UNIT_OFFSET_ADDR))
-
-#define RESET_UNIT_OFFSET_ADDR            0x30000
-#define RESET_UNIT_ARC_MISC_CNTL_REG_ADDR 0x80030100
-
-typedef struct {
-	uint32_t run: 4;
-	uint32_t halt: 4;
-	uint32_t rsvd_0: 4;
-	uint32_t soft_reset: 1;
-	uint32_t dbg_cache_rst: 1;
-	uint32_t mbus_clkdis: 1;
-	uint32_t dbus_clkdis: 1;
-	uint32_t irq0_trig: 4;
-	uint32_t rsvd_1: 11;
-	uint32_t self_reset: 1;
-} RESET_UNIT_ARC_MISC_CNTL_reg_t;
-
-typedef union {
-	uint32_t val;
-	RESET_UNIT_ARC_MISC_CNTL_reg_t f;
-} RESET_UNIT_ARC_MISC_CNTL_reg_u;
-
-#define RESET_UNIT_ARC_MISC_CNTL_REG_DEFAULT (0x00000000)
-
-#define MSI_CATCHER_BASE (APB_BASE_ADDR + 0xB0000)
-
-/* Read/Write to FIFO pops/pushes on the FIFO. 64 entries. APB SLVERR on overflow/underflow. */
-#define MSI_CATCHER_FIFO_OFFSET   0
-#define MSI_CATCHER_FIFO_REG_ADDR (MSI_CATCHER_BASE + MSI_CATCHER_FIFO_OFFSET)
-
-/* Read to flush clears the FIFO. */
-#define MSI_CATCHER_FLUSH_OFFSET   4
-#define MSI_CATCHER_FLUSH_REG_ADDR (MSI_CATCHER_BASE + MSI_CATCHER_FLUSH_OFFSET)
-
-#define MSI_CATCHER_STATUS_OFFSET   8
-#define MSI_CATCHER_STATUS_REG_ADDR (MSI_CATCHER_BASE + MSI_CATCHER_STATUS_OFFSET)
-
 BUILD_ASSERT(sizeof(union request) <= (sizeof(uint32_t) * REQUEST_MSG_LEN));
-typedef struct {
-	uint32_t msi_ready: 1; /* [0:0] -- FIFO can accept a push. (Out of reset and not full.) */
-	uint32_t unused: 7;
-	uint32_t msi_intr: 1; /* [8:8] -- FIFO is nonempty */
-	uint32_t msi_ovfl: 1; /* [9:9] -- FIFO above high water mark. (Full, by default.) */
-} MSI_CATCHER_STATUS_reg_t;
-
-typedef union {
-	uint32_t val;
-	MSI_CATCHER_STATUS_reg_t f;
-} MSI_CATCHER_STATUS_reg_u;
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MSGQUEUE_INFO_NODE, okay),
+	     "TT_MSGQUEUE requires msgqueue_info status okay");
+#if MSGQUEUE_HAS_IRQS
+BUILD_ASSERT(DT_NODE_HAS_STATUS(ARC_MISC_CNTL_NODE, okay),
+	     "msgqueue_irqs requires arc_misc_cntl status okay");
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MSI_CATCHER_NODE, okay),
+	     "msgqueue_irqs requires msi_catcher status okay");
+#endif
 
 /* Describes a single message queue. */
 struct message_queue {
@@ -101,7 +64,7 @@ struct message_queue {
 static struct message_queue message_queues[NUM_MSG_QUEUES];
 
 /* All message handlers */
-static void *message_handlers[CONFIG_TT_BH_ARC_NUM_MSG_CODES];
+static void *message_handlers[CONFIG_TT_MSGQUEUE_NUM_MSG_CODES];
 
 __attribute__((used)) static uint32_t message_queue_info[4];
 
@@ -260,7 +223,7 @@ static void process_l2_message_queue(const union request *request, struct respon
 {
 	uint32_t msg_code = request->command_code;
 
-	if (msg_code >= CONFIG_TT_BH_ARC_NUM_MSG_CODES || message_handlers[msg_code] == NULL) {
+	if (msg_code >= CONFIG_TT_MSGQUEUE_NUM_MSG_CODES || message_handlers[msg_code] == NULL) {
 		response->data[0] = MSG_ERROR_REPLY;
 		return;
 	}
@@ -347,16 +310,6 @@ static void process_message_queue(struct message_queue *queue)
 	}
 }
 
-void clear_msg_irq(void)
-{
-#ifdef CONFIG_BOARD_TT_BLACKHOLE
-	RESET_UNIT_ARC_MISC_CNTL_reg_u arc_misc_cntl = {
-		.val = ReadReg(RESET_UNIT_ARC_MISC_CNTL_REG_ADDR)};
-	arc_misc_cntl.f.irq0_trig = 0;
-	WriteReg(RESET_UNIT_ARC_MISC_CNTL_REG_ADDR, arc_misc_cntl.val);
-#endif
-}
-
 /* Run all messages in all queues. */
 void process_message_queues(void)
 {
@@ -370,7 +323,7 @@ void process_message_queues(void)
 
 void msgqueue_register_handler(uint32_t msg_code, msgqueue_request_handler_t handler)
 {
-	if (msg_code >= CONFIG_TT_BH_ARC_NUM_MSG_CODES) {
+	if (msg_code >= CONFIG_TT_MSGQUEUE_NUM_MSG_CODES) {
 		return;
 	}
 
@@ -406,7 +359,57 @@ static int register_interrupt_handlers(void)
 SYS_INIT_APP(register_interrupt_handlers);
 #endif
 
-#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
+#if MSGQUEUE_HAS_IRQS
+typedef struct {
+	uint32_t run: 4;
+	uint32_t halt: 4;
+	uint32_t rsvd_0: 4;
+	uint32_t soft_reset: 1;
+	uint32_t dbg_cache_rst: 1;
+	uint32_t mbus_clkdis: 1;
+	uint32_t dbus_clkdis: 1;
+	uint32_t irq0_trig: 4;
+	uint32_t rsvd_1: 11;
+	uint32_t self_reset: 1;
+} RESET_UNIT_ARC_MISC_CNTL_reg_t;
+
+typedef union {
+	uint32_t val;
+	RESET_UNIT_ARC_MISC_CNTL_reg_t f;
+} RESET_UNIT_ARC_MISC_CNTL_reg_u;
+
+typedef struct {
+	uint32_t msi_ready: 1; /* [0:0] -- FIFO can accept a push. (Out of reset and not full.) */
+	uint32_t unused: 7;
+	uint32_t msi_intr: 1; /* [8:8] -- FIFO is nonempty */
+	uint32_t msi_ovfl: 1; /* [9:9] -- FIFO above high water mark. (Full, by default.) */
+} MSI_CATCHER_STATUS_reg_t;
+
+typedef union {
+	uint32_t val;
+	MSI_CATCHER_STATUS_reg_t f;
+} MSI_CATCHER_STATUS_reg_u;
+
+typedef struct {
+	uint32_t msg_queue_ready: 1;
+	uint32_t hw_init_status: 2;
+	uint32_t fw_id: 4;
+	uint32_t spare: 25;
+} STATUS_BOOT_STATUS0_reg_t;
+
+typedef union {
+	uint32_t val;
+	STATUS_BOOT_STATUS0_reg_t f;
+} STATUS_BOOT_STATUS0_reg_u;
+
+static void clear_msg_irq(void)
+{
+	RESET_UNIT_ARC_MISC_CNTL_reg_u arc_misc_cntl = {.val = ReadReg(ARC_MISC_CNTL_REG_ADDR)};
+
+	arc_misc_cntl.f.irq0_trig = 0;
+	WriteReg(ARC_MISC_CNTL_REG_ADDR, arc_misc_cntl.val);
+}
+
 static void msgqueue_work_handler(struct k_work *work)
 {
 	process_message_queues();
@@ -466,13 +469,9 @@ static void msgqueue_msi_overflow_handler(void *arg)
 	msi_catcher_flush();
 	k_work_submit(&msgqueue_work);
 }
-#endif
 
-void init_msgqueue(void)
+static void init_msgqueue_irqs(void)
 {
-	prepare_msg_queue();
-
-#if DT_NODE_HAS_STATUS(MSGQUEUE_IRQS_NODE, okay)
 	IRQ_CONNECT(MSGQUEUE_IRQN(arc_misc_cntl_irq0), MSGQUEUE_IRQ_PRIO(arc_misc_cntl_irq0),
 		    msgqueue_interrupt_handler, NULL, 0);
 	irq_enable(MSGQUEUE_IRQN(arc_misc_cntl_irq0));
@@ -487,6 +486,16 @@ void init_msgqueue(void)
 
 	volatile STATUS_BOOT_STATUS0_reg_u *boot_status0 =
 		(volatile STATUS_BOOT_STATUS0_reg_u *)STATUS_BOOT_STATUS0_REG_ADDR;
+
 	boot_status0->f.msg_queue_ready = 1;
+}
+#endif /* MSGQUEUE_HAS_IRQS */
+
+void init_msgqueue(void)
+{
+	prepare_msg_queue();
+
+#if MSGQUEUE_HAS_IRQS
+	init_msgqueue_irqs();
 #endif
 }

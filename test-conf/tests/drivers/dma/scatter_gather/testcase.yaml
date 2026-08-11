@@ -3,7 +3,7 @@ common:
     - smoke
     - dma
   extra_configs:
-    - CONFIG_TT_BH_ARC_MSGQUEUE_ENABLED=n
+    - CONFIG_TT_MSGQUEUE=n
 tests:
   drivers.dma.scatter_gather.tt_mimir_smc:
     platform_allow:

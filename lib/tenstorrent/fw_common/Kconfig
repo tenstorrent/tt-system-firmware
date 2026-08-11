@@ -23,4 +23,17 @@ config TT_POST_CODE
 	help
 	  Enables writing firmware post codes to the status scratch register.
 
+config TT_MSGQUEUE
+	bool "Enable host message queue"
+	default y
+	help
+	  Enable the portable SMC host message queue implementation.
+
+config TT_MSGQUEUE_NUM_MSG_CODES
+	int "Number of message codes"
+	default 200
+	depends on TT_MSGQUEUE
+	help
+	  Size of the message handler table (message code range).
+
 endif

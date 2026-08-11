@@ -27,18 +27,6 @@ config TT_BH_ARC_EMUL
 	  Enabled by default on native_sim and can be enabled on other
 	  boards that need emulated ARC behavior.
 
-config TT_BH_ARC_NUM_MSG_CODES
-	int "Number of message codes"
-	default 200
-	help
-	  The number of message codes
-
-config TT_BH_ARC_MSGQUEUE_ENABLED
-	bool "Enable BH ARC message queue"
-	default y
-	help
-	  Enable initialization and implementation of the BH ARC message queue.
-
 config TT_SHELL
 	bool "Tenstorrent Blackhole shell driver"
 	depends on SHELL
