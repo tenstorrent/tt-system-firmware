@@ -1,0 +1,14 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  ARC miscellaneous control register (RESET_UNIT_ARC_MISC_CNTL). Used by the
+  message queue to clear software-triggered IRQ0.
+
+compatible: "tenstorrent,arc-misc-cntl"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true

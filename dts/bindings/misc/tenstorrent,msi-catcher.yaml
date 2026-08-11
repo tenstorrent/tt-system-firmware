@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  MSI catcher FIFO block. Register layout within the region:
+  - offset 0: FIFO pop/push
+  - offset 4: flush (read to clear)
+  - offset 8: status
+
+compatible: "tenstorrent,msi-catcher"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true

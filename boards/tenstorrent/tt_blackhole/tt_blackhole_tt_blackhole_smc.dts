@@ -42,6 +42,18 @@
 		status = "okay";
 	};
 
+	arc_misc_cntl: arc-misc-cntl@80030100 {
+		compatible = "tenstorrent,arc-misc-cntl";
+		reg = <0x80030100 0x4>;
+		status = "okay";
+	};
+
+	msi_catcher: msi-catcher@800b0000 {
+		compatible = "tenstorrent,msi-catcher";
+		reg = <0x800b0000 0xc>;
+		status = "okay";
+	};
+
 	pinctrl: pinctrl {
 		compatible = "tenstorrent,bh-pinctrl";
 
