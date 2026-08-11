@@ -1,10 +1,10 @@
 # v19.13.2
 
+We are pleased to announce the release of TT System Firmware version 19.13.2 🥳🎉.
+
 This is a patch release on top of v19.13.1. It includes the following updates:
-- Added per-instance GDDR soft-harvest support on Blackhole
-  - New `dram_table.soft_harvest_dram_mask` field in the fw_table, applied during harvesting to clear the selected channels from `tile_enable.gddr_enabled`
-  - Settable at runtime through the CCFGOVR override flow, so harvested-DRAM configs can be exercised on future bin6 BH Galaxy parts
-  - Defaults to `0` (no-op) when a board's fw_table omits the field, so existing boards are unaffected
+- Added Blackhole per-instance GDDR soft-harvest support
+  - Selected GDDR channels can be harvested via a new fw_table field, also settable at runtime; boards that omit the field are unaffected
 
 
 # v19.13.1
