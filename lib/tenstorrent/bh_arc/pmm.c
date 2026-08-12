@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define PMM_BLOCK_PMM_CTRL_REG_ADDR    0x80400004
 #define PMM_BLOCK_PMM_MESSAGE_REG_ADDR 0x80400000

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 typedef struct {
 	uint32_t dr: 1;

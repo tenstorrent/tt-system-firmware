@@ -10,7 +10,7 @@
 #include "noc_init.h"
 #include "noc.h"
 #include "noc2axi.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "telemetry.h"
 #include "gddr.h"
 #include "tensix_state_msg.h"

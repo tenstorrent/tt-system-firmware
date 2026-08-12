@@ -6,7 +6,7 @@
 
 #include "cat.h"
 #include "cm2dm_msg.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "telemetry.h"
 #include "timer.h"
 

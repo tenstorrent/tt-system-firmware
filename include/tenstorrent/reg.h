@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef TT_FW_COMMON_REG_H
-#define TT_FW_COMMON_REG_H
+#ifndef TENSTORRENT_REG_H_
+#define TENSTORRENT_REG_H_
 
 #include <stdint.h>
 
@@ -22,4 +22,4 @@ static inline void WriteReg(uint32_t addr, uint32_t val)
 }
 #endif
 
-#endif /* TT_FW_COMMON_REG_H */
+#endif /* TENSTORRENT_REG_H_ */

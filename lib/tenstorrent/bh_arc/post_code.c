@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 #include <tenstorrent/post_code.h>
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 
 void SetPostCode(uint8_t fw_id, uint16_t post_code)

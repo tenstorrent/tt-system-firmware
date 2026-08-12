@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define RESET_UNIT_REFCLK_CNT_LO_REG_ADDR 0x800300E0
 #define RESET_UNIT_REFCLK_CNT_HI_REG_ADDR 0x800300E4

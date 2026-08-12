@@ -9,7 +9,7 @@
 #include "timer.h"
 #include "dw_apb_i2c.h"
 #include "asic_state.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "timer.h"
 #include "util.h"
 

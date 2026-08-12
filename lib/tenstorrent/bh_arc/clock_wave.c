@@ -11,7 +11,7 @@
 #include <tenstorrent/msgqueue.h>
 
 #include "timer.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define PLL_CNTL_WRAPPER_CLOCK_WAVE_CNTL_REG_ADDR 0x80020038
 

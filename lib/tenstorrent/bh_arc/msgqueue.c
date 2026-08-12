@@ -17,7 +17,7 @@
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/sys_init_defines.h>
 #include "status_reg.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define MSGQUEUE_IRQS_NODE         DT_NODELABEL(msgqueue_irqs)
 #define MSGQUEUE_INFO_NODE         DT_NODELABEL(msgqueue_info)

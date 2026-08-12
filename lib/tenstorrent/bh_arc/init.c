@@ -7,7 +7,7 @@
 #include "dvfs.h"
 #include "fan_ctrl.h"
 #include "init.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 #include "telemetry.h"
 #include "timer.h"

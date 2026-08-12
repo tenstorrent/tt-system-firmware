@@ -22,7 +22,7 @@
 #include "cm2dm_msg.h"
 #include "asic_state.h"
 #include "chip_info.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 #include "fan_ctrl.h"
 #include "telemetry.h"

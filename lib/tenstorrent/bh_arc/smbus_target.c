@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 #include "dw_apb_i2c.h"
 #include "cm2dm_msg.h"

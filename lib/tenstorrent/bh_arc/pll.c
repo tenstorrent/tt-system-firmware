@@ -5,7 +5,7 @@
  */
 
 #include "pll.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "timer.h"
 
 #include <stdbool.h>

@@ -5,7 +5,7 @@
  */
 
 #include "debug_trace.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 typedef struct {
 	uint32_t interface_en: 1;

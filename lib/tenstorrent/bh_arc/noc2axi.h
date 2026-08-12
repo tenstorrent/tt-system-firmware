@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 #include <zephyr/sys/util.h>
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define ARC_NOC0_BASE_ADDR 0xC0000000
 #define ARC_NOC1_BASE_ADDR 0xE0000000

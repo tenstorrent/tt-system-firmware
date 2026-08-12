@@ -11,7 +11,7 @@
 #include "noc2axi.h"
 #include "pcie.h"
 #include "pciesd.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 #include "timer.h"
 

@@ -30,7 +30,7 @@
 #include "fan_ctrl.h"
 #include "functional_efuse.h"
 #include "harvesting.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "regulator.h"
 #include "status_reg.h"
 #include "throttler.h"

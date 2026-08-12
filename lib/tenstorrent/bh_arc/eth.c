@@ -12,7 +12,7 @@
 #include "noc.h"
 #include "noc_init.h"
 #include "noc2axi.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "serdes_eth.h"
 #include "aiclk_ppm.h"
 

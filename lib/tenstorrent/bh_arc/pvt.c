@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "telemetry.h"
 #include "timer.h"
 

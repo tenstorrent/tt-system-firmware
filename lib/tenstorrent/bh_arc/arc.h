@@ -6,7 +6,7 @@
 #ifndef ARC_H
 #define ARC_H
 
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 
 #include <stdint.h>

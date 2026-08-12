@@ -11,7 +11,7 @@
 #include "noc.h"
 #include "noc_init.h"
 #include "noc2axi.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 #include "status_reg.h"
 
 #include <stddef.h>

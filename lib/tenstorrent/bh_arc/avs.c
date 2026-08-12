@@ -18,7 +18,7 @@
 static const struct device *const pll_dev_1 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll1));
 
 #include "timer.h"
-#include "reg.h"
+#include <tenstorrent/reg.h>
 
 #define APB2AVSBUS_AVS_INTERRUPT_MASK_REG_ADDR 0x80100034
 #define APB2AVSBUS_AVS_CFG_1_REG_ADDR          0x80100054
