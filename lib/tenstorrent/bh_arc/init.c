@@ -97,7 +97,6 @@ static int bh_arc_init_end(void)
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
 #ifdef CONFIG_BH_FWTABLE
-	init_telemetry(APPVERSION);
 	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.fan_ctrl_en) {
 		init_fan_ctrl();
 	}

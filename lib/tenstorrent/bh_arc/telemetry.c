@@ -42,11 +42,18 @@
 
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/smbus_target.h>
+#include <tenstorrent/sys_init_defines.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control/clock_control_tt_bh.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/init.h>
+#if defined(HAS_APP_VERSION)
+#include <zephyr/app_version.h>
+#else
+#define APPVERSION 0x00000000
+#endif
 #endif
 
 LOG_MODULE_REGISTER(telemetry, CONFIG_TT_APP_LOG_LEVEL);
@@ -629,16 +636,19 @@ static void telemetry_timer_handler(struct k_timer *timer)
 static K_WORK_DEFINE(telem_update_worker, telemetry_work_handler);
 static K_TIMER_DEFINE(telem_update_timer, telemetry_timer_handler, NULL);
 
-void init_telemetry(uint32_t app_version)
+int init_telemetry(void)
 {
-	write_static_telemetry(app_version);
+	write_static_telemetry(APPVERSION);
 	/* fill the dynamic values once before starting timed updates */
 	update_telemetry();
 
 	/* Publish the telemetry data pointer for readers in Scratch RAM */
 	WriteReg(TELEMETRY_DATA_REG_ADDR, (uint32_t)&telemetry[0]);
 	WriteReg(TELEMETRY_TABLE_REG_ADDR, (uint32_t)&telemetry_table);
+
+	return 0;
 }
+SYS_INIT_APP(init_telemetry);
 
 void StartTelemetryTimer(void)
 {

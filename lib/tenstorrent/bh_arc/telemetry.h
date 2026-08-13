@@ -517,7 +517,7 @@ typedef union {
 /** @brief Longest accepted telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_MAX_MS 1000
 
-void init_telemetry(uint32_t app_version);
+int init_telemetry(void);
 uint32_t ConvertFloatToTelemetry(float value);
 float ConvertTelemetryToFloat(int32_t value);
 void StartTelemetryTimer(void);
