@@ -15,10 +15,12 @@
 
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/smc_msg.h>
+#include <tenstorrent/sys_init_defines.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
+#include <zephyr/init.h>
 
 #ifdef CONFIG_ZTEST
 #define STATIC
@@ -143,8 +145,12 @@ static void fan_ctrl_timer_handler(struct k_timer *timer)
 }
 static K_TIMER_DEFINE(fan_ctrl_update_timer, fan_ctrl_timer_handler, NULL);
 
-void init_fan_ctrl(void)
+int init_fan_ctrl(void)
 {
+	if (!tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.fan_ctrl_en) {
+		return 0;
+	}
+
 	/* Get initial asic temp */
 	TelemetryInternalData telemetry_internal_data;
 
@@ -154,7 +160,10 @@ void init_fan_ctrl(void)
 	/* start a periodic timer that expires once every fan_ctrl_update_interval */
 	k_timer_start(&fan_ctrl_update_timer, K_MSEC(fan_ctrl_update_interval),
 		      K_MSEC(fan_ctrl_update_interval));
+
+	return 0;
 }
+SYS_INIT_APP(init_fan_ctrl);
 
 static uint8_t force_fan_speed(const union request *request, struct response *response)
 {
