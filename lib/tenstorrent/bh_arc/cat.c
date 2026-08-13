@@ -23,6 +23,7 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/sensor/tenstorrent/pvt_tt_bh.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
 
 LOG_MODULE_REGISTER(cat);
 
@@ -290,6 +291,10 @@ static void gddr_therm_trip_work_handler(struct k_work *work)
 	int max_temp = MonitorGddrThermTrip(k_uptime_get(), GetTelemetryTag(TAG_MAX_GDDR_TEMP));
 
 	if (max_temp && GetActiveFeatures().gddr_therm_trip) {
+		/* Force log thread to process so the over-temp error above
+		 * reaches the host (KMD) before the therm trip resets the SMC.
+		 */
+		log_flush();
 		/* Notify DMC, then trigger therm trip after delay so DMC can read the message */
 		trip_pending = true;
 		ReportGddrThermTrip(max_temp >= gddr_therm_trip_critical_temp &&
