@@ -365,7 +365,6 @@ static void prepare_msg_queue(void)
 	WriteReg(STATUS_MSG_Q_INFO_REG_ADDR, (uintptr_t)message_queue_info);
 }
 
-#ifndef MSG_QUEUE_TEST
 static int register_interrupt_handlers(void)
 {
 	STRUCT_SECTION_FOREACH(msgqueue_handler, item) {
@@ -375,7 +374,6 @@ static int register_interrupt_handlers(void)
 }
 
 SYS_INIT_APP(register_interrupt_handlers);
-#endif
 
 #if MSGQUEUE_HAS_IRQS || MSGQUEUE_HAS_MBOX
 static void msgqueue_work_handler(struct k_work *work)
@@ -543,7 +541,7 @@ static void init_msgqueue_mbox_irq(void)
 }
 #endif /* MSGQUEUE_HAS_MBOX */
 
-void init_msgqueue(void)
+int init_msgqueue(void)
 {
 	prepare_msg_queue();
 
@@ -553,4 +551,8 @@ void init_msgqueue(void)
 #if MSGQUEUE_HAS_MBOX
 	init_msgqueue_mbox_irq();
 #endif
+
+	return 0;
 }
+
+SYS_INIT_APP(init_msgqueue);

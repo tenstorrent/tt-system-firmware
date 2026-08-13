@@ -96,10 +96,6 @@ static int bh_arc_init_end(void)
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ZEPHYR_INIT_DONE);
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
-#ifdef CONFIG_TT_MSGQUEUE
-	init_msgqueue();
-#endif
-
 #ifdef CONFIG_BH_FWTABLE
 	init_telemetry(APPVERSION);
 	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.fan_ctrl_en) {
