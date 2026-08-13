@@ -96,9 +96,6 @@ static int bh_arc_init_end(void)
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ZEPHYR_INIT_DONE);
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
-#ifdef CONFIG_BH_FWTABLE
-	StartGddrThermTripMonitor();
-#endif
 	Dm2CmReadyRequest();
 	return 0;
 }

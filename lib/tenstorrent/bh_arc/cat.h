@@ -13,7 +13,7 @@
 
 #define T_J_SHUTDOWN 110 /* BH Prod Spec 7.3 */
 
-void StartGddrThermTripMonitor(void);
+int StartGddrThermTripMonitor(void);
 
 /** @brief Evaluate the GDDR thermal-trip state machine for one sample against
  * the supplied thresholds.

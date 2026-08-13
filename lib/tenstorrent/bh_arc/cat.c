@@ -317,7 +317,7 @@ static void gddr_therm_trip_timer_handler(struct k_timer *timer)
 
 static K_TIMER_DEFINE(gddr_therm_trip_timer, gddr_therm_trip_timer_handler, NULL);
 
-void StartGddrThermTripMonitor(void)
+int StartGddrThermTripMonitor(void)
 {
 	const FwTable *fw_table = tt_bh_fwtable_get_fw_table(fwtable_dev);
 
@@ -331,5 +331,8 @@ void StartGddrThermTripMonitor(void)
 
 	k_timer_start(&gddr_therm_trip_timer, K_MSEC(gddr_therm_trip_interval),
 		      K_MSEC(gddr_therm_trip_interval));
+
+	return 0;
 }
+SYS_INIT_APP(StartGddrThermTripMonitor);
 #endif
