@@ -86,10 +86,20 @@ SYS_INIT_APP(InitDVFS);
 
 #define DVFS_MSEC 1
 
-void StartDVFSTimer(void)
+int StartDVFSTimer(void)
 {
+	if (!dvfs_enabled) {
+		return 0;
+	}
+
+	/* Split from InitDVFS because the work task has I2C conflicts with other
+	 * init functions. Zephyr's driver model would solve this.
+	 */
 	k_timer_start(&dvfs_timer, K_MSEC(DVFS_MSEC), K_MSEC(DVFS_MSEC));
+
+	return 0;
 }
+SYS_INIT_APP(StartDVFSTimer);
 
 #define DVFS_TICKS (CONFIG_SYS_CLOCK_TICKS_PER_SEC * DVFS_MSEC / MSEC_PER_SEC)
 

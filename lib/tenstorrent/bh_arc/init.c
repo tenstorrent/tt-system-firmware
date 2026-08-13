@@ -97,11 +97,6 @@ static int bh_arc_init_end(void)
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
 #ifdef CONFIG_BH_FWTABLE
-#if !defined(CONFIG_TT_BH_ARC_EMUL)
-	if (dvfs_enabled) {
-		StartDVFSTimer();
-	}
-#endif
 	StartGddrThermTripMonitor();
 #endif
 	Dm2CmReadyRequest();
