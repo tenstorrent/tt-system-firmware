@@ -384,6 +384,12 @@ static void backend_process(const struct log_backend *const backend, union log_m
 	uint16_t total_size_u16 = (uint16_t)total_size;
 
 	memcpy(framed_log_buffer + entry_start_pos, &total_size_u16, sizeof(total_size_u16));
+
+	/* Push error-level logs to host immediately */
+	if (entry_header.log_level == LOG_LEVEL_ERR) {
+		flush_buffer_to_host();
+	}
+
 	k_mutex_unlock(&buffer_mutex);
 }
 
