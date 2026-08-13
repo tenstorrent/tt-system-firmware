@@ -97,13 +97,6 @@ static int bh_arc_init_end(void)
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
 #ifdef CONFIG_BH_FWTABLE
-	/* These timers are split out from their init functions since their work tasks have
-	 * i2c conflicts with other init functions.
-	 *
-	 * Note: The above issue would be solved by using Zephyr's driver model.
-	 */
-	StartTelemetryTimer();
-
 #if !defined(CONFIG_TT_BH_ARC_EMUL)
 	if (dvfs_enabled) {
 		StartDVFSTimer();

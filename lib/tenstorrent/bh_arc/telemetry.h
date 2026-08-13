@@ -520,7 +520,7 @@ typedef union {
 int init_telemetry(void);
 uint32_t ConvertFloatToTelemetry(float value);
 float ConvertTelemetryToFloat(int32_t value);
-void StartTelemetryTimer(void);
+int StartTelemetryTimer(void);
 
 /** @brief Set the periodic telemetry update interval.
  * @param interval_ms 0 restores @ref TELEM_UPDATE_INTERVAL_DEFAULT_MS, otherwise the interval in

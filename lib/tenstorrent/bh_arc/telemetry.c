@@ -650,16 +650,20 @@ int init_telemetry(void)
 }
 SYS_INIT_APP(init_telemetry);
 
-void StartTelemetryTimer(void)
+int StartTelemetryTimer(void)
 {
 	/* Start the timer to update the dynamic telemetry values
 	 * Duration (time interval before the timer expires for the first time) and
 	 * Period (time interval between all timer expirations after the first one)
-	 * are both set to telem_update_interval
+	 * are both set to telem_update_interval.
+	 *
+	 * Split from init_telemetry because the work task has I2C conflicts with
+	 * other init functions. Zephyr's driver model would solve this.
 	 */
 	k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
 		      K_MSEC(telem_update_interval));
 	telem_timer_started = true;
+	return 0;
 }
 
 uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms)
@@ -690,4 +694,5 @@ uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms)
 	LOG_INF("telemetry update interval set to %d ms", telem_update_interval);
 	return 0;
 }
+SYS_INIT_APP(StartTelemetryTimer);
 #endif /* CONFIG_BH_FWTABLE */
