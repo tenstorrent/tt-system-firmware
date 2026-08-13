@@ -96,22 +96,6 @@ static int bh_arc_init_end(void)
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ZEPHYR_INIT_DONE);
 	printk("Tenstorrent Blackhole CMFW %s\n", APP_VERSION_STRING);
 
-#if defined(CONFIG_BH_FWTABLE) && !defined(CONFIG_TT_BH_ARC_EMUL)
-	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.aiclk_ppm_en) {
-		uint32_t err0 = ReadReg(STATUS_ERROR_STATUS0_REG_ADDR);
-
-		if (err0 & BIT(INIT_STAGE_REGULATOR)) {
-			LOG_ERR("Not enabling AICLK PPM due to regulator init error");
-		} else {
-			/* DVFS should get enabled if AICLK PPM or L2CPUCLK PPM is enabled
-			 * We currently don't have plans to implement L2CPUCLK PPM,
-			 * so currently, dvfs_enable == aiclk_ppm_enable
-			 */
-			InitDVFS();
-		}
-	}
-#endif
-
 #ifdef CONFIG_TT_MSGQUEUE
 	init_msgqueue();
 #endif

@@ -34,7 +34,14 @@
 #define gddr_training_PRIO                    111
 #define CATInit_PRIO                          112
 #define publish_runtime_telemetry_PRIO        113
-#define bh_arc_init_end_PRIO                  114
+#define InitDVFS_PRIO                         114
+#define init_msgqueue_PRIO                    115
+#define init_telemetry_PRIO                   116
+#define init_fan_ctrl_PRIO                    117
+#define StartTelemetryTimer_PRIO              118
+#define StartDVFSTimer_PRIO                   119
+#define StartGddrThermTripMonitor_PRIO        120
+#define bh_arc_init_end_PRIO                  121
 
 #define SYS_INIT_APP(func) SYS_INIT(func, POST_KERNEL, func##_PRIO)
 

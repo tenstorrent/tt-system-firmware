@@ -5,10 +5,22 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/misc/bh_fwtable.h>
+#include <tenstorrent/sys_init_defines.h>
+
 #include "vf_curve.h"
 #include "throttler.h"
 #include "aiclk_ppm.h"
 #include "voltage.h"
+#include "init.h"
+#include "reg.h"
+#include "status_reg.h"
+
+LOG_MODULE_REGISTER(dvfs, CONFIG_TT_APP_LOG_LEVEL);
+
+static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 bool dvfs_enabled;
 
@@ -41,14 +53,36 @@ static void dvfs_timer_handler(struct k_timer *timer)
 }
 static K_TIMER_DEFINE(dvfs_timer, dvfs_timer_handler, NULL);
 
-void InitDVFS(void)
+static int InitDVFS(void)
 {
+	if (IS_ENABLED(CONFIG_TT_BH_ARC_EMUL)) {
+		return 0;
+	}
+
+	if (!tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.aiclk_ppm_en) {
+		return 0;
+	}
+
+	uint32_t err0 = ReadReg(STATUS_ERROR_STATUS0_REG_ADDR);
+
+	if (err0 & BIT(INIT_STAGE_REGULATOR)) {
+		LOG_ERR("Not enabling AICLK PPM due to regulator init error");
+		return 0;
+	}
+
+	/* DVFS should get enabled if AICLK PPM or L2CPUCLK PPM is enabled.
+	 * We currently don't have plans to implement L2CPUCLK PPM,
+	 * so currently, dvfs_enable == aiclk_ppm_enable.
+	 */
 	InitVFCurve();
 	InitVoltagePPM();
 	InitArbMaxVoltage();
 	InitThrottlers();
 	dvfs_enabled = true;
+
+	return 0;
 }
+SYS_INIT_APP(InitDVFS);
 
 #define DVFS_MSEC 1
 
