@@ -9,6 +9,7 @@ target_sources(app PRIVATE ${app_sources})
 target_link_libraries(app PRIVATE bh_fwtable)
 target_include_directories(app PRIVATE ../../../../include)
 target_include_directories(app PRIVATE ../../../../lib/tenstorrent/bh_arc)
+target_include_directories(app PRIVATE ../../../../soc/tenstorrent/tt_blackhole/include)
 
 # ───── Paths to inputs and tools ─────────────────────────────────────────
 set(TTSF_ROOT     "${ZEPHYR_BASE}/../tt-system-firmware")

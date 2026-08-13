@@ -5,8 +5,12 @@
 #   - bh_arc_mission: mission-only sources, built only for non-recovery images.
 #     It is layered on top of bh_arc_recovery.
 
+set(TT_BLACKHOLE_SOC_DIR ${ZEPHYR_CURRENT_MODULE_DIR}/soc/tenstorrent/tt_blackhole)
+
 zephyr_library_named(bh_arc_recovery)
 zephyr_library_include_directories_ifdef(CONFIG_TT_BH_ARC ${ZEPHYR_CURRENT_MODULE_DIR}/include)
+# status_reg.h lives with the Blackhole SoC (also needed on native_sim EMUL).
+zephyr_library_include_directories(${TT_BLACKHOLE_SOC_DIR}/include)
 
 if(EXISTS ${APPLICATION_SOURCE_DIR}/VERSION)
   zephyr_library_compile_definitions(HAS_APP_VERSION=1)
@@ -60,6 +64,7 @@ endif()
 if(NOT CONFIG_TT_SMC_RECOVERY)
   zephyr_library_named(bh_arc_mission)
   zephyr_library_include_directories_ifdef(CONFIG_TT_BH_ARC ${ZEPHYR_CURRENT_MODULE_DIR}/include)
+  zephyr_library_include_directories(${TT_BLACKHOLE_SOC_DIR}/include)
 
   zephyr_library_sources(
     aiclk_ppm.c

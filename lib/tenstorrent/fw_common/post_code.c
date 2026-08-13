@@ -11,6 +11,7 @@
 #include "reg.h"
 
 #if defined(CONFIG_TT_POST_CODE)
+/* Provided by the selected SoC (tt_blackhole today; tt_grendel later). */
 #include "status_reg.h"
 #endif
 

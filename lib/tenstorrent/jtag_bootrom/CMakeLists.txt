@@ -17,3 +17,6 @@ generate_inc_file_for_target(
 zephyr_library_include_directories(${gen_dir})
 
 zephyr_library_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../bh_arc)
+# status_reg.h is SoC-owned; DMC SOC_FULL_DIR is STM32, so add Blackhole include/.
+zephyr_library_include_directories(
+  ${ZEPHYR_CURRENT_MODULE_DIR}/soc/tenstorrent/tt_blackhole/include)

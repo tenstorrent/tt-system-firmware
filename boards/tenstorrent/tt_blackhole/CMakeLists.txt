@@ -9,7 +9,6 @@ if(CONFIG_MSPI AND CONFIG_FLASH)
   zephyr_library_sources(src/flash.c)
 endif()
 zephyr_library_sources_ifdef(CONFIG_UART_TT_VIRT src/vuart.c)
-zephyr_library_include_directories(${ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR}/lib/tenstorrent/bh_arc)
 
 #
 # Encode firmware table files via protobufs

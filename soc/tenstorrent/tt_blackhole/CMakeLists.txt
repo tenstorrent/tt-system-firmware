@@ -30,6 +30,8 @@ if(CONFIG_SOC_TT_BLACKHOLE_SMC)
   zephyr_library_sources_ifdef(CONFIG_FPU_SHARING fpu_init.c)
 
   zephyr_include_directories(${ZEPHYR_BASE}/soc/snps/hsdk4xd)
+  # Scratch/status ABI map used by bh_arc, fw_common, board code, etc.
+  zephyr_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
   set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/tt_blackhole_smc.ld CACHE INTERNAL "")
 endif()

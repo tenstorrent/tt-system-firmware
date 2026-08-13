@@ -111,7 +111,8 @@ WARN_LOGFILE           =
 INPUT                  = _doxygen/main.md \
                          ../include \
                          ../lib \
-                         ../drivers
+                         ../drivers \
+                         ../soc/tenstorrent/tt_blackhole/include
 INPUT_ENCODING         = UTF-8
 INPUT_FILE_ENCODING    =
 FILE_PATTERNS          = *.c \
