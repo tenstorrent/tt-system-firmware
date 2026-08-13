@@ -19,6 +19,11 @@ on:
     types:
       - checks_requested
   workflow_dispatch:
+    inputs:
+      kmd_ref:
+        description: 'Optional tt-kmd tag, branch, or commit'
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
@@ -67,6 +72,8 @@ jobs:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
       options: '--device /dev/tenstorrent --device /dev/bus/usb --device /dev/ipmi0 --privileged'
     steps:
@@ -83,11 +90,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: run-dmc-tests
         run: |
@@ -155,6 +167,8 @@ jobs:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
       options: '--device /dev/tenstorrent --device /dev/bus/usb --device /dev/ipmi0 --privileged'
     steps:
@@ -171,11 +185,16 @@ jobs:
         with:
           path: tt-system-firmware
 
+      - name: Set up tt-kmd
+        uses: ./tt-system-firmware/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: Set ASIC ID
         shell: bash
@@ -268,6 +287,8 @@ jobs:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
         - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
       options: '--device /dev/tenstorrent --device /dev/bus/usb --privileged'
     steps:
@@ -284,11 +305,16 @@ jobs:
         with:
           path: tt-zephyr-platforms
 
+      - name: Set up tt-kmd
+        uses: ./tt-zephyr-platforms/.github/workflows/setup-kmd
+        with:
+          kmd-version: ${{ matrix.config.kmd_build }}
+          kmd-ref: ${{ inputs.kmd_ref }}
+
       - name: Prepare Container
         uses: ./tt-zephyr-platforms/.github/workflows/prepare-container
         with:
           app-path: tt-zephyr-platforms
-          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: Run WH E2E Tests
         working-directory: tt-zephyr-platforms

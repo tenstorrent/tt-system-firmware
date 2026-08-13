@@ -1,0 +1,154 @@
+name: Build and Load tt-kmd
+description: Build tt-kmd for the running kernel and load it
+
+inputs:
+  kmd-version:
+    description: Plain tt-kmd version used to derive the default ttkmd-<version> tag
+    required: true
+  kmd-ref:
+    description: Optional tt-kmd git tag, branch, or commit overriding kmd-version
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Build and load tt-kmd
+      shell: bash
+      env:
+        KMD_VERSION: ${{ inputs.kmd-version }}
+        KMD_REF_OVERRIDE: ${{ inputs.kmd-ref }}
+      run: |
+        set -euo pipefail
+
+        kernel_release="$(uname -r)"
+        kmd_ref="${KMD_REF_OVERRIDE:-ttkmd-${KMD_VERSION}}"
+
+        if [[ "$EUID" -eq 0 ]]; then
+          SUDO=()
+        elif command -v sudo >/dev/null 2>&1; then
+          SUDO=(sudo)
+        else
+          echo "::error::Building and loading tt-kmd requires root or sudo."
+          exit 1
+        fi
+
+        if [[ ! "$kmd_ref" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]]; then
+          echo "::error::Invalid tt-kmd ref: $kmd_ref"
+          exit 1
+        fi
+
+        "${SUDO[@]}" apt-get update
+        if ! "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          build-essential \
+          git \
+          kmod \
+          util-linux; then
+          echo "::error::Unable to install the tt-kmd build dependencies."
+          exit 1
+        fi
+
+        kernel_build_dir="/lib/modules/${kernel_release}/build"
+        if [[ ! -d "$kernel_build_dir" ]]; then
+          echo "::error::Host kernel build directory ${kernel_build_dir} is not mounted in the container."
+          exit 1
+        fi
+
+        module_symvers="${kernel_build_dir}/Module.symvers"
+        if [[ ! -f "$module_symvers" ]]; then
+          echo "::error::Host kernel symbol versions ${module_symvers} are unavailable."
+          exit 1
+        fi
+
+        kernel_cc="$(
+          { make -C "$kernel_build_dir" M=/tmp --no-print-directory -pn 2>/dev/null || true; } |
+            awk '$1 == "CC" && ($2 == "=" || $2 == ":=") && !found { print $3; found=1 }'
+        )"
+        if [[ -z "$kernel_cc" ]]; then
+          echo "::error::Unable to determine the compiler required by the host kernel build."
+          exit 1
+        fi
+
+        if ! command -v "$kernel_cc" >/dev/null 2>&1; then
+          case "$kernel_cc" in
+            gcc-[0-9]*|clang-[0-9]*)
+              compiler_package="$kernel_cc"
+              ;;
+            *-gcc-[0-9]*)
+              compiler_package="gcc-${kernel_cc##*-gcc-}"
+              ;;
+            *)
+              echo "::error::Host kernel requires unavailable compiler '${kernel_cc}', and its package cannot be inferred."
+              exit 1
+              ;;
+          esac
+
+          echo "Installing host kernel compiler ${compiler_package}"
+          if ! "${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive \
+            apt-get install -y "$compiler_package"; then
+            echo "::error::Unable to install compiler package ${compiler_package} required by the host kernel."
+            exit 1
+          fi
+        fi
+        echo "Host kernel compiler: $kernel_cc"
+
+        source_dir="$(mktemp -d)"
+        cleanup() {
+          rm -rf "$source_dir"
+        }
+        trap cleanup EXIT
+
+        git init --quiet "$source_dir"
+        git -C "$source_dir" remote add origin https://github.com/tenstorrent/tt-kmd.git
+        if ! git -C "$source_dir" fetch --quiet --depth=1 origin "$kmd_ref"; then
+          echo "::error::Unable to fetch tt-kmd ref ${kmd_ref}."
+          exit 1
+        fi
+        git -C "$source_dir" checkout --quiet --detach FETCH_HEAD
+
+        kmd_commit="$(git -C "$source_dir" rev-parse HEAD)"
+        symvers_hash="$(sha256sum "$module_symvers" | awk '{print $1}')"
+        cache_root="/opt/tenstorrent/kmd-builds/${kernel_release}/${symvers_hash}"
+        cache_dir="${cache_root}/${kmd_commit}"
+        module_path="${cache_dir}/tenstorrent.ko"
+        "${SUDO[@]}" mkdir -p "$cache_root"
+
+        # The cache and lock are on the host-mounted volume, so concurrent jobs
+        # on the same runner cannot publish or load a partially built module.
+        "${SUDO[@]}" touch "${cache_root}/.setup-kmd.lock"
+        "${SUDO[@]}" chmod a+rw "${cache_root}/.setup-kmd.lock"
+        exec 9>"${cache_root}/.setup-kmd.lock"
+        flock 9
+
+        if [[ ! -f "$module_path" ]]; then
+          echo "Building tt-kmd ${kmd_ref} (${kmd_commit}) for ${kernel_release}"
+          make -C "$source_dir" -j"$(nproc)"
+          "${SUDO[@]}" mkdir -p "$cache_dir"
+          temporary_module="${module_path}.tmp.$$"
+          "${SUDO[@]}" install -m 0644 \
+            "${source_dir}/tenstorrent.ko" "$temporary_module"
+          "${SUDO[@]}" mv "$temporary_module" "$module_path"
+        else
+          echo "Using cached tt-kmd ${kmd_commit} for ${kernel_release}"
+        fi
+
+        if [[ ! -f "$module_path" ]]; then
+          echo "::error::Expected built module ${module_path} does not exist."
+          exit 1
+        fi
+
+        module_vermagic="$(modinfo -F vermagic "$module_path")"
+        if [[ "$module_vermagic" != "${kernel_release} "* ]]; then
+          echo "::error::Module vermagic '${module_vermagic}' does not match running kernel '${kernel_release}'."
+          exit 1
+        fi
+
+        if [[ -d /sys/module/tenstorrent ]]; then
+          "${SUDO[@]}" rmmod tenstorrent
+        fi
+        "${SUDO[@]}" insmod "$module_path"
+
+        echo "tt-kmd ref: ${kmd_ref}"
+        echo "tt-kmd commit: ${kmd_commit}"
+        echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+        echo "tt-kmd vermagic: ${module_vermagic}"
