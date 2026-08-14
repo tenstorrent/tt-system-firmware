@@ -227,9 +227,26 @@ def wait_for_smc_boot(timeout):
         if remaining <= 0:
             logger.error(f"SMC failed to initialize after {timeout} seconds")
             return os.EX_UNAVAILABLE
-    # Check if the SMC ping will work
-    if telemetry.m3_app_fw_version < 0x40000:
-        logger.warning("DMC firmware is too old, no support for SMC ping")
+    # TAG_DM_APP_FW_VERSION stays 0 until SMC sends Dm2CmReadyRequest and DMC
+    # responds with send_init_data (bh_chip_set_static_info). Telemetry becomes
+    # readable before that handshake, so wait for the version to appear.
+    m3_ver = telemetry.m3_app_fw_version
+    while m3_ver == 0:
+        if remaining <= 0:
+            logger.error(
+                f"SMC is not up: DMC app FW version still 0 after {timeout} seconds"
+            )
+            return os.EX_UNAVAILABLE
+        time.sleep(delay)
+        remaining -= delay
+        try:
+            m3_ver = chip.get_telemetry().m3_app_fw_version
+        except Exception:
+            pass
+    if m3_ver < 0x40000:
+        logger.warning(
+            f"DMC firmware is too old (0x{m3_ver:x}), no support for SMC ping"
+        )
         return os.EX_OK
     # Try to verify that the SMC can ping the DMC
     while True:
