@@ -41,7 +41,10 @@ fi
 docker pull $IMAGE_URL:$IMAGE_TAG
 
 echo "Launching docker container to recover wormhole device..."
-docker run --device /dev/bus/usb --privileged \
+# Bind mount /dev so the container tracks hotplug events. Docker otherwise gives
+# the container a private /dev populated at startup, so a card that enumerates
+# during recovery never appears at /dev/tenstorrent/<n> inside the container.
+docker run --device /dev/bus/usb --privileged -v /dev:/dev \
     --rm $IMAGE_URL:$IMAGE_TAG \
     python3 /tt-system-firmware/scripts/tooling/blackhole_recovery/recover-wormhole.py \
     /firmware.fwbundle $TYPE_ARG $SERIAL_ARG $FORCE_ARG $@

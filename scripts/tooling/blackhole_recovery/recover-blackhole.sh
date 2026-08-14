@@ -4,7 +4,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-IMAGE_TAG=${IMAGE_TAG:-"v18.12.2"}
+IMAGE_TAG=${IMAGE_TAG:-"v19.5.0"}
 
 # Tags v19.6.0 and earlier were published as ghcr.io/tenstorrent/tt-zephyr-platforms/recovery-image
 # with scripts under /tt-zephyr-platforms; newer releases replace "tt-zephyr-platforms"
@@ -55,7 +55,10 @@ fi
 docker pull $IMAGE_URL:$IMAGE_TAG
 
 echo "Launching docker container to recover blackhole device..."
-docker run --device /dev/bus/usb --privileged \
+# Bind mount /dev so the container tracks hotplug events. Docker otherwise gives
+# the container a private /dev populated at startup, so a card that enumerates
+# during recovery never appears at /dev/tenstorrent/<n> inside the container.
+docker run --device /dev/bus/usb --privileged -v /dev:/dev \
     --rm $IMAGE_URL:$IMAGE_TAG \
     python3 "/${FIRMWARE_REPO}/scripts/tooling/blackhole_recovery/recover-blackhole.py" \
     /recovery.tar.gz $NAME_ARG $SERIAL_ARG $FORCE_ARG $@
