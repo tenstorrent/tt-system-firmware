@@ -199,7 +199,7 @@ def wait_for_smc_boot(timeout):
             break
         time.sleep(delay)
         remaining -= delay
-        if timeout == 0:
+        if remaining <= 0:
             logger.error(f"Card did not enumerate after {timeout} seconds")
             return os.EX_UNAVAILABLE
     # Second stage- is the card firmware working?
@@ -224,7 +224,7 @@ def wait_for_smc_boot(timeout):
             pcie_utils.rescan_pcie()
         remaining -= delay
         time.sleep(delay)
-        if remaining == 0:
+        if remaining <= 0:
             logger.error(f"SMC failed to initialize after {timeout} seconds")
             return os.EX_UNAVAILABLE
     # Check if the SMC ping will work
@@ -242,7 +242,7 @@ def wait_for_smc_boot(timeout):
             pass
         remaining -= delay
         time.sleep(delay)
-        if remaining == 0:
+        if remaining <= 0:
             logger.error(f"SMC unable to communicate with DMC after {timeout} seconds")
             return os.EX_UNAVAILABLE
     return os.EX_OK
