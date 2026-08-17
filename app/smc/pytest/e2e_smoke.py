@@ -1026,11 +1026,14 @@ def dirty_reset_test():
     args.jtag_id = None
     args.hexfile = None
 
+    # Whole-card wait: require as many ASICs after reset as before (P150=1, P300=2).
+    expected_chips = len(pyluwen.pci_scan()) or 1
+
     ret = dmc_reset.reset_dmc(args)
     if ret != os.EX_OK:
         logger.warning("DMC reset failed on iteration")
         return False
-    ret = dmc_reset.wait_for_smc_boot(timeout)
+    ret = dmc_reset.wait_for_smc_boot(timeout, expected_chips=expected_chips)
     if ret != os.EX_OK:
         logger.warning("SMC did not boot after dirty reset")
         return False
