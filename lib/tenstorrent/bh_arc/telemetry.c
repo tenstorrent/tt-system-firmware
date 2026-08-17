@@ -302,7 +302,11 @@ static const struct device *const smbus_target_dev =
 
 static struct k_timer telem_update_timer;
 static struct k_work telem_update_worker;
-static int telem_update_interval = 100;
+static int telem_update_interval = TELEM_UPDATE_INTERVAL_DEFAULT_MS;
+/* Set once StartTelemetryTimer() has run. Guards against a host interval change arriving
+ * between init_telemetry() and StartTelemetryTimer() and starting the timer early.
+ */
+static bool telem_timer_started;
 
 static void UpdateEthTelemetry(void)
 {
@@ -631,5 +635,35 @@ void StartTelemetryTimer(void)
 	 */
 	k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
 		      K_MSEC(telem_update_interval));
+	telem_timer_started = true;
+}
+
+uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms)
+{
+	if (interval_ms == 0) {
+		interval_ms = TELEM_UPDATE_INTERVAL_DEFAULT_MS;
+	} else if (interval_ms < TELEM_UPDATE_INTERVAL_MIN_MS ||
+		   interval_ms > TELEM_UPDATE_INTERVAL_MAX_MS) {
+		LOG_WRN("telemetry update interval %u ms rejected, must be 0 (restore default of "
+			"%d ms) or within [%d, %d] ms",
+			interval_ms, TELEM_UPDATE_INTERVAL_DEFAULT_MS, TELEM_UPDATE_INTERVAL_MIN_MS,
+			TELEM_UPDATE_INTERVAL_MAX_MS);
+		return 1;
+	}
+
+	telem_update_interval = interval_ms;
+	/* Report the new rate to readers of the telemetry table. */
+	telemetry[TAG_UPDATE_TELEM_SPEED] = telem_update_interval;
+
+	/* Restart the timer so the new period takes effect immediately. Before
+	 * StartTelemetryTimer() runs it will pick the value up on its own.
+	 */
+	if (telem_timer_started) {
+		k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
+			      K_MSEC(telem_update_interval));
+	}
+
+	LOG_INF("telemetry update interval set to %d ms", telem_update_interval);
+	return 0;
 }
 #endif /* CONFIG_BH_FWTABLE */

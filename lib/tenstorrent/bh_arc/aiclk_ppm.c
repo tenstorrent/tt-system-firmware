@@ -542,6 +542,12 @@ static uint8_t characterisation_handler(const union request *request, struct res
 		return CatSetGddrThermTripEnabled(
 			request->characterisation_msg.submsg_data.gddr_therm_trip_enabled.enabled);
 
+#ifdef CONFIG_BH_FWTABLE
+	case TT_SUB_MSG_SET_TELEMETRY_UPDATE_INTERVAL:
+		return TelemetrySetUpdateInterval(
+			request->characterisation_msg.submsg_data.telemetry_interval.interval_ms);
+#endif
+
 	default:
 		LOG_WRN("Unknown characterization submessage ID: 0x%02x",
 			request->characterisation_msg.submsg_ID);

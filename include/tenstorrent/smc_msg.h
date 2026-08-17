@@ -180,6 +180,8 @@ enum char_submsg_ids {
 	TT_SUB_MSG_SET_KERNEL_THROTTLER_STOP_NOPS_FREQ = 0x3,
 	/** @brief Enable/disable GDDR thermal-trip action on over-temperature */
 	TT_SUB_MSG_SET_GDDR_THERM_TRIP_ENABLED = 0x4,
+	/** @brief Set the periodic telemetry update interval */
+	TT_SUB_MSG_SET_TELEMETRY_UPDATE_INTERVAL = 0x5,
 };
 
 /** @} */

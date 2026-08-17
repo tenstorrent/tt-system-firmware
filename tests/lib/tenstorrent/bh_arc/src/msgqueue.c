@@ -24,6 +24,7 @@
 #include "aiclk_ppm.h"
 
 #include "reg_mock.h"
+#include "telemetry.h"
 #include "voltage.h"
 
 /* Custom fake for ReadReg to simulate timer progression */
@@ -878,6 +879,69 @@ ZTEST(msgqueue, test_msg_type_ping_dm)
 	/* Send ACK for the legacy message */
 	ack_smbus_message(&legacy_msg);
 	/* Note the DM PING SMBUS message is not simulated in this test */
+}
+
+/* Send TT_SUB_MSG_SET_TELEMETRY_UPDATE_INTERVAL with the given payload. */
+static void push_set_telem_interval(uint32_t interval_ms)
+{
+	memset(&req, 0, sizeof(req));
+	memset(&rsp, 0, sizeof(rsp));
+	req.characterisation_msg.command_code = TT_SMC_MSG_CHARACTERISATION;
+	req.characterisation_msg.submsg_ID = TT_SUB_MSG_SET_TELEMETRY_UPDATE_INTERVAL;
+	req.characterisation_msg.submsg_data.telemetry_interval.interval_ms = interval_ms;
+}
+
+/* The interval the firmware is running at, as published to the host. */
+static uint32_t get_telem_interval(void)
+{
+	return GetTelemetryTag(TAG_UPDATE_TELEM_SPEED);
+}
+
+ZTEST(msgqueue, test_msg_type_set_telemetry_interval)
+{
+	/* A value inside the accepted range takes effect and is reported back. */
+	push_set_telem_interval(50);
+	push_msg_success("Valid telemetry interval should be accepted");
+	zassert_equal(get_telem_interval(), 50,
+		      "TAG_UPDATE_TELEM_SPEED should report the new interval");
+
+	/* Both bounds are inclusive. */
+	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MIN_MS);
+	push_msg_success("Minimum interval should be accepted");
+	zassert_equal(get_telem_interval(), TELEM_UPDATE_INTERVAL_MIN_MS);
+
+	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MAX_MS);
+	push_msg_success("Maximum interval should be accepted");
+	zassert_equal(get_telem_interval(), TELEM_UPDATE_INTERVAL_MAX_MS);
+
+	/* 0 restores the compiled-in default. */
+	push_set_telem_interval(0);
+	push_msg_success("Restore default should be accepted");
+	zassert_equal(get_telem_interval(), TELEM_UPDATE_INTERVAL_DEFAULT_MS,
+		      "Interval should return to the default");
+}
+
+ZTEST(msgqueue, test_msg_type_set_telemetry_interval_invalid)
+{
+	/* Establish a known non-default interval to detect any clobbering below. */
+	push_set_telem_interval(200);
+	push_msg_success();
+	zassert_equal(get_telem_interval(), 200);
+
+	/* Out-of-range values are rejected and must leave the running interval untouched. */
+	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MIN_MS - 1);
+	push_msg_failure("Interval below the minimum should be rejected");
+	zassert_equal(get_telem_interval(), 200,
+		      "A rejected interval must not change the running interval");
+
+	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MAX_MS + 1);
+	push_msg_failure("Interval above the maximum should be rejected");
+	zassert_equal(get_telem_interval(), 200,
+		      "A rejected interval must not change the running interval");
+
+	/* Leave the default in place for any test that runs after this one. */
+	push_set_telem_interval(0);
+	push_msg_success();
 }
 
 ZTEST_SUITE(msgqueue, NULL, NULL, test_setup, NULL, NULL);

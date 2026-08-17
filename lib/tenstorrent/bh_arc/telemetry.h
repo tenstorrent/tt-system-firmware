@@ -496,10 +496,32 @@ typedef union {
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
 
+/** @brief Default periodic telemetry update interval in milliseconds. */
+#define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100
+
+/** @brief Shortest accepted telemetry update interval in milliseconds.
+ *
+ * The telemetry pass shares the system work queue with the 1 ms DVFS loop, so the interval is
+ * floored well above 1 ms to keep telemetry from crowding out frequency and voltage control.
+ */
+#define TELEM_UPDATE_INTERVAL_MIN_MS 10
+
+/** @brief Longest accepted telemetry update interval in milliseconds. */
+#define TELEM_UPDATE_INTERVAL_MAX_MS 1000
+
 void init_telemetry(uint32_t app_version);
 uint32_t ConvertFloatToTelemetry(float value);
 float ConvertTelemetryToFloat(int32_t value);
 void StartTelemetryTimer(void);
+
+/** @brief Set the periodic telemetry update interval.
+ * @param interval_ms 0 restores @ref TELEM_UPDATE_INTERVAL_DEFAULT_MS, otherwise the interval in
+ *                    milliseconds, which must be within
+ *                    [@ref TELEM_UPDATE_INTERVAL_MIN_MS, @ref TELEM_UPDATE_INTERVAL_MAX_MS].
+ * @retval 0 on success.
+ * @retval 1 if @p interval_ms is out of range; the interval is left unchanged.
+ */
+uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms);
 void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version);
 void UpdateTelemetryNocTranslation(bool translation_enabled);
 void UpdateTelemetryBoardPowerLimit(uint32_t power_limit);
