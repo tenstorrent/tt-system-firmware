@@ -208,24 +208,31 @@ def wait_for_smc_boot(timeout):
             "without pyluwen this script can't verify if the SMC firmware is fully working"
         )
         return os.EX_OK
-    # Try to detect the card using pyluwen- this indicates ARC has booted
+    # detect_chips() indicates smc is booted - waits for hw_init Done and msg_queue_ready.
+    # get_telemetry needs the telem table pointer.
+    # Soft failures are common while SMC is still initializing, so only rescan if the
+    # device node disappeared.
+    last_err = None
     while True:
         try:
             chips = pyluwen.detect_chips()
+            if not chips:
+                raise RuntimeError("detect_chips() returned no chips")
             chip = chips[0]
-            # Wait for chip to populate telemetry
             telemetry = chip.get_telemetry()
             break
-        except Exception:
-            # Rescan PCIe again, in case the card disappeared
-            pcie_utils.rescan_pcie()
-        except BaseException:
-            # Rescan PCIe again, in case the card disappeared
-            pcie_utils.rescan_pcie()
+        except Exception as e:
+            # Only log last error to avoid spam
+            last_err = e
+            if not Path("/dev/tenstorrent/0").exists():
+                pcie_utils.rescan_pcie()
         remaining -= delay
         time.sleep(delay)
         if remaining <= 0:
-            logger.error(f"SMC failed to initialize after {timeout} seconds")
+            logger.error(
+                f"SMC failed to initialize after {timeout} seconds"
+                + (f": {last_err}" if last_err is not None else "")
+            )
             return os.EX_UNAVAILABLE
     # TAG_DM_APP_FW_VERSION stays 0 until SMC sends Dm2CmReadyRequest and DMC
     # responds with send_init_data (bh_chip_set_static_info). Telemetry becomes
