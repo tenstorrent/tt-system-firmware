@@ -157,3 +157,77 @@ jobs:
           # Clean out metal
           rm -f $HOME/fw_pack-*.fwbundle
           kill $(pgrep -f network-keepalive) || true
+
+  metal-deploy-test:
+    name: Metal Deploy Test on ${{ matrix.config.board }}
+    needs: [build-fw-artifact, generate-matrix]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.config.board }}
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /dev/hugepages:/dev/hugepages
+        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+      options: ${{ matrix.config.metal-options }}
+    env:
+      ARCH_NAME: ${{ matrix.config.arch-name }}
+      HOME: /home/user/tt-metal
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.HOME }}
+    steps:
+      - name: Select tt-kmd
+        shell: bash
+        run: |
+          sudo apt update || true
+          sudo apt install -y kmod
+          sudo rmmod tenstorrent
+          sudo insmod /opt/tenstorrent/kmd-builds/${{ matrix.config.kmd_build }}/tenstorrent.ko
+          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+
+      - id: mkdir-home-user-tt-metal
+        run: |
+          mkdir -p $HOME
+      - name: Download the latest firmware bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-fw-artifact.outputs.combined-fwbundle-artifact }}
+          path: ${{ env.HOME }}
+      - name: Flash the firmware
+        run: |
+          python -m venv .env
+          source .env/bin/activate
+          pip install tt-flash==3.10.0
+          tt-flash $HOME/fw_pack-*.fwbundle --force
+          tt-smi -r
+
+      - name: Run Deploy Test
+        timeout-minutes: 120
+        run: |
+          # Keep the network alive by periodically pulling tenstorrent.com.
+          # This prevents a bug in the container runtime where the network interface can
+          # drop after a period of inactivity, which would cause our tests to fail.
+          echo "while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
+          chmod +x /tmp/network-keepalive
+          /tmp/network-keepalive &
+          echo "Network keepalive started."
+          tests/tt_metal/tt_metal/deployment/test_runner.sh 2>&1 | tee /tmp/deploy_test_output.log
+
+      - name: Upload Test Output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-deploy-test-${{ matrix.config.board }}-output
+          path: /tmp/deploy_test_output.log
+
+      - name: cleanup
+        if: ${{ always() }}
+        run: |
+          # Clean out metal
+          rm -f $HOME/fw_pack-*.fwbundle
+          kill $(pgrep -f network-keepalive) || true
