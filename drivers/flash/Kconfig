@@ -5,6 +5,29 @@ if FLASH
 
 menu "Flash drivers"
 
+config FLASH_TT_MUX
+	bool "Tenstorrent flash mux"
+	default y
+	depends on DT_HAS_TENSTORRENT_FLASH_MUX_ENABLED
+	help
+	  Support for the Tenstorrent flash mux driver. It selects among
+	  several candidate flash devices at init - typically alternative
+	  configurations of second-source chips on the same bus position -
+	  and forwards all flash API calls to the selected one.
+
+if FLASH_TT_MUX
+
+config FLASH_TT_MUX_INIT_PRIORITY
+	int "Tenstorrent flash mux init priority"
+	default 85
+	help
+	  Init priority of the flash mux. Must be greater than the init
+	  priority of the candidate flash devices, so that they have
+	  probed by the time the mux selects among them, and less than
+	  that of the first flash consumer.
+
+endif
+
 config FLASH_TT_STM32_WRAPPER
 	bool "Tenstorrent STM32 Flash Wrapper"
 	default y

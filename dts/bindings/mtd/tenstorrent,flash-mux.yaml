@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Runtime-selected flash configuration multiplexer.
+
+  Presents a single flash device backed by one of several candidate flash
+  devices. Typically the candidates describe the same physical flash chip
+  under different configurations - one jedec,mspi-nor node per supported
+  second-source part, distinguished by the jedec-id property, optionally
+  with a catch-all last entry that omits jedec-id. Every candidate probes
+  at its own init; the mux, initialized after them, selects the first
+  candidate that is ready and forwards all flash API calls to it.
+
+  Candidates sharing a bus position are distinct devices to the bus
+  controller, so give their bus the software-multiperipheral property:
+  the controller is then reconfigured whenever a different device
+  accesses it.
+
+compatible: "tenstorrent,flash-mux"
+
+include: base.yaml
+
+properties:
+  flash-devices:
+    type: phandles
+    required: true
+    description: |
+      Candidate flash devices in order of preference; the first one
+      ready when the mux initializes is selected.
