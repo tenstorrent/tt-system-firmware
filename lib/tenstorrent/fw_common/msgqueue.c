@@ -24,6 +24,10 @@
 /* IRQ stack (msgqueue_irqs + arc_misc_cntl + msi_catcher) is one feature. */
 #define MSGQUEUE_HAS_IRQS DT_HAS_COMPAT_STATUS_OKAY(tenstorrent_msgqueue_irqs)
 
+/* Mbox doorbell backend when a tenstorrent,msgqueue-mbox node is okay. */
+#define MSGQUEUE_HAS_MBOX  DT_HAS_COMPAT_STATUS_OKAY(tenstorrent_msgqueue_mbox)
+#define MSGQUEUE_MBOX_NODE DT_NODELABEL(msgqueue_mbox)
+
 #if MSGQUEUE_HAS_IRQS
 #define MSGQUEUE_IRQS_NODE           DT_NODELABEL(msgqueue_irqs)
 #define ARC_MISC_CNTL_NODE           DT_NODELABEL(arc_misc_cntl)
@@ -39,6 +43,12 @@
 #define STATUS_BOOT_STATUS0_REG_ADDR 0x80030408
 #endif
 
+#if MSGQUEUE_HAS_MBOX
+#include <zephyr/drivers/mbox.h>
+#define MSGQUEUE_MBOX_CTLR    DT_MBOX_CTLR_BY_NAME(MSGQUEUE_MBOX_NODE, doorbell)
+#define MSGQUEUE_MBOX_CHANNEL DT_MBOX_CHANNEL_BY_NAME(MSGQUEUE_MBOX_NODE, doorbell)
+#endif
+
 #define MSGHANDLER_COMPAT_MASK 0x1
 
 #define MSG_ERROR_REPLY 0xff
@@ -46,11 +56,19 @@
 BUILD_ASSERT(sizeof(union request) <= (sizeof(uint32_t) * REQUEST_MSG_LEN));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(MSGQUEUE_INFO_NODE, okay),
 	     "TT_MSGQUEUE requires msgqueue_info status okay");
+BUILD_ASSERT(!(MSGQUEUE_HAS_MBOX && MSGQUEUE_HAS_IRQS),
+	     "msgqueue_mbox and msgqueue_irqs are mutually exclusive");
 #if MSGQUEUE_HAS_IRQS
 BUILD_ASSERT(DT_NODE_HAS_STATUS(ARC_MISC_CNTL_NODE, okay),
 	     "msgqueue_irqs requires arc_misc_cntl status okay");
 BUILD_ASSERT(DT_NODE_HAS_STATUS(MSI_CATCHER_NODE, okay),
 	     "msgqueue_irqs requires msi_catcher status okay");
+#endif
+#if MSGQUEUE_HAS_MBOX
+BUILD_ASSERT(DT_NODE_EXISTS(MSGQUEUE_MBOX_NODE),
+	     "msgqueue_mbox nodelabel required for mbox channel lookup");
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MSGQUEUE_MBOX_CTLR, okay),
+	     "msgqueue_mbox requires mbox controller status okay");
 #endif
 
 /* Describes a single message queue. */
@@ -359,6 +377,16 @@ static int register_interrupt_handlers(void)
 SYS_INIT_APP(register_interrupt_handlers);
 #endif
 
+#if MSGQUEUE_HAS_IRQS || MSGQUEUE_HAS_MBOX
+static void msgqueue_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+	process_message_queues();
+}
+
+static K_WORK_DEFINE(msgqueue_work, msgqueue_work_handler);
+#endif
+
 #if MSGQUEUE_HAS_IRQS
 typedef struct {
 	uint32_t run: 4;
@@ -409,13 +437,6 @@ static void clear_msg_irq(void)
 	arc_misc_cntl.f.irq0_trig = 0;
 	WriteReg(ARC_MISC_CNTL_REG_ADDR, arc_misc_cntl.val);
 }
-
-static void msgqueue_work_handler(struct k_work *work)
-{
-	process_message_queues();
-}
-
-static K_WORK_DEFINE(msgqueue_work, msgqueue_work_handler);
 
 static void msgqueue_interrupt_handler(void *arg)
 {
@@ -491,11 +512,45 @@ static void init_msgqueue_irqs(void)
 }
 #endif /* MSGQUEUE_HAS_IRQS */
 
+#if MSGQUEUE_HAS_MBOX
+static void msgqueue_mbox_callback(const struct device *dev, mbox_channel_id_t channel_id,
+				   void *user_data, struct mbox_msg *msg)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(channel_id);
+	ARG_UNUSED(user_data);
+	/* Driver already drained READ_DATA; payload is doorbell-only. */
+	ARG_UNUSED(msg);
+
+	k_work_submit(&msgqueue_work);
+}
+
+static void init_msgqueue_mbox_irq(void)
+{
+	const struct device *mbox_dev = DEVICE_DT_GET(MSGQUEUE_MBOX_CTLR);
+	int ret;
+
+	if (!device_is_ready(mbox_dev)) {
+		return;
+	}
+
+	ret = mbox_register_callback(mbox_dev, MSGQUEUE_MBOX_CHANNEL, msgqueue_mbox_callback, NULL);
+	if (ret != 0) {
+		return;
+	}
+
+	(void)mbox_set_enabled(mbox_dev, MSGQUEUE_MBOX_CHANNEL, true);
+}
+#endif /* MSGQUEUE_HAS_MBOX */
+
 void init_msgqueue(void)
 {
 	prepare_msg_queue();
 
 #if MSGQUEUE_HAS_IRQS
 	init_msgqueue_irqs();
+#endif
+#if MSGQUEUE_HAS_MBOX
+	init_msgqueue_mbox_irq();
 #endif
 }

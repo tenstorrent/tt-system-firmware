@@ -20,8 +20,11 @@ config TT_FW_COMMON_EMUL
 config TT_MSGQUEUE
 	bool "Enable host message queue"
 	default y
+	select MBOX if DT_HAS_TENSTORRENT_MSGQUEUE_MBOX_ENABLED
 	help
 	  Enable the portable SMC host message queue implementation.
+	  When a tenstorrent,msgqueue-mbox node is present, the mbox
+	  IRQ doorbell backend is used instead of Blackhole MSI.
 
 config TT_MSGQUEUE_NUM_MSG_CODES
 	int "Number of message codes"
