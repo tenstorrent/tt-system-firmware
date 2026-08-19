@@ -26,6 +26,13 @@
 		zephyr,console = &vuart0;
 		zephyr,shell-uart = &vuart0;
 	};
+
+	msgqueue_mbox: msgqueue_mbox {
+		compatible = "tenstorrent,msgqueue-mbox";
+		mboxes = <&mbox0 1>;
+		mbox-names = "doorbell";
+		status = "okay";
+	};
 };
 
 &i3c1 {

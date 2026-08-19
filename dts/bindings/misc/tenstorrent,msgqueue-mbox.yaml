@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent message queue mbox doorbell channel.
+
+  Links a Grendel mbox controller channel to the portable SMC message
+  queue as its inbound IRQ/doorbell. Presence of a node with this
+  compatible (status okay) selects the mbox IRQ backend in msgqueue
+  instead of Blackhole MSI/arc_misc.
+
+compatible: "tenstorrent,msgqueue-mbox"
+
+include: base.yaml
+
+properties:
+  mboxes:
+    required: true
+
+  mbox-names:
+    required: true
