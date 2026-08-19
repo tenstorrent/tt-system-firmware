@@ -486,12 +486,20 @@ typedef union {
  */
 #define TAG_FW_ACTIVE_CONFIG_0 79
 
+/** @brief JEDEC ID of the SPI flash.
+ *
+ * The three ID bytes returned by the RDID (9Fh) command, packed as
+ * 0x00MMTTCC: MM = manufacturer, TT = memory type, CC = capacity.
+ * 0 if the ID could not be read.
+ */
+#define TAG_FLASH_JEDEC_ID 80
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 80
+#define TAG_COUNT 81
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -529,6 +537,8 @@ void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
+/** @brief Record the flash JEDEC ID in @ref TAG_FLASH_JEDEC_ID. */
+void UpdateTelemetryFlashJedecId(uint32_t jedec_id);
 /** @brief Update the GDDR thermal-trip active-config bit in @ref TAG_FW_ACTIVE_CONFIG_0. */
 void UpdateTelemetryGddrThermTrip(bool enabled);
 /** @brief Get the current active firmware feature bits from @ref TAG_FW_ACTIVE_CONFIG_0.

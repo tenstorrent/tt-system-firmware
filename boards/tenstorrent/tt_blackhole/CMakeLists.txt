@@ -7,6 +7,9 @@ endif()
 zephyr_library()
 if(CONFIG_MSPI AND CONFIG_FLASH)
   zephyr_library_sources(src/flash.c)
+  # flash.c reports the flash JEDEC ID through bh_arc telemetry
+  zephyr_library_include_directories_ifdef(CONFIG_TT_BH_ARC
+      ${ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR}/lib/tenstorrent/bh_arc)
 endif()
 zephyr_library_sources_ifdef(CONFIG_UART_TT_VIRT src/vuart.c)
 

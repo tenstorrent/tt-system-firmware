@@ -28,6 +28,8 @@ CONFIG_I2C_DW_CLOCK_SPEED=50
 # enable flash
 CONFIG_FLASH=y
 CONFIG_FLASH_MSPI_NOR_LAYOUT_PAGE_SIZE=4096
+# flash.c reports the JEDEC ID of the detected flash chip in telemetry
+CONFIG_FLASH_JESD216_API=y
 
 # enable the bh_arc library
 CONFIG_TT_BH_ARC=y

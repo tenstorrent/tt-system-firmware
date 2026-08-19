@@ -8,6 +8,15 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/mspi.h>
 #include <zephyr/drivers/mspi/mspi_dw.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+
+/* MCUboot builds this file too, but without the telemetry library */
+#ifdef CONFIG_TT_BH_ARC
+#include "telemetry.h"
+#endif
+
+LOG_MODULE_REGISTER(tt_flash, CONFIG_FLASH_LOG_LEVEL);
 
 #define SPI_RX_TRAIN_ADDR   0x13FFC
 #define SPI_RX_TRAIN_DATA   0xa5a55a5a
@@ -169,6 +178,27 @@ static int flash_reset_init(void)
 	return 0;
 }
 
+#ifdef CONFIG_TT_BH_ARC
+static int flash_jedec_id_init(void)
+{
+	uint8_t id[3];
+	int rc;
+
+	if (!device_is_ready(flash)) {
+		return -ENODEV;
+	}
+
+	rc = flash_read_jedec_id(flash, id);
+	if (rc < 0) {
+		LOG_ERR("Flash JEDEC ID read failed (%d)", rc);
+		return rc;
+	}
+
+	UpdateTelemetryFlashJedecId(sys_get_be24(id));
+	return 0;
+}
+#endif
+
 static int flash_training_init(void)
 {
 	struct mspi_dw_timing_cfg timing_cfg;
@@ -244,5 +274,8 @@ BUILD_ASSERT(CONFIG_FLASH_TT_MUX_INIT_PRIORITY < CONFIG_BH_FWTABLE_INIT_PRIORITY
 #endif
 
 SYS_INIT(flash_reset_init, POST_KERNEL, CONFIG_FLASH_RESET_PRIORITY);
+#ifdef CONFIG_TT_BH_ARC
+SYS_INIT(flash_jedec_id_init, POST_KERNEL, CONFIG_FLASH_TRAINING_PRIORITY);
+#endif
 SYS_INIT(flash_training_pre_reclock, POST_KERNEL, CONFIG_FLASH_TRAINING_PRIORITY);
 SYS_INIT(flash_training_post_reclock, APPLICATION, CONFIG_FLASH_TRAINING_PRIORITY);
