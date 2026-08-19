@@ -5,15 +5,9 @@
  */
 
 #include <stdint.h>
-
 #include <tenstorrent/post_code.h>
-
 #include "reg.h"
-
-#if defined(CONFIG_TT_POST_CODE)
-/* Provided by the selected SoC (tt_blackhole today; tt_grendel later). */
 #include "status_reg.h"
-#endif
 
 void SetPostCode(uint8_t fw_id, uint16_t post_code)
 {

@@ -17,12 +17,6 @@ config TT_FW_COMMON_EMUL
 	  host/native builds. Selected by TT_BH_ARC_EMUL when Blackhole
 	  ARC emulation is enabled.
 
-config TT_POST_CODE
-	bool
-	default y if BOARD_TT_BLACKHOLE
-	help
-	  Enables writing firmware post codes to the status scratch register.
-
 config TT_MSGQUEUE
 	bool "Enable host message queue"
 	default y

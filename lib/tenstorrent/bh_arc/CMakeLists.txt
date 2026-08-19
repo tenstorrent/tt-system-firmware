@@ -33,6 +33,7 @@ zephyr_library_sources(
   pcie.c
   pcie_msi.c
   pll.c
+  post_code.c
   reset.c
   smbus_target.c
   spi_eeprom.c

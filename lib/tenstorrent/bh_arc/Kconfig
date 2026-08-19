@@ -16,6 +16,12 @@ config TT_BH_ARC
 	help
 	  This option enables the Blackhole ARC firmware library.
 
+config TT_POST_CODE
+	bool
+	default y if BOARD_TT_BLACKHOLE
+	help
+	  Enables writing firmware post codes to the status scratch register.
+
 if TT_BH_ARC
 
 config TT_BH_ARC_EMUL
