@@ -333,12 +333,5 @@
 			channel-pairs = <32>;
 			#mbox-cells = <1>;
 		};
-
-		/* To be overridden by board */
-		msgqueue_info: scratch-reg@8003042c {
-			compatible = "tenstorrent,scratch-reg";
-			reg = <0x0 0x8003042c 0x0 0x4>;
-			status = "disabled";
-		};
 	};
 };

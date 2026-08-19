@@ -48,3 +48,12 @@
 		reg = <0x0 0x88fc 0x1fe8fa15>;
 	};
 };
+
+&{/soc} {
+	/* Cold Scratch 3 */
+	msgqueue_info: scratch-reg@c000280c {
+		compatible = "tenstorrent,scratch-reg";
+		reg = <0x0 0xc000280c 0x0 0x4>;
+		status = "okay";
+	};
+};
