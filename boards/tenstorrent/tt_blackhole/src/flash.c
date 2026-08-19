@@ -8,7 +8,6 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/mspi.h>
 #include <zephyr/drivers/mspi/mspi_dw.h>
-#include <string.h>
 
 #define SPI_RX_TRAIN_ADDR   0x13FFC
 #define SPI_RX_TRAIN_DATA   0xa5a55a5a
@@ -16,6 +15,17 @@
 
 const struct device *mspi_dev = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi0));
 const struct device *flash = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi_flash));
+
+/*
+ * On boards with second-source flash support, spi_flash is a mux over
+ * per-chip candidate nodes; bus position and max frequency are common to
+ * all of them. On the other boards it is the flash chip node itself.
+ */
+#if DT_NODE_HAS_COMPAT(DT_NODELABEL(spi_flash), tenstorrent_flash_mux)
+#define FLASH_CHIP_NODE DT_PHANDLE_BY_IDX(DT_NODELABEL(spi_flash), flash_devices, 0)
+#else
+#define FLASH_CHIP_NODE DT_NODELABEL(spi_flash)
+#endif
 
 /* SPI operating modes, defined by blackhole bootrom */
 typedef enum {
@@ -63,12 +73,12 @@ static int flash_reset_init(void)
 		.cmd_length = 1,
 	};
 	struct mspi_dev_cfg mspi_dev_cfg = {
-		.freq = DT_PROP(DT_NODELABEL(spi_flash), mspi_max_frequency),
+		.freq = DT_PROP(FLASH_CHIP_NODE, mspi_max_frequency),
 		.endian = MSPI_XFER_BIG_ENDIAN,
 		.cmd_length = 1,
 	};
 	const struct mspi_dev_id mspi_dev_id = {
-		.dev_idx = DT_REG_ADDR(DT_NODELABEL(spi_flash)),
+		.dev_idx = DT_REG_ADDR(FLASH_CHIP_NODE),
 	};
 
 	if (!device_is_ready(mspi_dev)) {
@@ -221,6 +231,17 @@ static int flash_training_post_reclock(void)
 {
 	return flash_training_init();
 }
+
+BUILD_ASSERT(CONFIG_FLASH_INIT_PRIORITY > CONFIG_FLASH_RESET_PRIORITY,
+	     "The flash driver probes after the bootrom reset handoff");
+#ifdef CONFIG_FLASH_TT_MUX
+BUILD_ASSERT(CONFIG_FLASH_TT_MUX_INIT_PRIORITY < CONFIG_FLASH_TRAINING_PRIORITY,
+	     "Flash training reads through the selected flash configuration");
+#ifdef CONFIG_BH_FWTABLE
+BUILD_ASSERT(CONFIG_FLASH_TT_MUX_INIT_PRIORITY < CONFIG_BH_FWTABLE_INIT_PRIORITY,
+	     "bh_fwtable reads flash; the flash configuration must be selected first");
+#endif
+#endif
 
 SYS_INIT(flash_reset_init, POST_KERNEL, CONFIG_FLASH_RESET_PRIORITY);
 SYS_INIT(flash_training_pre_reclock, POST_KERNEL, CONFIG_FLASH_TRAINING_PRIORITY);

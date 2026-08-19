@@ -1,0 +1,154 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Second-source flash support, for board revisions that fit parts other
+ * than the MT25Q. Replaces the spi_flash chip node with one candidate
+ * configuration per supported chip and a mux that selects among them at
+ * boot. Include from a board revision overlay, before any partition
+ * adjustments.
+ */
+
+/delete-node/ &spi_flash;
+
+/* Properties common to every flash candidate below. All describe the same
+ * physical chip on CS 0.
+ *
+ * Programming has experimentally been reliable up to 17 MHz, use 15 to be
+ * safe. Reading can operate at higher frequencies: reliable up to 50 MHz,
+ * use 40 to be safe.
+ */
+#define TT_SPI_FLASH_COMMON \
+	compatible = "jedec,mspi-nor"; \
+	reg = <0>; \
+	status = "okay"; \
+	size = <DT_SIZE_M(512)>; \
+	mspi-max-frequency = <DT_FREQ_M(15)>; \
+	read-frequency = <DT_FREQ_M(40)>; \
+	mspi-data-rate = "MSPI_DATA_RATE_SINGLE"; \
+	use-4byte-addressing; \
+	mspi-endian = "MSPI_BIG_ENDIAN"; \
+	transfer-timeout = <100>;
+
+&spi0 {
+	/* The flash candidates below are distinct devices for the same chip;
+	 * reconfigure the controller whenever a different one accesses it.
+	 */
+	software-multiperipheral;
+
+	/* One candidate configuration per supported flash chip. All probe
+	 * at boot; the driver's jedec-id check fails initialization for
+	 * every candidate but the one matching the fitted chip, and the
+	 * spi_flash mux then selects the first that succeeded.
+	 * flash_single_io omits jedec-id and so accepts any chip, as a slow
+	 * universal fallback that keeps an unrecognized chip readable and
+	 * reflashable.
+	 */
+	flash_mt25q: mt25q@0 {
+		TT_SPI_FLASH_COMMON
+		jedec-id = [20 bb 20]; /* Micron MT25QU512ABB */
+		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
+		quad-enable-requirements = "NONE";
+		read-command = <0xec>;
+		rx-dummy = <10>;
+		write-command = <0x3e>; /* 1-4-4 extended quad input page program */
+	};
+
+	flash_mx25u: mx25u@0 {
+		TT_SPI_FLASH_COMMON
+		jedec-id = [c2 25 3a]; /* Macronix MX25U51245G */
+		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
+		/* Quad commands are ignored unless the non-volatile QE bit
+		 * is set; it is written on first boot and only read
+		 * thereafter.
+		 */
+		quad-enable-requirements = "S1B6";
+		read-command = <0xec>;
+		/* Fixed 6 cycles between address and data: a mode byte in
+		 * the first 2, then 4 dummy cycles.
+		 */
+		rx-mode-cycles = <2>;
+		rx-dummy = <4>;
+		write-command = <0x3e>;
+	};
+
+	flash_gd25lf: gd25lf@0 {
+		TT_SPI_FLASH_COMMON
+		jedec-id = [c8 63 1a]; /* GigaDevice GD25LF512MF */
+		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
+		quad-enable-requirements = "NONE"; /* no QE bit */
+		read-command = <0xec>;
+		/* Factory-default read latency (DC=0 in SR3): a mode byte in
+		 * the first 2 cycles, then 4 dummy cycles. A chip whose
+		 * non-volatile DC bits were reconfigured for 8 or 10 cycles
+		 * is not supported.
+		 */
+		rx-mode-cycles = <2>;
+		rx-dummy = <4>;
+		/* No 3Eh (1-4-4) page program; use 34h (1-1-4). Only the
+		 * address phase is slower; page program time dominates.
+		 */
+		write-command = <0x34>;
+		write-io-mode = "MSPI_IO_MODE_QUAD_1_1_4";
+	};
+
+	flash_w25q: w25q@0 {
+		TT_SPI_FLASH_COMMON
+		jedec-id = [ef 60 20]; /* Winbond W25Q51RW-Q/-N, W25Q512NW-IQ/IN */
+		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
+		/* QE is non-volatile and factory-set on the supported
+		 * variants; the driver repairs a part that arrives with it
+		 * cleared.
+		 */
+		quad-enable-requirements = "S2B1v6";
+		read-command = <0xec>;
+		/* A mode byte in the first 2 cycles, then 4 dummy cycles */
+		rx-mode-cycles = <2>;
+		rx-dummy = <4>;
+		write-command = <0x34>; /* no 3Eh (1-4-4); 34h (1-1-4) */
+		write-io-mode = "MSPI_IO_MODE_QUAD_1_1_4";
+	};
+
+	flash_single_io: flash@0 {
+		TT_SPI_FLASH_COMMON
+		/* No jedec-id: accepts any chip. The driver defaults for
+		 * single-lane 4-byte addressing are universal commands: 0Ch
+		 * fast read with 8 dummy cycles, 12h page program.
+		 */
+		mspi-io-mode = "MSPI_IO_MODE_SINGLE";
+		quad-enable-requirements = "NONE";
+		rx-dummy = <8>;
+	};
+};
+
+/ {
+	/* Selects the first candidate that accepted the chip. Consumers
+	 * access the flash through this node.
+	 */
+	spi_flash: flash-mux {
+		compatible = "tenstorrent,flash-mux";
+		status = "okay";
+		flash-devices = <&flash_mt25q &flash_mx25u &flash_gd25lf
+				 &flash_w25q &flash_single_io>;
+
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		nv_flash: nv-flash@0 {
+			compatible = "soc-nv-flash";
+			reg = <0x0 DT_SIZE_M(512)>;
+			write-block-size = <1>;
+			erase-block-size = <4096>;
+		};
+	};
+};
+
+/* The base devicetree's partitions were deleted along with the spi_flash
+ * node they lived under; recreate them under the mux.
+ */
+&nv_flash {
+#include "tt_blackhole_fixed_partitions.dtsi"
+};
