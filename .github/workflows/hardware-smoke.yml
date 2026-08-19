@@ -108,6 +108,7 @@ jobs:
             zephyr/twister-dmc-smoke/**/zephyr.elf
             zephyr/twister-dmc-smoke/**/*.lst
             zephyr/twister-dmc-smoke/**/device.log
+            zephyr/twister-dmc-smoke/**/openocd.log
             zephyr/twister-dmc-smoke/twister.log
             zephyr/twister-dmc-smoke/twister.json
 
@@ -130,6 +131,7 @@ jobs:
             zephyr/twister-smc-smoke/**/zephyr.elf
             zephyr/twister-smc-smoke/**/*.lst
             zephyr/twister-smc-smoke/**/device.log
+            zephyr/twister-smc-smoke/**/openocd.log
             zephyr/twister-smc-smoke/twister.log
             zephyr/twister-smc-smoke/twister.json
 
@@ -242,6 +244,7 @@ jobs:
             zephyr/twister-*e2e*/**/zephyr.elf
             zephyr/twister-*e2e*/**/*.lst
             zephyr/twister-*e2e*/**/device.log
+            zephyr/twister-*e2e*/**/openocd.log
             zephyr/twister-*e2e*/twister.log
             zephyr/twister-*e2e*/twister.json
             zephyr/twister-*e2e*/**/update.fwbundle
