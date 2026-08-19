@@ -6,4 +6,5 @@ tests:
     tags: smoke
     platform_allow:
       - tt_mimir/tt_mimir/smc
+      - tt_mmk/tt_keraunos/smc
     sysbuild: true

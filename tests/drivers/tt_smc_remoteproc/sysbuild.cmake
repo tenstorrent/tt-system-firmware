@@ -1,9 +1,13 @@
 # Copyrigtht (c) 2026 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+# The remote SMC image always targets the mimir SoC.
+set(REMOTE_SMC_APP_BOARD ${BOARD}/tt_mimir/smc)
+
 ExternalZephyrProject_Add(
     APPLICATION remote_smc_app
     SOURCE_DIR  ${APP_DIR}/remote_smc_app
+    BOARD       ${REMOTE_SMC_APP_BOARD}
     BUILD_ONLY 1
 )
 

@@ -5,11 +5,12 @@
  */
 
 #include <stdio.h>
+#include <zephyr/autoconf.h>
 #include <soc.h>
 
 int main(void)
 {
-	printf("Secondary BL1 is running!\n");
+	printf("Secondary BL1 is running on " CONFIG_BOARD_TARGET "!\n");
 
 	test_pass();
 	return 0;
