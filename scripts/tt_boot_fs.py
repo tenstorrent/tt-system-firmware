@@ -9,6 +9,7 @@ import base64
 import ctypes
 from dataclasses import dataclass
 import io
+import jsonschema
 import logging
 import os
 from pathlib import Path
@@ -44,6 +45,27 @@ IMAGE_ADDR = 0x14000
 SCHEMA_PATH = (
     Path(__file__).parents[1] / "scripts" / "schemas" / "tt-boot-fs-schema.yml"
 )
+
+COMPAT_VARIABLES_SCHEMA_PATH = (
+    Path(__file__).parents[1] / "scripts" / "schemas" / "compat-variables-schema.json"
+)
+
+COMPAT_VARIABLES_VERSION = 1
+
+# Board variable numbers, as assigned in include/tenstorrent/board_variables.h
+BOARD_VAR_SPI_JEDEC_ID = 0
+
+# The properties of each board variable that do not depend on the board: the
+# display name a flashing tool prints, how it renders the value, and where it
+# reads the value from. Only the permitted values are per-image.
+BOARD_VARIABLES = {
+    BOARD_VAR_SPI_JEDEC_ID: {
+        "name": "SPI EEPROM",
+        "formatter": "hex",
+        # TAG_FLASH_JEDEC_ID, packed as 0x00MMTTCC
+        "source": {"type": "telemetry", "tag": 80},
+    },
+}
 
 ROOT = Path(__file__).parents[1]
 
@@ -1039,12 +1061,9 @@ def _generate_bootfs_yaml(
     _logger.debug(f"\nGenerated YAML Content: {args.output_file}\n{yaml_str}")
 
 
-def invoke_generate_bootfs_yaml(args):
+def _load_edt(dts_file: str, bindings_dirs: list[str]):
     """
-    Generates a boot filesystem YAML file from the partitions node in the
-    Zephyr devicetree at build time.
-
-    See parse_args() for a descriptive list of arguments.
+    Loads the Zephyr devicetree, which needs edtlib from the Zephyr tree.
     """
 
     sys.path.insert(
@@ -1060,10 +1079,21 @@ def invoke_generate_bootfs_yaml(args):
     )
     from devicetree import edtlib
 
+    return edtlib.EDT(dts_file, bindings_dirs)
+
+
+def invoke_generate_bootfs_yaml(args):
+    """
+    Generates a boot filesystem YAML file from the partitions node in the
+    Zephyr devicetree at build time.
+
+    See parse_args() for a descriptive list of arguments.
+    """
+
     if args.verbose:
         logging.basicConfig(format="%(message)s", level=logging.DEBUG)
 
-    edt = edtlib.EDT(args.dts_file, args.bindings_dirs)
+    edt = _load_edt(args.dts_file, args.bindings_dirs)
 
     partitions_nodes = edt.compat2nodes.get("tenstorrent,tt-boot-fs")
     partitions_node = partitions_nodes[0]
@@ -1091,6 +1121,110 @@ def invoke_generate_bootfs_yaml(args):
             args.board.upper(),
             args.output_file,
         )
+
+    return os.EX_OK
+
+
+def _flash_candidate_nodes(edt) -> list:
+    """
+    The flash configurations the firmware image can drive.
+
+    A board that may be built with more than one flash part selects between
+    them at runtime with a flash mux, whose candidates are exactly the parts
+    the image supports. Any other board drives a single flash node.
+    """
+
+    flash_node = edt.label2node.get("spi_flash")
+    if flash_node is None:
+        return []
+
+    if "tenstorrent,flash-mux" in flash_node.compats:
+        return list(flash_node.props["flash-devices"].val)
+
+    return [flash_node]
+
+
+def _flash_jedec_ids(nodes: list) -> list[int]:
+    """
+    The JEDEC IDs the given flash configurations accept, packed as telemetry
+    reports them: 0x00MMTTCC.
+    """
+
+    ids = []
+    for node in nodes:
+        prop = node.props.get("jedec-id")
+        if prop is None:
+            # A configuration with no jedec-id says nothing about which part
+            # it is for, so it contributes no permitted value. Among mux
+            # candidates that is the slow single-lane fallback, which keeps an
+            # unrecognized chip readable and reflashable: a recovery path, not
+            # a configuration the image is built for. On a board with a single
+            # flash node it leaves the image with nothing to declare, which
+            # correctly refuses a board carrying an unexpected part.
+            continue
+        ids.append(int.from_bytes(bytes(prop.val), "big"))
+
+    return ids
+
+
+def _compat_variables(edt) -> dict:
+    """
+    Describes the hardware this image is compatible with, as the values each
+    board variable may take. See scripts/schemas/compat-variables-schema.json.
+    """
+
+    variables = []
+
+    jedec_ids = _flash_jedec_ids(_flash_candidate_nodes(edt))
+    if jedec_ids:
+        values = [f"0x{jedec_id:06x}" for jedec_id in jedec_ids]
+        properties = BOARD_VARIABLES[BOARD_VAR_SPI_JEDEC_ID]
+        variables.append(
+            {
+                "name": properties["name"],
+                "number": BOARD_VAR_SPI_JEDEC_ID,
+                "formatter": properties["formatter"],
+                "source": properties["source"],
+                "constraints": (
+                    [{"eq": values[0]}] if len(values) == 1 else [{"in": values}]
+                ),
+            }
+        )
+
+    return {"version": COMPAT_VARIABLES_VERSION, "variables": variables}
+
+
+def invoke_generate_compat_variables(args):
+    """
+    Generates compat-variables.json from the Zephyr devicetree at build time.
+
+    See parse_args() for a descriptive list of arguments.
+    """
+
+    if args.verbose:
+        logging.basicConfig(format="%(message)s", level=logging.DEBUG)
+
+    compat_variables = _compat_variables(_load_edt(args.dts_file, args.bindings_dirs))
+
+    try:
+        with open(COMPAT_VARIABLES_SCHEMA_PATH, "r") as f:
+            schema = json.load(f)
+        jsonschema.validate(instance=compat_variables, schema=schema)
+    except Exception as e:
+        _logger.error(
+            f"Generated compat variables do not validate against "
+            f"{COMPAT_VARIABLES_SCHEMA_PATH}: {e}"
+        )
+        return os.EX_DATAERR
+
+    output_dir = os.path.dirname(args.output_file)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    with open(args.output_file, "w", encoding="utf-8") as f:
+        json.dump(compat_variables, f)
+
+    _logger.debug(f"\nGenerated {args.output_file}\n{compat_variables}")
 
     return os.EX_OK
 
@@ -1175,6 +1309,31 @@ def parse_args():
         "--verbose", default=0, action="count", help="Log the YAML file."
     )
     generate_bootfs_parser.set_defaults(func=invoke_generate_bootfs_yaml)
+
+    generate_compat_variables_parser = subparsers.add_parser(
+        name="generate_compat_variables",
+        description="Generate compat-variables.json from the Zephyr devicetree.",
+        allow_abbrev=False,
+    )
+    generate_compat_variables_parser.add_argument(
+        "--dts-file",
+        required=True,
+        help="Zephyr devicetree file containing the flash node.",
+    )
+    generate_compat_variables_parser.add_argument(
+        "--bindings-dirs",
+        nargs="+",
+        required=True,
+        help="Binding directories for the Zephyr devicetree. Should include Zephyr's "
+        "bindings and any custom bindings.",
+    )
+    generate_compat_variables_parser.add_argument(
+        "--output-file", required=True, help="Output JSON file."
+    )
+    generate_compat_variables_parser.add_argument(
+        "--verbose", default=0, action="count", help="Log the JSON file."
+    )
+    generate_compat_variables_parser.set_defaults(func=invoke_generate_compat_variables)
 
     # MKFS command- build a tt_boot_fs given a specification
     mkfs_parser = subparsers.add_parser("mkfs", help="Make tt_boot_fs filesystem")

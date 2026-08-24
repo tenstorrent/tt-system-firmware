@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Board variable compatibility",
+  "description": "The hardware a firmware image is compatible with, beyond the board type that selects it out of a bundle. Compatibility is decided by the board type and by the board variables described here, which are numbered in include/tenstorrent/board_variables.h.",
+  "type": "object",
+  "required": [
+    "version",
+    "variables"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Format version. This schema describes version 1; a file that declares anything else needs the schema that goes with it.",
+      "const": 1
+    },
+    "variables": {
+      "description": "The board variables this image constrains. A variable it says nothing about is one it makes no claim over.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variable"
+      }
+    }
+  },
+  "$defs": {
+    "value": {
+      "description": "A board variable value: an unsigned 32 bit integer, written either as a JSON integer or as a \"0x...\" string. Eight hex digits is 0xffffffff, so the pattern bounds the string form to the same range as the integer form.",
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "type": "string",
+          "pattern": "^0[xX][0-9a-fA-F]{1,8}$"
+        }
+      ]
+    },
+    "variable": {
+      "type": "object",
+      "required": [
+        "name",
+        "number",
+        "constraints"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "A display string, printed verbatim in messages. Not an identifier: consumers must not match on it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "number": {
+          "description": "The board variable number, as assigned in include/tenstorrent/board_variables.h. Bit N of the FLASH_UNLOCK verified-variables mask. The only field with wire significance. The mask is at most seven 32 bit words, because the request is eight words and the first carries the command code and the word count, so 223 is the highest number a host can ever report as verified.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 223
+        },
+        "formatter": {
+          "description": "How to render the value and the constraint values in messages. A consumer renders as hex when this is absent, and must also fall back to hex rather than fail when it does not recognise the name, so that a newer file never breaks an older tool. These are the names defined for version 1.",
+          "enum": [
+            "hex",
+            "semver"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "constraints": {
+          "description": "The values the variable may take for the image to be compatible. Every entry must hold. An empty list places no restriction, meaning any value will do. Each entry names exactly one comparison, so an operator may appear more than once.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/constraint"
+          }
+        }
+      }
+    },
+    "source": {
+      "description": "How to read the variable's value from the board. Omitted when it cannot be read. A consumer that does not recognise the type must treat the variable as unverified rather than guess: unlike a formatter, this affects correctness rather than presentation.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "The retrieval method. Only telemetry is defined for version 1.",
+          "enum": [
+            "telemetry"
+          ]
+        },
+        "tag": {
+          "description": "For type telemetry, the telemetry tag holding the value.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      },
+      "allOf": [
+        {
+          "comment": "A telemetry source without a tag names nothing to read.",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "telemetry"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "tag"
+            ]
+          }
+        }
+      ]
+    },
+    "constraint": {
+      "description": "One comparison against the variable's value.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "eq": {
+          "$ref": "#/$defs/value"
+        },
+        "ne": {
+          "$ref": "#/$defs/value"
+        },
+        "lt": {
+          "$ref": "#/$defs/value"
+        },
+        "le": {
+          "$ref": "#/$defs/value"
+        },
+        "gt": {
+          "$ref": "#/$defs/value"
+        },
+        "ge": {
+          "$ref": "#/$defs/value"
+        },
+        "in": {
+          "$ref": "#/$defs/values"
+        },
+        "not_in": {
+          "$ref": "#/$defs/values"
+        }
+      }
+    },
+    "values": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/value"
+      }
+    }
+  }
+}
