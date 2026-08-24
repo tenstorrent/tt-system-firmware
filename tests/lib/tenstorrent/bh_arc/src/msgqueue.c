@@ -13,6 +13,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 
+#include <tenstorrent/board_variables.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/tt_smbus_regs.h>
@@ -651,14 +652,50 @@ ZTEST(msgqueue, test_msg_type_trigger_reset_invalid)
 	zassert_equal(rsp.data[0], 5, "Invalid level should return the level as error");
 }
 
-ZTEST(msgqueue, test_msg_type_flash_unlock)
+/* Micron MT25QU512ABB, the part FLASH_UNLOCK exempts from the JEDEC ID check */
+#define FLASH_JEDEC_ID_MT25QU512ABB 0x20BB20
+/* GigaDevice GD25LF512MF, standing in for any second-source part */
+#define FLASH_JEDEC_ID_GD25LF512MF  0xC8631A
+
+/* A write that reaches the flash driver fails with 1 (flash not ready) in
+ * this environment; one refused by the lock fails with 2.
+ */
+#define FLASH_WRITE_NOT_READY 1
+#define FLASH_WRITE_LOCKED    2
+
+/* Put the flash back in its boot state: locked, with no board variables
+ * accepted. The flash state is static in spi_eeprom.c and outlives a single
+ * test, so each test establishes it rather than inheriting it.
+ */
+static void flash_lock_reset(void)
 {
-	/* Test flash unlock message */
+	memset(&req, 0, sizeof(req));
+	memset(&rsp, 0, sizeof(rsp));
+	req.flash_lock.command_code = TT_SMC_MSG_FLASH_LOCK;
+
+	msgqueue_request_push(0, &req);
+	process_message_queues();
+	msgqueue_response_pop(0, &rsp);
+	zassert_equal(rsp.data[0], 0, "Flash lock should succeed");
+}
+
+static uint32_t send_flash_unlock(uint8_t num_variable_words, uint32_t verified)
+{
+	memset(&req, 0, sizeof(req));
+	memset(&rsp, 0, sizeof(rsp));
 	req.flash_unlock.command_code = TT_SMC_MSG_FLASH_UNLOCK;
+	req.flash_unlock.num_variable_words = num_variable_words;
+	req.flash_unlock.verified_variables[0] = verified;
 
-	push_msg_success();
+	msgqueue_request_push(0, &req);
+	process_message_queues();
+	msgqueue_response_pop(0, &rsp);
 
-	/* Verify flash is unlocked by attempting EEPROM write */
+	return rsp.data[0];
+}
+
+static uint32_t try_eeprom_write(void)
+{
 	memset(&req, 0, sizeof(req));
 	memset(&rsp, 0, sizeof(rsp));
 	req.eeprom.command_code = TT_SMC_MSG_WRITE_EEPROM;
@@ -671,39 +708,114 @@ ZTEST(msgqueue, test_msg_type_flash_unlock)
 	process_message_queues();
 	msgqueue_response_pop(0, &rsp);
 
-	/* Should fail with error 1 (flash not ready), not error 2 (flash locked) */
-	zassert_equal(rsp.data[0], 1, "Write should fail due to flash not ready, not locked");
+	return rsp.data[0];
+}
+
+ZTEST(msgqueue, test_msg_type_flash_unlock)
+{
+	/* An MT25 board requires nothing of the host, so a request that
+	 * predates board variables still unlocks it.
+	 */
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_MT25QU512ABB);
+	flash_lock_reset();
+
+	zassert_equal(send_flash_unlock(0, 0), 0, "Flash unlock should succeed");
+	zassert_equal(rsp.data[1], 0, "No board variables should be required");
+	zassert_equal(try_eeprom_write(), FLASH_WRITE_NOT_READY,
+		      "Write should fail due to flash not ready, not locked");
+}
+
+ZTEST(msgqueue, test_msg_type_flash_unlock_missing_variables)
+{
+	/* Any other part needs the host to have checked the JEDEC ID */
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_GD25LF512MF);
+	flash_lock_reset();
+
+	zassert_equal(send_flash_unlock(0, 0), 1,
+		      "Flash unlock should be refused without the JEDEC ID variable");
+	zassert_equal(rsp.data[1], BIT(BOARD_VAR_SPI_JEDEC_ID),
+		      "The reply should name the required board variable");
+	zassert_equal(try_eeprom_write(), FLASH_WRITE_LOCKED,
+		      "Write should fail due to flash locked");
+}
+
+ZTEST(msgqueue, test_msg_type_flash_unlock_verified_variables)
+{
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_GD25LF512MF);
+	flash_lock_reset();
+
+	zassert_equal(send_flash_unlock(1, BIT(BOARD_VAR_SPI_JEDEC_ID)), 0,
+		      "Flash unlock should succeed once the JEDEC ID is verified");
+	zassert_equal(rsp.data[1], BIT(BOARD_VAR_SPI_JEDEC_ID),
+		      "The requirement should be reported on success too");
+	zassert_equal(try_eeprom_write(), FLASH_WRITE_NOT_READY,
+		      "Write should fail due to flash not ready, not locked");
+
+	/* The SPI write path issues its own bare unlock per transfer, which
+	 * rides on the variables already accepted.
+	 */
+	zassert_equal(send_flash_unlock(0, 0), 0,
+		      "A bare unlock should ride on the accepted variables");
+
+	/* Locking withdraws them again */
+	flash_lock_reset();
+	zassert_equal(send_flash_unlock(0, 0), 1, "Locking should withdraw the accepted variables");
+}
+
+ZTEST(msgqueue, test_msg_type_flash_unlock_word_count)
+{
+	/* Variable words past num_variable_words are not read */
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_GD25LF512MF);
+	flash_lock_reset();
+
+	zassert_equal(send_flash_unlock(0, BIT(BOARD_VAR_SPI_JEDEC_ID)), 1,
+		      "A word count of zero should leave the variables unread");
+}
+
+ZTEST(msgqueue, test_msg_type_flash_unlock_write_sequence)
+{
+	/* The message sequence a real flash produces. tt-flash unlocks with
+	 * the variables it verified, then hands off to luwen, whose spi_write
+	 * issues its own bare unlock, writes the data a chunk at a time, and
+	 * locks again. A flash is many such calls, so run it twice.
+	 */
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_GD25LF512MF);
+	flash_lock_reset();
+
+	for (int cycle = 0; cycle < 2; cycle++) {
+		zassert_equal(send_flash_unlock(1, BIT(BOARD_VAR_SPI_JEDEC_ID)), 0,
+			      "tt-flash unlock should succeed in cycle %d", cycle);
+
+		zassert_equal(send_flash_unlock(0, 0), 0,
+			      "luwen bare unlock should succeed in cycle %d", cycle);
+
+		/* The bare unlock must leave the flash open, not merely report
+		 * success: luwen writes every chunk after it.
+		 */
+		zassert_equal(try_eeprom_write(), FLASH_WRITE_NOT_READY,
+			      "First chunk should not be locked out in cycle %d", cycle);
+		zassert_equal(try_eeprom_write(), FLASH_WRITE_NOT_READY,
+			      "Second chunk should not be locked out in cycle %d", cycle);
+
+		flash_lock_reset();
+
+		zassert_equal(try_eeprom_write(), FLASH_WRITE_LOCKED,
+			      "Write after the lock should be refused in cycle %d", cycle);
+	}
 }
 
 ZTEST(msgqueue, test_msg_type_flash_lock)
 {
+	UpdateTelemetryFlashJedecId(FLASH_JEDEC_ID_MT25QU512ABB);
+
 	/* First unlock flash */
-	req.flash_unlock.command_code = TT_SMC_MSG_FLASH_UNLOCK;
-	push_msg_success();
-	zassert_equal(rsp.data[0], 0, "Flash unlock should succeed");
+	zassert_equal(send_flash_unlock(0, 0), 0, "Flash unlock should succeed");
 
 	/* Then lock it */
-	memset(&req, 0, sizeof(req));
-	memset(&rsp, 0, sizeof(rsp));
-	req.flash_lock.command_code = TT_SMC_MSG_FLASH_LOCK;
-	push_msg_success();
-	zassert_equal(rsp.data[0], 0, "Flash lock should succeed");
+	flash_lock_reset();
 
-	/* Verify flash is locked by attempting EEPROM write */
-	memset(&req, 0, sizeof(req));
-	memset(&rsp, 0, sizeof(rsp));
-	req.eeprom.command_code = TT_SMC_MSG_WRITE_EEPROM;
-	req.eeprom.spi_address = 0x1000;
-	req.eeprom.num_bytes = 4;
-	req.eeprom.csm_addr = 0x12345678; /* Valid CSM address range */
-	req.eeprom.buffer_mem_type = 0;
-
-	msgqueue_request_push(0, &req);
-	process_message_queues();
-	msgqueue_response_pop(0, &rsp);
-
-	/* Should fail with error 2 (flash locked) */
-	zassert_equal(rsp.data[0], 2, "Write should fail due to flash locked");
+	zassert_equal(try_eeprom_write(), FLASH_WRITE_LOCKED,
+		      "Write should fail due to flash locked");
 }
 
 ZTEST(msgqueue, test_msg_type_confirm_flashed_spi)

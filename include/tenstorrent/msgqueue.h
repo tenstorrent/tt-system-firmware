@@ -881,14 +881,30 @@ struct toggle_tensix_reset_rqst {
 /** @brief Host request to unlock flash for writing
  * @details Messages of this type are processed by @ref flash_unlock_handler.
  *
- * This is a command-only request with no additional arguments.
+ * A flash writer declares which board variables it verified against the
+ * image it is about to write. The reply reports the variables this board
+ * requires in data[1..7], whether or not the request was accepted.
  */
 struct flash_unlock_rqst {
 	/** @brief The command code corresponding to @ref TT_SMC_MSG_FLASH_UNLOCK */
 	uint8_t command_code;
 
-	/** @brief Three bytes of padding */
-	uint8_t pad[3];
+	/** @brief Number of valid words in @ref verified_variables
+	 *
+	 * Zero for hosts that predate board variables.
+	 */
+	uint8_t num_variable_words: 3;
+	uint8_t /* unused */: 5;
+
+	/** @brief Two bytes of padding */
+	uint8_t pad[2];
+
+	/** @brief Board variables the flash writer has verified against the
+	 * image it is about to write
+	 *
+	 * One bit is allocated per board variable.
+	 */
+	uint32_t verified_variables[1];
 };
 
 /** @brief Host request to set watchdog timeout

@@ -6,11 +6,13 @@
 
 #include "reg.h"
 #include "status_reg.h"
+#include "telemetry.h"
 #include "util.h"
 
 #include <stdbool.h>
 #include <string.h>
 
+#include <tenstorrent/board_variables.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
 #include <tenstorrent/sys_init_defines.h>
@@ -235,7 +237,8 @@ static uint8_t confirm_flashed_spi_handler(const union request *request, struct 
 /**
  * @brief Locks flash memory to prevent writes
  * @details Sets the global flash_locked flag to true, blocking all subsequent
- *          flash write operations until unlocked
+ *          flash write operations until unlocked. The host must prove board
+ *          compatibility again before the next unlock.
  */
 static uint8_t flash_lock_handler(const union request *request, struct response *response)
 {
@@ -243,14 +246,79 @@ static uint8_t flash_lock_handler(const union request *request, struct response 
 	return 0;
 }
 
+/* Micron MT25QU512ABB, packed as telemetry reports it: 0x00MMTTCC. (Not the
+ * same encoding as the bootrom SPI_DEVICE_ID register.)
+ */
+#define FLASH_JEDEC_ID_MT25QU512ABB 0x20BB20
+
+/** @brief FLASH_UNLOCK exit code: the host did not verify every required
+ * board variable. The required set is reported in response->data[1].
+ */
+#define FLASH_UNLOCK_ERR_MISSING_VARIABLES 1
+
+/**
+ * @brief The board variables a host must verify before this board may be flashed
+ * @details See board_variables.h. Requiring a variable makes the board
+ *          unflashable by any tool that does not know how to check it, so a
+ *          variable is only required where getting it wrong would produce an
+ *          unbootable image.
+ */
+static uint32_t required_board_variables(void)
+{
+	uint32_t required = 0;
+
+	/* Exempt MT25 boards from the SPI flash check to allow old tt-flash
+	 * & FW to succeed.
+	 */
+	if (GetTelemetryFlashJedecId() != FLASH_JEDEC_ID_MT25QU512ABB) {
+		required |= BIT(BOARD_VAR_SPI_JEDEC_ID);
+	}
+
+	return required;
+}
+
 /**
  * @brief Unlocks flash memory to allow writes
- * @details Clears the global flash_locked flag, enabling flash write operations
+ * @details Clears the global flash_locked flag, enabling flash write
+ *          operations, but only once the host has declared that it verified
+ *          every board variable this board requires.
+ *
+ *          An image is compatible with a board if its board type matches
+ *          (always verified by SPI writers) and the board variable checks
+ *          pass. A host that does not know a variable exists cannot have
+ *          checked it, so it is refused rather than allowed to write an
+ *          image that the board cannot boot.
+ *
+ *          We also need a special exception for tt-flash + luwen. luwen
+ *          unlocks & relocks (with no variable verification bits) in every
+ *          call to spi_flash, failing if the unlock fails. Thus, if already
+ *          unlocked, we ignore a no-bit unlock.
+ *
+ *          The requirement is reported in response->data[1] on success and
+ *          failure alike, so that a rejected host can name what it must
+ *          check.
  */
 static uint8_t flash_unlock_handler(const union request *request, struct response *response)
 {
-	flash_locked = false;
-	return 0;
+	uint32_t required = required_board_variables();
+	uint32_t verified = 0;
+
+	response->data[1] = required;
+
+	if (!flash_locked && request->flash_unlock.num_variable_words == 0) {
+		/* luwen spi_flash special case: tt-flash already did the real unlock */
+		return 0;
+	}
+
+	if (request->flash_unlock.num_variable_words >= 1) {
+		verified = request->flash_unlock.verified_variables[0];
+	}
+
+	bool flash_constraints_satisfied = ((required & ~verified) == 0);
+
+	flash_locked = !flash_constraints_satisfied;
+
+	return flash_constraints_satisfied ? 0 : FLASH_UNLOCK_ERR_MISSING_VARIABLES;
 }
 
 REGISTER_MESSAGE(TT_SMC_MSG_READ_EEPROM, read_eeprom_handler);
