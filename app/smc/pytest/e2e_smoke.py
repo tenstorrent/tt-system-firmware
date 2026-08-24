@@ -1351,11 +1351,9 @@ def test_pvt_comprehensive(arc_chip_dut, asic_id):
 
 def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
     """
-    Test toggling between high and low power states and verify TDP delta.
-
-    Toggles between high and low power states and verifies that the TDP
-    difference between the two states is greater than 80W.
-    For galaxy, loudbox, and quietbox2, only tests power state setting without TDP validation.
+    Validates that toggling between high and low power states results in expected TDP delta
+    Returns 0 on success, 1 if TDP delta is <= 80W.
+    Galaxy, loudbox, and quietbox2 skip TDP validation and always return 0.
     """
     expected_power_delta = 80
     settling_time = 0.5
@@ -1388,10 +1386,11 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
         power_delta = high_power - low_power
         logger.info(f"Power delta: {power_delta}W")
 
-        # Verify delta is greater than expected
-        assert power_delta > expected_power_delta, (
-            f"Power delta ({power_delta}W) is not greater than {expected_power_delta}W"
-        )
+        if power_delta <= expected_power_delta:
+            logger.error(
+                f"Power delta ({power_delta}W) is not greater than {expected_power_delta}W"
+            )
+            return 1
 
     return 0
 
