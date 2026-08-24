@@ -183,6 +183,33 @@ add_custom_target(
     DEPENDS ${OUTPUT_FILE}
 )
 
+# Describes the hardware this image is compatible with, beyond the board type
+# that selects it, for the flashing tool to check before it writes SPI
+set(OUTPUT_COMPAT_VARIABLES ${CMAKE_BINARY_DIR}/compat-variables.json)
+set(COMPAT_VARIABLES_SCHEMA ${APP_DIR}/../../scripts/schemas/compat-variables-schema.json)
+
+add_custom_command(
+    OUTPUT ${OUTPUT_COMPAT_VARIABLES}
+    COMMAND ${CMAKE_COMMAND} -E env PYTHONPATH=${PYTHON_DEVICETREE_SRC}:$ENV{PYTHONPATH}
+      python3 ${GEN_SCRIPT}
+      generate_compat_variables
+      --dts-file ${DTS_FILE}
+      --bindings-dirs ${APP_DIR}/../../../zephyr/dts/bindings/ ${APP_DIR}/../../dts/bindings/
+      --output-file ${OUTPUT_COMPAT_VARIABLES}
+    DEPENDS
+      ${DTS_FILE}
+      ${GEN_SCRIPT}
+      # The generator validates its output against the schema, so a change to
+      # the schema has to regenerate and revalidate
+      ${COMPAT_VARIABLES_SCHEMA}
+    VERBATIM
+)
+
+add_custom_target(
+    generate_compat_variables ALL
+    DEPENDS ${OUTPUT_COMPAT_VARIABLES}
+)
+
 if(PROD_NAME MATCHES "^P300")
   foreach(side left right)
     string(TOUPPER ${side} side_upper)
@@ -195,6 +222,7 @@ if(PROD_NAME MATCHES "^P300")
       ${OUTPUT_BOOTFS_${side_upper}}
       ${OUTPUT_FWBUNDLE_${side_upper}}
       ${PROD_NAME}_${side}
+      ${OUTPUT_COMPAT_VARIABLES}
       ${BOOTFS_DEPS}
     )
     add_custom_target(fwbundle-${side} ALL DEPENDS ${OUTPUT_FWBUNDLE_${side_upper}})
@@ -216,6 +244,7 @@ else()
     ${OUTPUT_BOOTFS}
     ${OUTPUT_FWBUNDLE}
     ${PROD_NAME}
+    ${OUTPUT_COMPAT_VARIABLES}
     ${BOOTFS_DEPS}
   )
 endif()

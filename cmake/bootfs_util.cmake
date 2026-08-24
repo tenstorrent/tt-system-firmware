@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-function(add_bootfs_and_fwbundle bundle_version bootfs_yaml output_bootfs output_fwbundle prod_name)
+function(add_bootfs_and_fwbundle bundle_version bootfs_yaml output_bootfs output_fwbundle prod_name compat_variables)
   # Remaining arguments are bootfs_deps
   set(bootfs_deps ${ARGN})
 
@@ -22,7 +22,8 @@ function(add_bootfs_and_fwbundle bundle_version bootfs_yaml output_bootfs output
     ${APP_DIR}/../../scripts/tt_fwbundle.py create
     -v "${bundle_version}"
     -o ${output_fwbundle}
+    --compat-variables ${compat_variables}
     ${prod_name}
     ${output_bootfs}
-    DEPENDS ${output_bootfs})
+    DEPENDS ${output_bootfs} ${compat_variables})
 endfunction()
