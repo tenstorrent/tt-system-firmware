@@ -539,6 +539,8 @@ void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
 /** @brief Record the flash JEDEC ID in @ref TAG_FLASH_JEDEC_ID. */
 void UpdateTelemetryFlashJedecId(uint32_t jedec_id);
+/** @brief Get the flash JEDEC ID from @ref TAG_FLASH_JEDEC_ID, 0 if it was never read. */
+uint32_t GetTelemetryFlashJedecId(void);
 /** @brief Update the GDDR thermal-trip active-config bit in @ref TAG_FW_ACTIVE_CONFIG_0. */
 void UpdateTelemetryGddrThermTrip(bool enabled);
 /** @brief Get the current active firmware feature bits from @ref TAG_FW_ACTIVE_CONFIG_0.

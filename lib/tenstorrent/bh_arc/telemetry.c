@@ -269,6 +269,11 @@ void UpdateTelemetryFlashJedecId(uint32_t jedec_id)
 	telemetry[TAG_FLASH_JEDEC_ID] = jedec_id;
 }
 
+uint32_t GetTelemetryFlashJedecId(void)
+{
+	return telemetry[TAG_FLASH_JEDEC_ID];
+}
+
 void UpdateTelemetryGddrThermTrip(bool enabled)
 {
 	telemetry_feature_flags_0_t active_config = {
