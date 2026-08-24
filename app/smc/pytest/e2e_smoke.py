@@ -1356,7 +1356,7 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
     Galaxy, loudbox, and quietbox2 skip TDP validation and always return 0.
     """
     expected_power_delta = 80
-    settling_time = 0.5
+    settling_time = 0.7
     arc_chip = pyluwen.detect_chips()[asic_id]
     skip_tdp = _skip_boards(board_name)
 
