@@ -3,12 +3,16 @@
 
 import argparse
 import base64
+import json
+import jsonschema
 import logging
 import os
 import pykwalify.core
+import pytest
 import requests
 import sys
 import tarfile
+import types
 import yaml
 
 from pathlib import Path
@@ -516,4 +520,249 @@ def test_tensix_disable(tmp_path: Path):
 
     assert tt_fwbundle.diff_fw_bundles(input_path, output_path) != os.EX_OK, (
         "diff_fw_bundles should detect changes after Tensix disable count update"
+    )
+
+
+def _flash_node(jedec_id: bytes = None, compats=("jedec,mspi-nor",), children=()):
+    """
+    The parts of an edtlib node the compat variables generator reads.
+    """
+    props = {}
+    if jedec_id is not None:
+        props["jedec-id"] = types.SimpleNamespace(val=jedec_id)
+    if children:
+        props["flash-devices"] = types.SimpleNamespace(val=list(children))
+    return types.SimpleNamespace(compats=list(compats), props=props)
+
+
+def _edt(flash_node):
+    return types.SimpleNamespace(label2node={"spi_flash": flash_node})
+
+
+def _compat_variables_validator():
+    with open(tt_boot_fs.COMPAT_VARIABLES_SCHEMA_PATH) as f:
+        schema = json.load(f)
+
+    jsonschema.Draft202012Validator.check_schema(schema)
+    return jsonschema.Draft202012Validator(schema)
+
+
+def _compat_variables_doc(constraints: list, **overrides) -> dict:
+    variable = {
+        "name": "SPI EEPROM",
+        "number": 0,
+        "formatter": "hex",
+        "source": {"type": "telemetry", "tag": 80},
+        "constraints": constraints,
+    }
+    variable.update(overrides)
+    return {"version": 1, "variables": [variable]}
+
+
+def test_compat_variables_schema():
+    """
+    The generated compat variables must validate against the published schema.
+    """
+    validator = _compat_variables_validator()
+
+    mux = _flash_node(
+        compats=("tenstorrent,flash-mux",),
+        children=(_flash_node(b"\x20\xbb\x20"), _flash_node(b"\xc8\x63\x1a")),
+    )
+    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
+
+    validator.validate(compat_variables)
+
+
+def test_compat_variables_from_flash_mux():
+    """
+    A board that selects between flash parts at runtime supports all of them,
+    except the fallback that names no part.
+    """
+    mux = _flash_node(
+        compats=("tenstorrent,flash-mux",),
+        children=(
+            _flash_node(b"\x20\xbb\x20"),
+            _flash_node(b"\xc2\x25\x3a"),
+            _flash_node(b"\xc8\x63\x1a"),
+            _flash_node(b"\xef\x60\x20"),
+            # The universal single-lane fallback
+            _flash_node(),
+        ),
+    )
+
+    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
+
+    assert compat_variables == {
+        "version": tt_boot_fs.COMPAT_VARIABLES_VERSION,
+        "variables": [
+            {
+                "name": "SPI EEPROM",
+                "number": tt_boot_fs.BOARD_VAR_SPI_JEDEC_ID,
+                "formatter": "hex",
+                "source": {"type": "telemetry", "tag": 80},
+                "constraints": [
+                    {"in": ["0x20bb20", "0xc2253a", "0xc8631a", "0xef6020"]}
+                ],
+            }
+        ],
+    }
+
+
+def test_compat_variables_single_flash():
+    """
+    A board with one flash node supports only that part.
+    """
+    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node(b"\x20\xbb\x20")))
+
+    assert compat_variables["variables"][0]["constraints"] == [{"eq": "0x20bb20"}]
+
+
+def test_compat_variables_unknown_flash():
+    """
+    A flash node that names no part leaves nothing to declare, rather than
+    declaring that any part will do.
+    """
+    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node()))
+
+    assert compat_variables["variables"] == []
+
+
+def test_compat_variables_in_fwbundle(tmp_path: Path):
+    """
+    The generated file reaches the flashing tool in each board directory.
+    """
+    compat_variables = {
+        "version": 1,
+        "variables": [
+            {
+                "name": "SPI EEPROM",
+                "number": 0,
+                "formatter": "hex",
+                "source": {"type": "telemetry", "tag": 80},
+                "constraints": [{"eq": "0x20bb20"}],
+            }
+        ],
+    }
+    compat_variables_path = tmp_path / "compat-variables.json"
+    with open(compat_variables_path, "w") as f:
+        json.dump(compat_variables, f)
+
+    bootfs = tmp_path / "tt_boot_fs.bin"
+    with open(bootfs, "wb") as f:
+        f.write(tt_boot_fs.mkfs(TEST_ROOT / "p100a.yml"))
+
+    bundle = tmp_path / "update.fwbundle"
+    tt_fwbundle.create_fw_bundle(
+        bundle, [19, 1, 0, 0], {"P100A-1": bootfs}, compat_variables_path
+    )
+
+    with tarfile.open(bundle, "r") as tar:
+        packed = json.load(tar.extractfile("./P100A-1/compat-variables.json"))
+
+    assert packed == compat_variables
+
+    # Bundles built without compat variables must not gain the file
+    plain = tmp_path / "plain.fwbundle"
+    tt_fwbundle.create_fw_bundle(plain, [19, 1, 0, 0], {"P100A-1": bootfs})
+    with tarfile.open(plain, "r") as tar:
+        assert "./P100A-1/compat-variables.json" not in tar.getnames()
+
+
+@pytest.mark.parametrize(
+    "constraints",
+    [
+        # Both representations of an unsigned 32 bit value, at both ends
+        [{"eq": 0}],
+        [{"eq": 4294967295}],
+        [{"eq": "0x20bb20"}],
+        [{"eq": "0X20BB20"}],
+        [{"in": ["0x20bb20", 2145056]}],
+        # No restriction at all
+        [],
+        # Every operator, and more than one at once
+        [{"ne": 1}],
+        [{"lt": 1}],
+        [{"le": 1}],
+        [{"gt": 1}],
+        [{"ge": 1}],
+        [{"not_in": [1]}],
+        [{"ge": 2}, {"lt": 4}],
+        # A list can repeat an operator, which a map could not
+        [{"ne": 1}, {"ne": 2}],
+    ],
+)
+def test_compat_variables_schema_accepts(constraints):
+    _compat_variables_validator().validate(_compat_variables_doc(constraints))
+
+
+@pytest.mark.parametrize(
+    "constraints",
+    [
+        # Outside the range a board variable can hold
+        [{"eq": -1}],
+        [{"eq": 4294967296}],
+        [{"eq": "0x100000000"}],
+        # Not one of the two representations
+        [{"eq": "20bb20"}],
+        [{"eq": "nope"}],
+        [{"eq": None}],
+        [{"eq": True}],
+        [{"eq": {"a": 1}}],
+        [{"eq": [1]}],
+        [{"in": [None]}],
+        # A list of permitted values that permits nothing
+        [{"in": []}],
+        # An operator no consumer of version 1 knows how to evaluate
+        [{"between": [1, 2]}],
+        # An entry must name exactly one comparison
+        [{"ge": 2, "lt": 4}],
+        [{}],
+        # The whole field is a list now, not a map
+        {"eq": 0},
+    ],
+)
+def test_compat_variables_schema_rejects(constraints):
+    with pytest.raises(jsonschema.ValidationError):
+        _compat_variables_validator().validate(_compat_variables_doc(constraints))
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        # A misspelled key would otherwise be silently ignored
+        _compat_variables_doc([{"eq": 0}], formater="hex"),
+        _compat_variables_doc([{"eq": 0}], formatter="hexx"),
+        _compat_variables_doc([{"eq": 0}], number=-1),
+        # Past the last bit the unlock message can carry
+        _compat_variables_doc([{"eq": 0}], number=224),
+        _compat_variables_doc([{"eq": 0}], name=""),
+        # A telemetry source with no tag names nothing to read
+        _compat_variables_doc([{"eq": 0}], source={"type": "telemetry"}),
+        _compat_variables_doc([{"eq": 0}], source={"type": "dmc_message"}),
+        {"version": 1, "variables": [{"name": "x", "number": 0}]},
+        {"version": 1},
+        # This schema describes version 1 only
+        {"version": 2, "variables": []},
+    ],
+)
+def test_compat_variables_schema_rejects_structure(document):
+    with pytest.raises(jsonschema.ValidationError):
+        _compat_variables_validator().validate(document)
+
+
+def test_compat_variables_schema_allows_the_last_representable_variable():
+    """
+    The verified bitmap is at most seven 32 bit words, so 223 is the highest
+    number a host can ever report back.
+    """
+    _compat_variables_validator().validate(
+        {"version": 1, "variables": [{"name": "x", "number": 223, "constraints": []}]}
+    )
+
+
+def test_compat_variables_schema_allows_an_unreadable_variable():
+    """A variable with no source is one no consumer can check, not an error."""
+    _compat_variables_validator().validate(
+        {"version": 1, "variables": [{"name": "x", "number": 0, "constraints": []}]}
     )
