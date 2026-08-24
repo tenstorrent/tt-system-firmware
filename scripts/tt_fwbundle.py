@@ -14,6 +14,7 @@ import hashlib
 from intelhex import IntelHex
 from base64 import b16encode
 from pathlib import Path
+from typing import Optional
 import os
 import sys
 import shutil
@@ -68,6 +69,18 @@ def bundle_metadata(bundle: Path, board: str = "") -> dict:
                 with open(Path(tempdir) / img, "rb") as f:
                     bundle_binary = f.read()
                     board_data["sha256"] = hashlib.sha256(bundle_binary).hexdigest()
+                # The compatibility data decides whether this image may be
+                # written to a board at all, so it belongs in any comparison
+                # of two bundles. Bundles built before board variables have
+                # none, and simply do not carry the key.
+                try:
+                    compat_file = tar.extractfile(
+                        f"./{board_name}/compat-variables.json"
+                    )
+                except KeyError:
+                    compat_file = None
+                if compat_file is not None:
+                    board_data["compat_variables"] = json.load(compat_file)
                 data[board_name] = board_data
     except KeyError as e:
         print(f"Firmware bundle missing expected file: {e}")
@@ -200,6 +213,15 @@ def diff_fw_bundles(bundle1: Path, bundle2: Path):
             print(f"Board {board} images differ:")
             print(f"  Bundle 1 SHA256: {board_data1['sha256']}")
             print(f"  Bundle 2 SHA256: {board_data2['sha256']}")
+        # Two bundles carrying the same image can still disagree about the
+        # hardware it may be written to
+        compat1 = board_data1.get("compat_variables", "<missing>")
+        compat2 = board_data2.get("compat_variables", "<missing>")
+        if compat1 != compat2:
+            diff_found = True
+            print(f"Board {board} compatibility variables differ:")
+            print(f"  Bundle 1: {compat1}")
+            print(f"  Bundle 2: {compat2}")
     if not diff_found:
         print("No differences found between the two firmware bundles.")
         return os.EX_OK
@@ -230,7 +252,12 @@ def combine_fw_bundles(combine: list[Path], output: Path):
         shutil.rmtree(temp_dir)
 
 
-def create_fw_bundle(output: Path, version: list[int], boot_fs: dict[str, Path] = {}):
+def create_fw_bundle(
+    output: Path,
+    version: list[int],
+    boot_fs: dict[str, Path] = {},
+    compat_variables: Optional[Path] = None,
+):
     """
     Creates a firmware bundle tar.gz file, from tt_boot_fs images.
     """
@@ -246,6 +273,10 @@ def create_fw_bundle(output: Path, version: list[int], boot_fs: dict[str, Path] 
             mapping = []
             with open(board_dir / "mapping.json", "w") as file:
                 file.write(json.dumps(mapping))
+            if compat_variables is not None:
+                # Tells the flashing tool which hardware this image is
+                # compatible with, beyond the board type that selected it.
+                shutil.copyfile(compat_variables, board_dir / "compat-variables.json")
             if image.suffix == ".hex":
                 # Encode offsets using @addr format tt-flash supports
                 ih = IntelHex(str(image))
@@ -307,7 +338,7 @@ def invoke_create_fw_bundle(args):
         bootfs[args.bootfs[i]] = Path(args.bootfs[i + 1])
     setattr(args, "bootfs", bootfs)
 
-    create_fw_bundle(args.output, args.version, args.bootfs)
+    create_fw_bundle(args.output, args.version, args.bootfs, args.compat_variables)
     print(f"Wrote fwbundle to {args.output}")
     return os.EX_OK
 
@@ -363,6 +394,13 @@ def parse_args():
         help="output bundle file name",
         type=Path,
         required=True,
+    )
+    fw_bundle_create_parser.add_argument(
+        "--compat-variables",
+        metavar="JSON",
+        help="compat-variables.json describing the hardware the image supports",
+        type=Path,
+        default=None,
     )
     fw_bundle_create_parser.add_argument(
         "bootfs",

@@ -421,3 +421,82 @@ def test_combine_fwbundle(workdir: Path):
     # Not much else we can check here, this isn't really a logical combination
     # of bundles. Just verify the output exists.
     assert combined_fwbundle_path.exists(), "Combined firmware bundle does not exist"
+
+
+def compat_variables_bundle(path: Path, workdir: Path, jedec_id: str):
+    """
+    A bundle whose only variable is the permitted SPI EEPROM JEDEC ID.
+    """
+    import json
+
+    image = workdir / "image.bin"
+    if not image.exists():
+        image.write_bytes(b"\xa5" * 64)
+
+    compat_variables = workdir / f"compat-{jedec_id}.json"
+    with open(compat_variables, "w") as f:
+        json.dump(
+            {
+                "version": 1,
+                "variables": [
+                    {
+                        "name": "SPI EEPROM",
+                        "number": 0,
+                        "formatter": "hex",
+                        "source": {"type": "telemetry", "tag": 80},
+                        "constraints": [{"eq": jedec_id}],
+                    }
+                ],
+            },
+            f,
+        )
+
+    tt_fwbundle.create_fw_bundle(
+        path, [19, 1, 0, 0], {"P150A-1": image}, compat_variables
+    )
+
+
+def test_fwbundle_diff_compat_variables(workdir: Path):
+    """
+    Two bundles carrying the same image can still disagree about the hardware
+    it may be written to, and that is a difference worth reporting: it decides
+    whether the bundle may be flashed at all.
+    """
+    mt25 = workdir / "mt25.fwbundle"
+    gd25 = workdir / "gd25.fwbundle"
+    mt25_again = workdir / "mt25-again.fwbundle"
+    compat_variables_bundle(mt25, workdir, "0x20bb20")
+    compat_variables_bundle(gd25, workdir, "0xc8631a")
+    compat_variables_bundle(mt25_again, workdir, "0x20bb20")
+
+    # Same image, same constraints
+    assert tt_fwbundle.diff_fw_bundles(mt25, mt25_again) == os.EX_OK, (
+        "Bundles that agree should show no differences"
+    )
+
+    # Same image, different constraints
+    assert tt_fwbundle.diff_fw_bundles(mt25, gd25) != os.EX_OK, (
+        "A compatibility-only difference must be reported"
+    )
+
+
+def test_bundle_metadata_records_compat_variables(workdir: Path):
+    """
+    A bundle that predates board variables carries none, and must not grow the
+    key.
+    """
+    with_compat = workdir / "with-compat.fwbundle"
+    compat_variables_bundle(with_compat, workdir, "0x20bb20")
+    metadata = tt_fwbundle.bundle_metadata(with_compat, board="P150A-1")
+    assert metadata["P150A-1"]["compat_variables"]["variables"][0]["constraints"] == [
+        {"eq": "0x20bb20"}
+    ]
+
+    without = workdir / "without-compat.fwbundle"
+    tt_fwbundle.create_fw_bundle(
+        without, [19, 1, 0, 0], {"P150A-1": workdir / "image.bin"}
+    )
+    assert (
+        "compat_variables"
+        not in tt_fwbundle.bundle_metadata(without, board="P150A-1")["P150A-1"]
+    )
