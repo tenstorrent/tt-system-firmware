@@ -565,108 +565,21 @@ def test_compat_variables_schema():
     """
     validator = _compat_variables_validator()
 
-    mux = _flash_node(
-        compats=("tenstorrent,flash-mux",),
-        children=(_flash_node(b"\x20\xbb\x20"), _flash_node(b"\xc8\x63\x1a")),
-    )
-    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
-
-    validator.validate(compat_variables)
-
-
-def test_compat_variables_from_flash_mux():
-    """
-    A board that selects between flash parts at runtime supports all of them,
-    except the fallback that names no part.
-    """
-    mux = _flash_node(
-        compats=("tenstorrent,flash-mux",),
-        children=(
-            _flash_node(b"\x20\xbb\x20"),
-            _flash_node(b"\xc2\x25\x3a"),
-            _flash_node(b"\xc8\x63\x1a"),
-            _flash_node(b"\xef\x60\x20"),
-            # The universal single-lane fallback
-            _flash_node(),
+    for flash in (
+        # One part, several parts, and any part at all
+        _flash_node(b"\x20\xbb\x20"),
+        _flash_node(
+            compats=("tenstorrent,flash-mux",),
+            children=(_flash_node(b"\x20\xbb\x20"), _flash_node(b"\xc8\x63\x1a")),
         ),
-    )
+        _flash_node(
+            compats=("tenstorrent,flash-mux",),
+            children=(_flash_node(b"\x20\xbb\x20"), _flash_node()),
+        ),
+    ):
+        compat_variables = tt_boot_fs._compat_variables(_edt(flash))
 
-    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
-
-    assert compat_variables == {
-        "version": tt_boot_fs.COMPAT_VARIABLES_VERSION,
-        "variables": [
-            {
-                "name": "SPI EEPROM",
-                "number": tt_boot_fs.BOARD_VAR_SPI_JEDEC_ID,
-                "formatter": "hex",
-                "source": {"type": "telemetry", "tag": 80},
-                "constraints": [
-                    {"in": ["0x20bb20", "0xc2253a", "0xc8631a", "0xef6020"]}
-                ],
-            }
-        ],
-    }
-
-
-def test_compat_variables_single_flash():
-    """
-    A board with one flash node supports only that part.
-    """
-    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node(b"\x20\xbb\x20")))
-
-    assert compat_variables["variables"][0]["constraints"] == [{"eq": "0x20bb20"}]
-
-
-def test_compat_variables_unknown_flash():
-    """
-    A flash node that names no part leaves nothing to declare, rather than
-    declaring that any part will do.
-    """
-    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node()))
-
-    assert compat_variables["variables"] == []
-
-
-def test_compat_variables_in_fwbundle(tmp_path: Path):
-    """
-    The generated file reaches the flashing tool in each board directory.
-    """
-    compat_variables = {
-        "version": 1,
-        "variables": [
-            {
-                "name": "SPI EEPROM",
-                "number": 0,
-                "formatter": "hex",
-                "source": {"type": "telemetry", "tag": 80},
-                "constraints": [{"eq": "0x20bb20"}],
-            }
-        ],
-    }
-    compat_variables_path = tmp_path / "compat-variables.json"
-    with open(compat_variables_path, "w") as f:
-        json.dump(compat_variables, f)
-
-    bootfs = tmp_path / "tt_boot_fs.bin"
-    with open(bootfs, "wb") as f:
-        f.write(tt_boot_fs.mkfs(TEST_ROOT / "p100a.yml"))
-
-    bundle = tmp_path / "update.fwbundle"
-    tt_fwbundle.create_fw_bundle(
-        bundle, [19, 1, 0, 0], {"P100A-1": bootfs}, compat_variables_path
-    )
-
-    with tarfile.open(bundle, "r") as tar:
-        packed = json.load(tar.extractfile("./P100A-1/compat-variables.json"))
-
-    assert packed == compat_variables
-
-    # Bundles built without compat variables must not gain the file
-    plain = tmp_path / "plain.fwbundle"
-    tt_fwbundle.create_fw_bundle(plain, [19, 1, 0, 0], {"P100A-1": bootfs})
-    with tarfile.open(plain, "r") as tar:
-        assert "./P100A-1/compat-variables.json" not in tar.getnames()
+        validator.validate(compat_variables)
 
 
 @pytest.mark.parametrize(
@@ -766,3 +679,116 @@ def test_compat_variables_schema_allows_an_unreadable_variable():
     _compat_variables_validator().validate(
         {"version": 1, "variables": [{"name": "x", "number": 0, "constraints": []}]}
     )
+
+
+def test_compat_variables_from_flash_mux():
+    """
+    A board that selects between flash parts at runtime supports all of them.
+    """
+    mux = _flash_node(
+        compats=("tenstorrent,flash-mux",),
+        children=(
+            _flash_node(b"\x20\xbb\x20"),
+            _flash_node(b"\xc2\x25\x3a"),
+            _flash_node(b"\xc8\x63\x1a"),
+            _flash_node(b"\xef\x60\x20"),
+        ),
+    )
+
+    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
+
+    assert compat_variables == {
+        "version": tt_boot_fs.COMPAT_VARIABLES_VERSION,
+        "variables": [
+            {
+                "name": "SPI EEPROM",
+                "number": tt_boot_fs.BOARD_VAR_SPI_JEDEC_ID,
+                "formatter": "hex",
+                "source": {"type": "telemetry", "tag": 80},
+                "constraints": [
+                    {"in": ["0x20bb20", "0xc2253a", "0xc8631a", "0xef6020"]}
+                ],
+            }
+        ],
+    }
+
+
+def test_compat_variables_with_universal_fallback():
+    """
+    The mux can always fall back to the candidate that names no part, which
+    drives universal commands and so accepts any chip. The image therefore
+    supports any part, whatever the other candidates name.
+    """
+    mux = _flash_node(
+        compats=("tenstorrent,flash-mux",),
+        children=(
+            _flash_node(b"\x20\xbb\x20"),
+            # The universal single-lane fallback
+            _flash_node(),
+        ),
+    )
+
+    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
+
+    assert compat_variables["variables"][0]["constraints"] == []
+
+
+def test_compat_variables_single_flash():
+    """
+    A board with one flash node supports only that part.
+    """
+    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node(b"\x20\xbb\x20")))
+
+    assert compat_variables["variables"][0]["constraints"] == [{"eq": "0x20bb20"}]
+
+
+def test_compat_variables_unknown_flash():
+    """
+    A lone flash node that names no part says nothing about which part its
+    settings suit, so leave nothing declared rather than claim any part will
+    do. Boards that fit exactly one part name it for this reason.
+    """
+    compat_variables = tt_boot_fs._compat_variables(_edt(_flash_node()))
+
+    assert compat_variables["variables"] == []
+
+
+def test_compat_variables_in_fwbundle(tmp_path: Path):
+    """
+    The generated file reaches the flashing tool in each board directory.
+    """
+    compat_variables = {
+        "version": 1,
+        "variables": [
+            {
+                "name": "SPI EEPROM",
+                "number": 0,
+                "formatter": "hex",
+                "source": {"type": "telemetry", "tag": 80},
+                "constraints": [{"eq": "0x20bb20"}],
+            }
+        ],
+    }
+    compat_variables_path = tmp_path / "compat-variables.json"
+    with open(compat_variables_path, "w") as f:
+        json.dump(compat_variables, f)
+
+    bootfs = tmp_path / "tt_boot_fs.bin"
+    with open(bootfs, "wb") as f:
+        f.write(tt_boot_fs.mkfs(TEST_ROOT / "p100a.yml"))
+
+    bundle = tmp_path / "update.fwbundle"
+    tt_fwbundle.create_fw_bundle(
+        bundle, [19, 1, 0, 0], {"P100A-1": bootfs}, compat_variables_path
+    )
+
+    with tarfile.open(bundle, "r") as tar:
+        packed = json.load(tar.extractfile("./P100A-1/compat-variables.json"))
+
+    assert packed == compat_variables
+
+    # Bundles built without compat variables must not gain the file
+    plain = tmp_path / "plain.fwbundle"
+    tt_fwbundle.create_fw_bundle(plain, [19, 1, 0, 0], {"P100A-1": bootfs})
+    with tarfile.open(plain, "r") as tar:
+        assert "./P100A-1/compat-variables.json" not in tar.getnames()

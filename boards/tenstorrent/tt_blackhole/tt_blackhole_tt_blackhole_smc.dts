@@ -116,6 +116,13 @@
 		reg = <0>;
 		status = "okay";
 		size = <DT_SIZE_M(512)>;
+
+		/* Micron MT25QU512ABB only.
+		 * Boards with any other part replace this node with a flash_mux node.
+		 * See tt_blackhole_smc_flash_mux.dtsi.
+		 */
+		jedec-id = [20 bb 20];
+
 		/* Programming has experimentally been reliable up to 17 MHz, use 15 to be safe */
 		mspi-max-frequency = <DT_FREQ_M(15)>;
 		/* Reading can operate at higher frequencies.

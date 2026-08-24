@@ -1125,46 +1125,60 @@ def invoke_generate_bootfs_yaml(args):
     return os.EX_OK
 
 
-def _flash_candidate_nodes(edt) -> list:
+def _flash_candidate_nodes(edt) -> tuple[list, bool]:
     """
-    The flash configurations the firmware image can drive.
+    The flash configurations the firmware image can drive, and whether a mux
+    selects between them at runtime.
 
-    A board that may be built with more than one flash part selects between
-    them at runtime with a flash mux, whose candidates are exactly the parts
-    the image supports. Any other board drives a single flash node.
+    A board that may be built with more than one flash part has a mux, whose
+    candidates are the configurations the image can use. Any other board drives
+    a single flash node.
     """
 
     flash_node = edt.label2node.get("spi_flash")
     if flash_node is None:
-        return []
+        return [], False
 
     if "tenstorrent,flash-mux" in flash_node.compats:
-        return list(flash_node.props["flash-devices"].val)
+        return list(flash_node.props["flash-devices"].val), True
 
-    return [flash_node]
+    return [flash_node], False
 
 
-def _flash_jedec_ids(nodes: list) -> list[int]:
+def _spi_jedec_constraints(edt) -> Optional[list]:
     """
-    The JEDEC IDs the given flash configurations accept, packed as telemetry
-    reports them: 0x00MMTTCC.
+    The constraints on the JEDEC IDs this image supports, or None if it does
+    not say. An empty list means it supports any part.
+
+    IDs are packed as telemetry reports them: 0x00MMTTCC.
     """
+
+    nodes, muxed = _flash_candidate_nodes(edt)
+    if not nodes:
+        return None
 
     ids = []
     for node in nodes:
         prop = node.props.get("jedec-id")
         if prop is None:
-            # A configuration with no jedec-id says nothing about which part
-            # it is for, so it contributes no permitted value. Among mux
-            # candidates that is the slow single-lane fallback, which keeps an
-            # unrecognized chip readable and reflashable: a recovery path, not
-            # a configuration the image is built for. On a board with a single
-            # flash node it leaves the image with nothing to declare, which
-            # correctly refuses a board carrying an unexpected part.
-            continue
+            if muxed:
+                # A mux candidate with no jedec-id is the single-lane fallback,
+                # which drives universal commands and so accepts any chip. The
+                # mux can always fall back to it, so the image supports any
+                # part, whatever the other candidates name.
+                return []
+
+            # A lone flash node that names no part says nothing about which
+            # part its settings suit, so the image declares nothing and cannot
+            # flash a board that requires the variable. Boards that fit exactly
+            # one part name it for this reason.
+            return None
+
         ids.append(int.from_bytes(bytes(prop.val), "big"))
 
-    return ids
+    values = [f"0x{jedec_id:06x}" for jedec_id in ids]
+
+    return [{"eq": values[0]}] if len(values) == 1 else [{"in": values}]
 
 
 def _compat_variables(edt) -> dict:
@@ -1175,9 +1189,8 @@ def _compat_variables(edt) -> dict:
 
     variables = []
 
-    jedec_ids = _flash_jedec_ids(_flash_candidate_nodes(edt))
-    if jedec_ids:
-        values = [f"0x{jedec_id:06x}" for jedec_id in jedec_ids]
+    constraints = _spi_jedec_constraints(edt)
+    if constraints is not None:
         properties = BOARD_VARIABLES[BOARD_VAR_SPI_JEDEC_ID]
         variables.append(
             {
@@ -1185,9 +1198,7 @@ def _compat_variables(edt) -> dict:
                 "number": BOARD_VAR_SPI_JEDEC_ID,
                 "formatter": properties["formatter"],
                 "source": properties["source"],
-                "constraints": (
-                    [{"eq": values[0]}] if len(values) == 1 else [{"in": values}]
-                ),
+                "constraints": constraints,
             }
         )
 
