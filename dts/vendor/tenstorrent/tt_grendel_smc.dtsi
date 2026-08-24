@@ -319,6 +319,14 @@
 			reg-names = "control";
 		};
 
+		pcie0: pcie@18000000 {
+			compatible = "tenstorrent,grendel-pcie";
+			reg = <0x0 0x18000000 0x0 0x1000000>;
+			/* QEMU 64 GiB; silicon aperture comes later. */
+			bar4-size = <0x10 0x0>;
+			status = "disabled";
+		};
+
 		mbox0: mbox@c0018000 {
 			compatible = "tenstorrent,grendel-mbox";
 			reg = <0x0 0xc0018000 0x0 0x20000>;
