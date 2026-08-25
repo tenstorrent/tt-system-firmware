@@ -13,6 +13,7 @@
 #include <tenstorrent/bh_power.h>
 #ifdef CONFIG_TT_MSGQUEUE
 #include <tenstorrent/msgqueue.h>
+#include <tenstorrent/smc_msg.h>
 #endif
 
 #include "telemetry.h"
@@ -207,6 +208,89 @@ static int msg_handler(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
+
+/* Exchange one counter request and leave the reply in *response. */
+static int counter_msg_exchange(const struct shell *sh, uint8_t command, uint32_t bank,
+				uint32_t index_or_mask, struct response *response)
+{
+	union request request = {0};
+	int ret;
+
+	request.counter.command_code = TT_SMC_MSG_COUNTER;
+	request.counter.command = command;
+	request.counter.counter_bank = bank;
+	if (command == COUNTER_CMD_GET) {
+		request.counter.bank_index = index_or_mask;
+	} else {
+		request.counter.mask = index_or_mask;
+	}
+
+	ret = msgqueue_request_push(0, &request);
+	if (ret != 0) {
+		shell_error(sh, "Failed to queue request (%d)", ret);
+		return ret;
+	}
+
+	process_message_queues();
+
+	ret = msgqueue_response_pop(0, response);
+	if (ret != 0) {
+		shell_error(sh, "Failed to read response (%d)", ret);
+		return ret;
+	}
+
+	if (response->data[0] != 0) {
+		shell_error(sh, "Counter request rejected (status %u)", response->data[0]);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/* Print one counter as a plain decimal value, rather than the full response dump of `tt msg`. */
+static int counter_get_handler(const struct shell *sh, size_t argc, char **argv)
+{
+	struct response response = {0};
+	uint32_t bank, index;
+	int ret;
+
+	ARG_UNUSED(argc);
+
+	if (parse_u32_arg(argv[1], &bank) != 0 || parse_u32_arg(argv[2], &index) != 0) {
+		shell_error(sh, "Invalid u32 value");
+		return -EINVAL;
+	}
+
+	ret = counter_msg_exchange(sh, COUNTER_CMD_GET, bank, index, &response);
+	if (ret != 0) {
+		return ret;
+	}
+
+	shell_print(sh, "%u", response.data[2]);
+
+	return 0;
+}
+
+static int counter_clear_handler(const struct shell *sh, size_t argc, char **argv)
+{
+	struct response response = {0};
+	uint32_t bank, mask;
+	int ret;
+
+	ARG_UNUSED(argc);
+
+	if (parse_u32_arg(argv[1], &bank) != 0 || parse_u32_arg(argv[2], &mask) != 0) {
+		shell_error(sh, "Invalid u32 value");
+		return -EINVAL;
+	}
+
+	ret = counter_msg_exchange(sh, COUNTER_CMD_CLEAR, bank, mask, &response);
+	if (ret != 0) {
+		return ret;
+	}
+
+	return 0;
+}
 #endif
 
 SHELL_STATIC_SUBCMD_SET_CREATE(
@@ -217,6 +301,8 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 	SHELL_CMD_ARG(telem, NULL, "<Telemetry Index> [|x|f|d]", telem_handler, 2, 1),
 #ifdef CONFIG_TT_MSGQUEUE
 	SHELL_CMD_ARG(msg, NULL, "<cmd> [data1 ... data7]", msg_handler, 2, 7),
+	SHELL_CMD_ARG(counter, NULL, "<bank> <index>", counter_get_handler, 3, 0),
+	SHELL_CMD_ARG(counter_clr, NULL, "<bank> <mask>", counter_clear_handler, 3, 0),
 #endif
 	SHELL_SUBCMD_SET_END);
 

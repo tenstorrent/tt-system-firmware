@@ -76,6 +76,35 @@ enum counter_cmd {
 enum counter_bank {
 	/** @brief Throttler counters indexed by @ref aiclk_arb_max */
 	COUNTER_BANK_THROTTLERS,
+	/** @brief DVFS loop counters indexed by @ref dvfs_counter_index */
+	COUNTER_BANK_DVFS,
+};
+
+/** @brief Counter indices within @ref COUNTER_BANK_DVFS */
+enum dvfs_counter_index {
+	/** @brief DVFS timer ticks that expired while the previous pass was still queued.
+	 *
+	 * Such a tick is coalesced into the pending one rather than running on its own, so the
+	 * DVFS loop skips a cycle. A non-zero value means something is occupying the system work
+	 * queue long enough to delay frequency and voltage control.
+	 */
+	DVFS_COUNTER_DROPPED_TICKS,
+	/** @brief Longest gap between consecutive DVFS passes, in microseconds.
+	 *
+	 * Measured start-to-start across DVFSChange() calls, so it is the interval the DVFS PID
+	 * controllers actually ran at. They assume 1000 us; a larger value means a cycle was
+	 * delayed or skipped. A maximum since the last clear, not an average.
+	 */
+	DVFS_COUNTER_MAX_PERIOD_US,
+	/** @brief Longest duration of a single DVFS pass, in microseconds.
+	 *
+	 * Time spent inside DVFSChange(). Under throttling each pass reprograms the PLL and the
+	 * voltage regulator, so this grows; as it approaches the 1000 us period the loop starts
+	 * delaying its own next cycle. Also a maximum since the last clear.
+	 */
+	DVFS_COUNTER_MAX_PASS_US,
+	/** @brief Number of counters in this bank */
+	DVFS_COUNTER_COUNT,
 };
 
 /** @brief Host request for generic counter operations
@@ -814,7 +843,7 @@ struct char_gddr_therm_trip_enabled_submsg {
  * @details Payload is a single uint32_t with two interpretations:
  * - Value == 0: Restore the default update interval
  * - Any other value: Set the update interval to this value in milliseconds, subject to the
- *   bounds enforced by the handler
+ *   minimum enforced by the handler
  *
  * The new interval takes effect on the next expiry of the telemetry timer and is reflected
  * in the @ref TAG_UPDATE_TELEM_SPEED telemetry tag.

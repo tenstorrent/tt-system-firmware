@@ -905,14 +905,10 @@ ZTEST(msgqueue, test_msg_type_set_telemetry_interval)
 	zassert_equal(get_telem_interval(), 50,
 		      "TAG_UPDATE_TELEM_SPEED should report the new interval");
 
-	/* Both bounds are inclusive. */
+	/* The minimum is inclusive. There is no upper bound. */
 	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MIN_MS);
 	push_msg_success("Minimum interval should be accepted");
 	zassert_equal(get_telem_interval(), TELEM_UPDATE_INTERVAL_MIN_MS);
-
-	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MAX_MS);
-	push_msg_success("Maximum interval should be accepted");
-	zassert_equal(get_telem_interval(), TELEM_UPDATE_INTERVAL_MAX_MS);
 
 	/* 0 restores the compiled-in default. */
 	push_set_telem_interval(0);
@@ -921,6 +917,10 @@ ZTEST(msgqueue, test_msg_type_set_telemetry_interval)
 		      "Interval should return to the default");
 }
 
+/* Rejection is only reachable when the minimum is above 1: at a minimum of 1 the only smaller
+ * value is 0, which is the restore-default request rather than an out-of-range one.
+ */
+#if TELEM_UPDATE_INTERVAL_MIN_MS > 1
 ZTEST(msgqueue, test_msg_type_set_telemetry_interval_invalid)
 {
 	/* Establish a known non-default interval to detect any clobbering below. */
@@ -928,14 +928,8 @@ ZTEST(msgqueue, test_msg_type_set_telemetry_interval_invalid)
 	push_msg_success();
 	zassert_equal(get_telem_interval(), 200);
 
-	/* Out-of-range values are rejected and must leave the running interval untouched. */
 	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MIN_MS - 1);
 	push_msg_failure("Interval below the minimum should be rejected");
-	zassert_equal(get_telem_interval(), 200,
-		      "A rejected interval must not change the running interval");
-
-	push_set_telem_interval(TELEM_UPDATE_INTERVAL_MAX_MS + 1);
-	push_msg_failure("Interval above the maximum should be rejected");
 	zassert_equal(get_telem_interval(), 200,
 		      "A rejected interval must not change the running interval");
 
@@ -943,5 +937,6 @@ ZTEST(msgqueue, test_msg_type_set_telemetry_interval_invalid)
 	push_set_telem_interval(0);
 	push_msg_success();
 }
+#endif
 
 ZTEST_SUITE(msgqueue, NULL, NULL, test_setup, NULL, NULL);
