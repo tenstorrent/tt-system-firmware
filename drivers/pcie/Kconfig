@@ -1,0 +1,40 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+menu "Tenstorrent PCIe drivers"
+
+config TT_GRENDEL_PCIE
+	bool "Grendel Keraunos PCIe endpoint init (SiVal libdriver_pcie.a)"
+	depends on SOC_TT_KERAUNOS_SMC
+	depends on DT_HAS_TENSTORRENT_GRENDEL_PCIE_ENABLED
+	default n
+	select LOG
+	help
+	  Wrapper around SiVal libdriver_pcie.a. Does not use Zephyr
+	  CONFIG_PCIE.
+
+if TT_GRENDEL_PCIE
+
+config TT_GRENDEL_PCIE_HW_INIT
+	bool "Run SiVal PCIe bring-up in this image"
+	default n
+	help
+	  When y, PRE_KERNEL_2 init runs the blocking SiVal state machine
+	  (RESET through ENUM_READY). Enable in the image that trains the
+	  link. Later images should leave this n so the device exists
+	  without retraining a link already brought up. Device init still
+	  verifies link status either way.
+
+config TT_GRENDEL_PCIE_INIT_PRIORITY
+	int "Grendel PCIe device init priority"
+	default 50
+	help
+	  PRE_KERNEL_2 priority for the PCIe device.
+
+module = TT_GRENDEL_PCIE
+module-str = tt_grendel_pcie
+source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GRENDEL_PCIE
+
+endmenu
