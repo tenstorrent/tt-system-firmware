@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * d2d0 carries the emulation bypasses and d2d1 deliberately does not, so the
+ * test can tell the flags are coming from devicetree rather than being applied
+ * unconditionally by the driver.
+ *
+ * The split is reused for the transfer path: only d2d0 names a DMA channel, so
+ * a run exercises both the DMA route and the CPU-store fallback and the two
+ * have to agree on what ends up in SRAM.
+ */
+
+&d2d0 {
+	status = "okay";
+	dmas = <&dma0 0>;
+	dma-names = "fw";
+	bypass-phy;
+	bypass-vreg;
+	disable-sideband;
+};
+
+&d2d1 {
+	status = "okay";
+};
