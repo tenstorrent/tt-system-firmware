@@ -1,0 +1,65 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_D2D
+	bool "Tenstorrent Grendel D2D firmware loader"
+	default y
+	depends on DT_HAS_TENSTORRENT_GRENDEL_D2D_ENABLED
+	help
+	  Enable the die-to-die (D2D) firmware loader for Tenstorrent Grendel.
+	  The driver writes a firmware image into a D2D tile's Rocket SRAM,
+	  fills in the configuration block that firmware reads at startup, and
+	  releases the Rocket to run it.
+
+if TT_D2D
+
+config TT_D2D_INIT_PRIO
+	int
+	default 75
+	help
+	  Initialization priority of the D2D driver. Nothing is touched at init
+	  time, so this only has to leave the device available before any
+	  application code that loads firmware into it.
+
+config TT_D2D_VERIFY_LOAD
+	bool "Read back the image after loading"
+	default y
+	help
+	  Read the firmware image back out of D2D SRAM and compare it against
+	  the source before releasing the Rocket. Catches a bad or unmapped
+	  SRAM window as a load failure rather than as an unexplained failure
+	  to train the link later on. Costs one extra read per word.
+
+config TT_D2D_FW_BLOB
+	bool "Link the D2D firmware image into this build"
+	help
+	  Assemble a D2D firmware binary into the image and export it as
+	  _binary_d2d_fw_bin_start, _binary_d2d_fw_bin_end and
+	  _binary_d2d_fw_bin_size.
+
+	  The image is not part of this repository: it arrives in the Sival
+	  tarball drop as its own bundle entry, deliberately kept out of the
+	  library that consumes it so that the two can be revised separately.
+	  This option is what makes the firmware something the system firmware
+	  build supplies, rather than something a prebuilt library carries.
+
+	  Leave this off in a build that has no image to link; the driver
+	  itself is happy to load a buffer from anywhere.
+
+config TT_D2D_FW_BLOB_PATH
+	string "D2D firmware image"
+	depends on TT_D2D_FW_BLOB
+	default "zephyr/blobs/d2d_fw.bin"
+	help
+	  Where to find the firmware image. A relative path is taken from the
+	  root of the tt-system-firmware module, which is where west blobs
+	  fetch unpacks the drop.
+
+	  The build fails if the file is missing or its length is not a
+	  multiple of four bytes.
+
+module = TT_D2D
+module-str = tt_d2d
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_D2D
