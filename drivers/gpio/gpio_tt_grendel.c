@@ -12,6 +12,15 @@
 
 #include <platform.h>
 
+/*
+ * TODO: Temporary shim to resolve header names for Keraunos
+ * (prefixed types, absolute _REG_ADDR). Remove when proper SiVal drop
+ * is received with shared header naming scheme.
+ */
+#ifdef PLATFORM_KER_SMC
+typedef SMC_CPU_GPIO_WRAP_GPIO_0_CONTROL_reg_u GPIO_CTRL_CONTROL_reg_u;
+#endif
+
 struct gpio_grendel_config {
 	/* gpio_driver_config needs to be first */
 	struct gpio_driver_config common;
