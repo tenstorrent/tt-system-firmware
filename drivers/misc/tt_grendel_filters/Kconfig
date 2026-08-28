@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+if DT_HAS_TENSTORRENT_GRENDEL_AXI_FILTER_ENABLED
+
+module = TT_GRENDEL_AXI_FILTER
+module-str = tt_grendel_axi_filter
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # DT_HAS_TENSTORRENT_GRENDEL_AXI_FILTER_ENABLED
