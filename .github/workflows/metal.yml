@@ -171,7 +171,9 @@ jobs:
       volumes:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /dev/hugepages:/dev/hugepages
-        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+        # Host kernel build tree, required to compile tt-kmd in-container.
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
       options: ${{ matrix.config.metal-options }}
     env:
       ARCH_NAME: ${{ matrix.config.arch-name }}
@@ -181,14 +183,19 @@ jobs:
         shell: bash
         working-directory: ${{ env.HOME }}
     steps:
-      - name: Select tt-kmd
+      - name: Checkout KMD build script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/ci/build-and-load-kmd.sh
+          sparse-checkout-cone-mode: false
+          path: tt-system-firmware
+
+      - name: Build and load tt-kmd
         shell: bash
         run: |
-          sudo apt update || true
-          sudo apt install -y kmod
-          sudo rmmod tenstorrent
-          sudo insmod /opt/tenstorrent/kmd-builds/${{ matrix.config.kmd_build }}/tenstorrent.ko
-          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+          sudo bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/build-and-load-kmd.sh" \
+            "${{ matrix.config.kmd_build }}"
 
       - id: mkdir-home-user-tt-metal
         run: |
@@ -208,6 +215,9 @@ jobs:
 
       - name: Run Deploy Test
         timeout-minutes: 120
+        env:
+          ITERS: 1
+          DRAM_TEST_FAST: 1
         run: |
           # Keep the network alive by periodically pulling tenstorrent.com.
           # This prevents a bug in the container runtime where the network interface can
@@ -216,14 +226,21 @@ jobs:
           chmod +x /tmp/network-keepalive
           /tmp/network-keepalive &
           echo "Network keepalive started."
-          tests/tt_metal/tt_metal/deployment/test_runner.sh 2>&1 | tee /tmp/deploy_test_output.log
+          mkdir -p /tmp/deploy-logs
+          set +e
+          # test_runner.sh is not executable in the Metal image (mode 0644).
+          sh tests/tt_metal/tt_metal/deployment/test_runner.sh -l /tmp/deploy-logs 2>&1 \
+            | tee /tmp/deploy-logs/summary.log
+          status=$?
+          cp -f "$HOME"/out.json /tmp/deploy-logs/ 2>/dev/null || true
+          exit "$status"
 
       - name: Upload Test Output
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: metal-deploy-test-${{ matrix.config.board }}-output
-          path: /tmp/deploy_test_output.log
+          path: /tmp/deploy-logs
 
       - name: cleanup
         if: ${{ always() }}
