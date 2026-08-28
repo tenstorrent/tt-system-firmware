@@ -19,6 +19,18 @@
 };
 
 &{/soc} {
+	smc_inbound_filter: axi-filter@c0015000 {
+		compatible = "tenstorrent,grendel-axi-filter";
+		reg = <0x0 0xc0015000 0x0 0x200>;
+		entry-stride = <0x20>;
+	};
+
+	smc_outbound_filter: axi-filter@c0016000 {
+		compatible = "tenstorrent,grendel-axi-filter";
+		reg = <0x0 0xc0016000 0x0 0x100>;
+		entry-stride = <0x20>;
+	};
+
 	host_boot_state: scratch-reg@c0010160 {
 		/* SCRATCH[12] */
 		compatible = "tenstorrent,scratch-reg";

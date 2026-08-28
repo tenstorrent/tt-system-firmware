@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent Grendel AXI fabric filter bank
+
+compatible: "tenstorrent,grendel-axi-filter"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  entry-stride:
+    type: int
+    required: true
+    description: Distance in bytes between adjacent filter entries.
