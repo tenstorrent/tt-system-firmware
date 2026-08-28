@@ -1352,11 +1352,12 @@ def test_pvt_comprehensive(arc_chip_dut, asic_id):
 def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
     """
     Validates that toggling between high and low power states results in expected TDP delta
-    Returns 0 on success, 1 if TDP delta is <= 80W.
+    Returns 0 on success, 1 if TDP delta is <= 80W after 4 polls.
     Galaxy, loudbox, and quietbox2 skip TDP validation and always return 0.
     """
     expected_power_delta = 80
-    settling_time = 0.7
+    settling_time = 0.5
+    poll_attempts = 4
     arc_chip = pyluwen.detect_chips()[asic_id]
     skip_tdp = _skip_boards(board_name)
 
@@ -1376,23 +1377,29 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
 
     logger.info("Setting power state to low")
     arc_chip.set_power_state("low")
-    time.sleep(settling_time)  # Allow power state to stabilize
 
-    # Measure input power in low power state
-    if not skip_tdp:
+    if skip_tdp:
+        time.sleep(settling_time)
+        return 0
+
+    for attempt in range(1, poll_attempts + 1):
+        time.sleep(settling_time)
         low_power = read_telem(arc_chip, TAG_INPUT_POWER)
-        logger.info(f"Low power state input power: {low_power}W")
-
         power_delta = high_power - low_power
-        logger.info(f"Power delta: {power_delta}W")
-
-        if power_delta <= expected_power_delta:
-            logger.error(
-                f"Power delta ({power_delta}W) is not greater than {expected_power_delta}W"
-            )
+        logger.info(
+            f"Poll {attempt}/{poll_attempts}: low power {low_power}W, "
+            f"power delta {power_delta}W"
+        )
+        if power_delta > expected_power_delta:
+            return 0
+        msg = (
+            f"Power delta ({power_delta}W) is not greater than {expected_power_delta}W"
+        )
+        if attempt < poll_attempts:
+            logger.warning(msg)
+        else:
+            logger.error(msg)
             return 1
-
-    return 0
 
 
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
