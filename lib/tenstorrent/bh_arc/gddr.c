@@ -42,16 +42,20 @@ static const struct device *const arc_dma_dev = DEVICE_DT_GET_OR_NULL(DT_NODELAB
 #endif
 static const struct device *dma_noc = DEVICE_DT_GET(DT_NODELABEL(dma1));
 
-/* This is the default noc2axi instance we want to run the MRISC FW on */
-#define MRISC_FW_NOC2AXI_PORT 0
-
 /*
- * gddr0 runs its MRISC FW on noc2axi port 2 (NoC 0-11) instead of the default
- * port 0 (NoC 0-0); all other GDDR instances stay on the default port.
+ * noc2axi port used to load MRISC FW for each GDDR instance.
+ * Maps to NoC 0 coordinates:
+ *   gddr0: port 0 (0-0),  gddr1: port 1 (0-10),
+ *   gddr2: port 1 (0-4),  gddr3: port 1 (0-7),
+ *   gddr4: port 0 (9-11), gddr5: port 0 (9-3),
+ *   gddr6: port 0 (9-8),  gddr7: port 0 (9-6)
  */
+static const uint8_t kMriscFwNoc2AxiPort[] = {0, 1, 1, 1, 0, 0, 0, 0};
+BUILD_ASSERT(ARRAY_SIZE(kMriscFwNoc2AxiPort) == NUM_GDDR);
+
 uint8_t get_gddr_mrisc_noc2axi_port(uint8_t gddr_inst)
 {
-	return (gddr_inst == 0) ? 2 : MRISC_FW_NOC2AXI_PORT;
+	return kMriscFwNoc2AxiPort[gddr_inst];
 }
 
 #define MRISC_SETUP_TLB       13
