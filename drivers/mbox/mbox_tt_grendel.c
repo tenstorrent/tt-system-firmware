@@ -11,6 +11,18 @@
 
 #include "platform.h"
 
+/*
+ * TODO: Temporary shim to resolve header names for Keraunos
+ * (prefixed types, absolute _REG_ADDR). Remove when proper SiVal drop
+ * is received with shared header naming scheme.
+ */
+#ifdef PLATFORM_KER_SMC
+typedef SMC_CPU_SMC_OUTBOUND_MAILBOX_0_STATUS_reg_u SMC_MAILBOX_STATUS_reg_u;
+typedef SMC_CPU_SMC_OUTBOUND_MAILBOX_0_IRQEN_reg_u SMC_MAILBOX_IRQEN_reg_u;
+typedef SMC_CPU_SMC_INBOUND_MAILBOX_0_IRQP_reg_u SMC_MAILBOX_IRQP_reg_u;
+typedef SMC_CPU_SMC_CPU_CTRL_RESET_CTRL_reg_u SMC_CPU_CTRL_RESET_CTRL_reg_u;
+#endif
+
 /**
  * @file
  * @brief Driver for Tenstorrent Grendel SMC Mailbox
