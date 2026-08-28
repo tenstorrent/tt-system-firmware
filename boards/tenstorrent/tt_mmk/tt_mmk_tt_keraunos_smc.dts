@@ -31,13 +31,13 @@
 
 &i3c1 {
 	status = "okay";
-	input-clock-frequency = <1500000000>;
+	input-clock-frequency = <200000000>;
 	i3c-scl-hz = <1000000>;
 	i2c-scl-hz = <400000>;
 
-	remoteproc: remoteproc@88fc1fe8fa15 {
+	remoteproc: remoteproc@0a7c0013f001 {
 		compatible = "tenstorrent,smc-remoteproc";
-		/* No static address, PID of 0x88fc1fe8fa15 */
-		reg = <0x0 0x88fc 0x1fe8fa15>;
+		/* No static address, PID of 0x0a7c0013f001 */
+		reg = <0x0 0x0a7c 0x0013f001>;
 	};
 };
