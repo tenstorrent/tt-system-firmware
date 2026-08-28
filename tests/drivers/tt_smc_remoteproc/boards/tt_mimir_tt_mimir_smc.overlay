@@ -12,7 +12,7 @@
 	status = "okay";
 	input-clock-frequency = <DT_FREQ_M(150)>;
 	i3c-scl-hz = <DT_FREQ_M(12)>; /* 12 MHz I3C SCL frequency */
-	i2c-scl-hz = <DT_FREQ_K(300)>; /* 400 kHz I2C SCL frequency */
+	i2c-scl-hz = <DT_FREQ_K(300)>; /* 300 kHz I2C SCL frequency */
 
 	remoteproc: remoteproc@88fc1fe8fa15 {
 		/* GPIO 61 is boot gpio */

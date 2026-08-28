@@ -1,0 +1,10 @@
+#include <freq.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/*
+ * Move RAM to start at 0xc0066400 for secondary SMCs, as this is the first load
+ * address the bootrom supports.
+ */
+&ram0 {
+	reg = <0x0 0xc0066400 0x0 0xf4c00>;
+};
