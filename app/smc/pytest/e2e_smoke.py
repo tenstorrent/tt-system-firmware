@@ -3,6 +3,7 @@
 # Copyright (c) 2024 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import logging
 import os
 import shutil
@@ -2114,6 +2115,111 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     if restore.returncode != 0:
         logger.warning(
             f"Failed to clear {ETH_SPEED_PATH} (rc={restore.returncode}); "
+            f"SPI flash may be left modified: "
+            f"{restore.stderr.decode(errors='replace')}"
+        )
+    else:
+        wait_arc_boot(asic_id, timeout=60)
+
+
+def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
+    """
+    Exercise the PCIe generation override that ccfgovr merges into
+    FwTable.pci{0,1}_property_table.max_pcie_speed.
+
+    Negotiated host link gen is slot-dependent, so this test does not
+    require a Gen 5 slot. It drives the paths that would fail if the
+    override were mis-handled:
+
+    - `bh-mod` rejects a generation the SerDes firmware does not accept
+      before touching flash.
+    - Writing a supported generation on the EP instance and letting
+      `bh-mod` reset the chip leaves ARC coming back up, with `bh-mod get`
+      showing the override.
+    - `bh-mod res` clears the override.
+    """
+    bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
+    if not os.path.isfile(bh_mod):
+        pytest.skip("bh-mod not found (PATH or ~/bh-mod)")
+
+    reject = subprocess.run(
+        [bh_mod, "set", "pci0_property_table.max_pcie_speed=7"],
+        capture_output=True,
+        check=False,
+    )
+    assert reject.returncode != 0, (
+        "bh-mod set pci0_property_table.max_pcie_speed=7 should have been "
+        f"rejected; stdout={reject.stdout.decode(errors='replace')!r} "
+        f"stderr={reject.stderr.decode(errors='replace')!r}"
+    )
+
+    listing = subprocess.run(
+        [
+            bh_mod,
+            "get",
+            "-f",
+            "json",
+            "pci0_property_table.pcie_mode",
+            "pci1_property_table.pcie_mode",
+        ],
+        capture_output=True,
+        check=False,
+    )
+    assert listing.returncode == 0, (
+        f"bh-mod get pcie_mode failed, rc={listing.returncode}; "
+        f"stdout={listing.stdout.decode(errors='replace')!r} "
+        f"stderr={listing.stderr.decode(errors='replace')!r}"
+    )
+    modes = json.loads(listing.stdout.decode())
+
+    def is_ep(entry):
+        default = str(entry.get("default", "")).upper()
+        return default in ("EP", "1")
+
+    path = next(
+        (
+            f"pci{inst}_property_table.max_pcie_speed"
+            for inst in (0, 1)
+            if is_ep(modes.get(f"pci{inst}_property_table.pcie_mode", {}))
+        ),
+        None,
+    )
+    if path is None:
+        pytest.skip("no PCIe endpoint instance in cmfwcfg")
+
+    write = subprocess.run(
+        [bh_mod, "--reset-timeout=60s", "set", f"{path}=4"],
+        capture_output=True,
+        check=False,
+    )
+    assert write.returncode == 0, (
+        f"bh-mod set {path}=4 failed, rc={write.returncode}; "
+        f"stdout={write.stdout.decode(errors='replace')!r} "
+        f"stderr={write.stderr.decode(errors='replace')!r}"
+    )
+    wait_arc_boot(asic_id, timeout=60)
+
+    verify = subprocess.run(
+        [bh_mod, "get", "-f", "json", path],
+        capture_output=True,
+        check=False,
+    )
+    assert verify.returncode == 0, (
+        f"bh-mod get {path} failed, rc={verify.returncode}; "
+        f"stdout={verify.stdout.decode(errors='replace')!r} "
+        f"stderr={verify.stderr.decode(errors='replace')!r}"
+    )
+    row = json.loads(verify.stdout.decode())[path]
+    assert str(row.get("override")) == "4", f"expected override {path}=4, got {row!r}"
+
+    restore = subprocess.run(
+        [bh_mod, "--reset-timeout=60s", "res", path],
+        capture_output=True,
+        check=False,
+    )
+    if restore.returncode != 0:
+        logger.warning(
+            f"Failed to clear {path} (rc={restore.returncode}); "
             f"SPI flash may be left modified: "
             f"{restore.stderr.decode(errors='replace')}"
         )
