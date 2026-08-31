@@ -1,0 +1,9 @@
+common:
+  platform_allow:
+    - native_sim
+  tags:
+    - drivers
+tests:
+  drivers.misc.tt_grendel_filter:
+    # Private SiVal SDK tarball is not in CI. Revert when it is a west blob.
+    skip: true
