@@ -9,21 +9,6 @@
 
 #include "platform.h"
 
-/*
- * TODO: Temporary shim to resolve header names for Keraunos
- * (prefixed types, absolute _REG_ADDR). Remove when proper SiVal drop
- * is received with shared header naming scheme.
- */
-#ifdef PLATFORM_KER_SMC
-typedef SMC_CPU_UART_WRAP0_UART_CTRL_reg_u UART_CTRL_reg_u;
-typedef SMC_CPU_I3C_WRAP_0_I3C_CTRL_I3C_RESET_CTRL_STATUS_reg_u
-	I3C_CTRL_I3C_RESET_CTRL_STATUS_reg_u;
-typedef SMC_CPU_I3C_WRAP_0_I3C_CTRL_PINSTRAPS_GROUP_1A_reg_u I3C_CTRL_PINSTRAPS_GROUP_1A_reg_u;
-typedef SMC_CPU_RESET_UNIT_PERIPHERAL_RESETS_reg_u
-	SMC_WRAP_RESET_UNIT_MASTER_PERIPHERAL_RESETS_reg_u;
-#define SMC_CPU_CTRL_LOCAL_BASE_REG_DEFAULT 0
-#endif
-
 #define UART_INIT_IF_OKAY(n, ...)                                                                  \
 	do {                                                                                       \
 		if (DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(uart##n))) {                              \

@@ -41,3 +41,7 @@
 		reg = <0x0 0x88fc 0x1fe8fa15>;
 	};
 };
+
+&pcie0 {
+	status = "okay";
+};

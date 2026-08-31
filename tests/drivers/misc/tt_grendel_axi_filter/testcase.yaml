@@ -1,0 +1,7 @@
+common:
+  platform_allow:
+    - native_sim
+  tags:
+    - drivers
+tests:
+  drivers.misc.tt_grendel_axi_filter: {}

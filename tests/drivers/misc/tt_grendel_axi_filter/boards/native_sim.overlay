@@ -1,0 +1,10 @@
+/*
+ * DT instance compiles the driver. Tests program a host buffer, not this MMIO.
+ */
+/ {
+	axi-filter@c0015000 {
+		compatible = "tenstorrent,grendel-axi-filter";
+		reg = <0xc0015000 0x40>;
+		entry-stride = <0x20>;
+	};
+};
