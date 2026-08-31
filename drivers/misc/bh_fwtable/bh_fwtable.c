@@ -418,6 +418,20 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 			data->fw_table.has_eth_property_table = true;
 		}
 
+		if (ovr.has_pci0_property_table && ovr.pci0_property_table.has_max_pcie_speed) {
+			LOG_INF("CCFGOVR override: pci0_property_table.max_pcie_speed = %u",
+				ovr.pci0_property_table.max_pcie_speed);
+			data->fw_table.pci0_property_table.max_pcie_speed =
+				ovr.pci0_property_table.max_pcie_speed;
+		}
+
+		if (ovr.has_pci1_property_table && ovr.pci1_property_table.has_max_pcie_speed) {
+			LOG_INF("CCFGOVR override: pci1_property_table.max_pcie_speed = %u",
+				ovr.pci1_property_table.max_pcie_speed);
+			data->fw_table.pci1_property_table.max_pcie_speed =
+				ovr.pci1_property_table.max_pcie_speed;
+		}
+
 		return;
 	}
 

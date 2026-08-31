@@ -48,6 +48,9 @@ static const struct device *const fwtable_dev = DEVICE_DT_GET(FWTABLE_NODE);
 #define DEFAULT_TDP_LIMIT 150U
 /* Stands in for a cmfwcfg that pins the link speed, as the Galaxy tables do. */
 #define DEFAULT_ETH_SPEED 200U
+/* Distinct per instance so a pci0 override cannot silently rewrite pci1. */
+#define DEFAULT_PCI0_SPEED 0U
+#define DEFAULT_PCI1_SPEED 5U
 
 static void write_fd(size_t slot, const char *tag, uint32_t spi_addr, uint32_t image_size)
 {
@@ -119,6 +122,28 @@ static size_t encode_eth_speed_override(uint8_t *out, size_t out_size, uint32_t 
 	return encode_override(&ovr, out, out_size);
 }
 
+static size_t encode_pci_speed_override(uint8_t *out, size_t out_size, uint8_t inst, uint32_t speed)
+{
+	FwTableOverride ovr = FwTableOverride_init_zero;
+
+	switch (inst) {
+	case 0U:
+		ovr.has_pci0_property_table = true;
+		ovr.pci0_property_table.has_max_pcie_speed = true;
+		ovr.pci0_property_table.max_pcie_speed = speed;
+		break;
+	case 1U:
+		ovr.has_pci1_property_table = true;
+		ovr.pci1_property_table.has_max_pcie_speed = true;
+		ovr.pci1_property_table.max_pcie_speed = speed;
+		break;
+	default:
+		zassert_unreachable("invalid instance");
+	}
+
+	return encode_override(&ovr, out, out_size);
+}
+
 static size_t encode_gddr_therm_trip_override(uint8_t *out, size_t out_size, bool enabled)
 {
 	FwTableOverride ovr = FwTableOverride_init_zero;
@@ -175,6 +200,8 @@ static void reset_fwtable(void)
 	t->chip_limits.tdp_limit = DEFAULT_TDP_LIMIT;
 	t->eth_property_table.has_eth_speed_override = true;
 	t->eth_property_table.eth_speed_override = DEFAULT_ETH_SPEED;
+	t->pci0_property_table.max_pcie_speed = DEFAULT_PCI0_SPEED;
+	t->pci1_property_table.max_pcie_speed = DEFAULT_PCI1_SPEED;
 }
 
 /**
@@ -299,6 +326,48 @@ ZTEST(bh_fwtable_ccfgovr, test_eth_speed_override_of_zero_asks_for_auto_train)
 	zassert_equal(
 		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override, 0U,
 		"expected the override to set eth_speed_override=0 (auto)");
+}
+
+/**
+ * @brief Test that pci0 max_pcie_speed can be capped at Gen 4
+ *
+ * pci1 must keep its cmfwcfg value: the two instances are independent.
+ */
+ZTEST(bh_fwtable_ccfgovr, test_pci0_max_pcie_speed_override_applies)
+{
+	uint8_t body[16];
+	size_t body_len = encode_pci_speed_override(body, sizeof(body), 0U, 4U);
+	struct ccfgovr_bank_hdr hdr = {.magic = CCFGOVR_MAGIC, .seq = 2};
+
+	write_bank(BANK_A_ADDR, &hdr, body, body_len);
+
+	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->pci0_property_table.max_pcie_speed,
+		      4U, "expected override to set pci0 max_pcie_speed=4");
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->pci1_property_table.max_pcie_speed,
+		      DEFAULT_PCI1_SPEED,
+		      "pci0 override must not clobber pci1's cmfwcfg max_pcie_speed");
+}
+
+/**
+ * @brief Test that pci1 max_pcie_speed can be set to Gen 5
+ *
+ * pci0 must keep its cmfwcfg value.
+ */
+ZTEST(bh_fwtable_ccfgovr, test_pci1_max_pcie_speed_override_applies)
+{
+	uint8_t body[16];
+	size_t body_len = encode_pci_speed_override(body, sizeof(body), 1U, 5U);
+	struct ccfgovr_bank_hdr hdr = {.magic = CCFGOVR_MAGIC, .seq = 2};
+
+	write_bank(BANK_A_ADDR, &hdr, body, body_len);
+
+	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->pci1_property_table.max_pcie_speed,
+		      5U, "expected override to set pci1 max_pcie_speed=5");
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->pci0_property_table.max_pcie_speed,
+		      DEFAULT_PCI0_SPEED,
+		      "pci1 override must not clobber pci0's cmfwcfg max_pcie_speed");
 }
 
 /**

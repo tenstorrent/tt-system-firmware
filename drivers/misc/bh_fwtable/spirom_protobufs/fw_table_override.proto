@@ -19,11 +19,13 @@ message FwTableOverride {
    * (FwTable field 1) is deliberately reserved here so tt-mod cannot forge
    * a bundle version.
    */
-  reserved 1, 4, 6, 7, 8, 10;
+  reserved 1, 4, 6, 10;
 
   optional ChipLimits chip_limits = 2;
   optional FeatureEnable feature_enable = 3;
   optional DramTable dram_table = 5;
+  optional PciPropertyTable pci0_property_table = 7;
+  optional PciPropertyTable pci1_property_table = 8;
   optional EthPropertyTable eth_property_table = 9;
 
   message ChipLimits {
@@ -47,6 +49,18 @@ message FwTableOverride {
     reserved 1, 2;
 
     optional uint32 soft_harvest_dram_mask = 3;
+  }
+
+  message PciPropertyTable {
+
+    reserved 2, 3, 4, 5, 6, 7;
+
+    /*
+     * PCIe generation cap passed to CntlInitV2. 0 is unconstrained
+     * (Gen 5 default). Distinct from `bh-mod res`, which
+     * clears the override and restores the cmfwcfg value.
+     */
+    optional uint32 max_pcie_speed = 1;
   }
 
   message EthPropertyTable {
