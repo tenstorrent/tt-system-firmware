@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GR_SMC
+	bool "Grendel SMC support library"
+	help
+	  Enable Tenstorrent Grendel SMC support library components.
+
+config TT_GR_SMC_LOG_BRIDGE
+	bool "Grendel SMC log bridge"
+	depends on LOG
+	select TT_GR_SMC
+	default n
+	help
+	  Provide strong log_message/log_with_location overrides for Grendel
+	  firmware logging hooks and route them into Zephyr logging.
+
+if TT_GR_SMC_LOG_BRIDGE
+
+module = TT_GR_SMC_LOG_BRIDGE
+module-str = Grendel SMC log bridge
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GR_SMC_LOG_BRIDGE
