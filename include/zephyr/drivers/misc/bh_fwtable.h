@@ -30,17 +30,18 @@ const struct _FwTable *tt_bh_fwtable_get_fw_table(const struct device *dev);
 const struct _FlashInfoTable *tt_bh_fwtable_get_flash_info_table(const struct device *dev);
 const struct _ReadOnly *tt_bh_fwtable_get_read_only_table(const struct device *dev);
 
-/* Board type values extracted from board_id */
-#define BOARDTYPE_ORION_SLT 0x37
-#define BOARDTYPE_P100A 0x43
-#define BOARDTYPE_P150A 0x40
-#define BOARDTYPE_P150  0x41
-#define BOARDTYPE_P150C 0x42
-#define BOARDTYPE_P300  0x44
-#define BOARDTYPE_P300A 0x45
-#define BOARDTYPE_P300C 0x46
-#define BOARDTYPE_UBB   0x47
-#define BOARDTYPE_GALAXY_BIN6 0x02 /* 00-00202-1-xxxxxxxx */
+/* Board type values extracted from board_id (bits 36-55, up to 5 hex digits) */
+#define BOARDTYPE_FROM_BOARD_ID(board_id) ((uint32_t)(((board_id) >> 36) & 0xFFFFF))
+#define BOARDTYPE_ORION_SLT               0x37
+#define BOARDTYPE_P100A                   0x43
+#define BOARDTYPE_P150A                   0x40
+#define BOARDTYPE_P150                    0x41
+#define BOARDTYPE_P150C                   0x42
+#define BOARDTYPE_P300                    0x44
+#define BOARDTYPE_P300A                   0x45
+#define BOARDTYPE_P300C                   0x46
+#define BOARDTYPE_UBB                     0x47
+#define BOARDTYPE_GALAXY_BIN6             0x202
 
 typedef enum {
 	PcbTypeOrionSLT = 0,
@@ -52,7 +53,7 @@ typedef enum {
 } PcbType;
 
 PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev);
-uint8_t tt_bh_fwtable_get_board_type(const struct device *dev);
+uint32_t tt_bh_fwtable_get_board_type(const struct device *dev);
 bool tt_bh_fwtable_is_p300_left_chip(void);
 uint32_t tt_bh_fwtable_get_asic_location(const struct device *dev);
 void tt_bh_fwtable_apply_ccfgovr(const struct device *dev);

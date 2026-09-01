@@ -90,7 +90,7 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 	}
 
 	/* Extract board type from board_id */
-	uint8_t board_type = (uint8_t)((data->read_only_table.board_id >> 36) & 0xFF);
+	uint32_t board_type = BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);
 
 	/* Figure out PCB type from board type */
 	switch (board_type) {
@@ -122,8 +122,8 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 	return pcb_type;
 }
 
-/* Returns the board type extracted from board_id (bits 36-43) */
-uint8_t tt_bh_fwtable_get_board_type(const struct device *dev)
+/* Returns the board type extracted from board_id (bits 36-55) */
+uint32_t tt_bh_fwtable_get_board_type(const struct device *dev)
 {
 	struct bh_fwtable_data *data = dev->data;
 
@@ -132,7 +132,7 @@ uint8_t tt_bh_fwtable_get_board_type(const struct device *dev)
 	}
 
 	/* Extract board type from board_id */
-	return (uint8_t)((data->read_only_table.board_id >> 36) & 0xFF);
+	return BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);
 }
 
 /* Reads GPIO6 to determine whether it is p300 left chip. GPIO6 is only set on p300 left chip. */
