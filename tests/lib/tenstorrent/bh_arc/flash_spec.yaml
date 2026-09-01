@@ -22,18 +22,22 @@ alignment:
   flash_device_size: 0x200000   # 2 MiB — matches native_sim default flash size
   flash_block_size: 4096
 
-images:
-  - name: boardcfg
-    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/read_only.bin
+tables:
+  - header_addr: 0x0
+    images:
+      - name: boardcfg
+        binary: $BUILD_DIR/smc/generated_board_cfg/P150B/read_only.bin
 
-  - name: cmfwcfg
-    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/fw_table.bin
+      - name: cmfwcfg
+        binary: $BUILD_DIR/smc/generated_board_cfg/P150B/fw_table.bin
 
-  - name: flshinfo
-    binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
+      - name: flshinfo
+        binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
 
-# tt_boot_fs.py requires a failover entry. Reuse flash_info.bin as a dummy.
-fail_over_image:
-  name: failover
-  binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
-  offset: 0x10000000
+  # tt_boot_fs.py requires a failover table. Reuse flash_info.bin as a dummy.
+  - header_addr: 0x4000
+    images:
+      - name: failover
+        binary: $BUILD_DIR/smc/generated_board_cfg/P150B/flash_info.bin
+        offset: 0x10000000
+        executable: true

@@ -21,6 +21,7 @@ The bundle contains:
 """
 
 import argparse
+import re
 from pathlib import Path
 import subprocess
 import yaml
@@ -30,6 +31,12 @@ import os
 import shutil
 import sys
 from intelhex import IntelHex
+
+# board_metadata.yaml is the sole source of the bootfs-name values used in
+# recovery hex filenames. Constrain those names to a safe character set so a
+# malformed metadata entry cannot escape @p outdir via path components like
+# `../`. (SAST: sanitize the string that lands in the file path.)
+_SAFE_BOOTFS_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 try:
     from yaml import CSafeLoader as SafeLoader
@@ -112,8 +119,14 @@ def generate_recovery_assets(boardname, board_data, outdir, signing_key):
 
         # Now, generate bootfs hex images for every ASIC on the board
         for asic in board_data:
+            bootfs_name = asic["bootfs-name"]
+            if not _SAFE_BOOTFS_NAME_RE.fullmatch(bootfs_name):
+                raise ValueError(
+                    f"bootfs-name '{bootfs_name}' in board_metadata.yaml "
+                    "must match [A-Za-z0-9._-]+"
+                )
             bootfs = tt_boot_fs.FileImage.load(
-                smc_build_dir / f"{asic['bootfs-name']}.yaml", env
+                smc_build_dir / f"{bootfs_name}.yaml", env
             ).to_boot_fs()
             # Extract the DMFW from the bootfs. We will use this DMFW in recovery, so that
             # the DMFW loaded into the DMC does not attempt to update itself to the copy in EEPROM
@@ -123,16 +136,22 @@ def generate_recovery_assets(boardname, board_data, outdir, signing_key):
             ih = IntelHex()
             # At 0x0, place the tt-boot-fs. This will be written to eeprom.
             ih.loadfile(bootfs_hex, format="hex")
-            if "dmfwimg" in bootfs.entries:
-                dmfw = bootfs.entries["dmfwimg"].data
+            try:
+                _, dmfw_entry = bootfs.find_by_tag("dmfwimg")
+            except KeyError:
+                # Boards that delete the dmfwimg partition ship no DMC firmware
+                # in the bootfs, so there is nothing to place in DMC flash.
+                dmfw_entry = None
+            if dmfw_entry is not None:
                 # Place mcuboot at 0x800_0000, which is the start of DMC flash
                 ih.loadfile(
-                    dmc_build_dir / "mcuboot" / "zephyr" / "zephyr.hex", format="hex"
+                    dmc_build_dir / "mcuboot" / "zephyr" / "zephyr.hex",
+                    format="hex",
                 )
                 # Place DMFW at 0x801_0000, which is the start of slot0
-                ih.frombytes(dmfw, 0x8010000)
-                # Write file out to 'recovery.hex'
-            with open(outdir / f"{asic['bootfs-name']}_recovery.hex", "w") as f:
+                ih.frombytes(dmfw_entry.data, 0x8010000)
+            # Write file out to 'recovery.hex'. bootfs_name is whitelisted above.
+            with open(outdir / f"{bootfs_name}_recovery.hex", "w") as f:
                 ih.write_hex_file(f)
         # Now, we need to copy the protobuf files in. These assets are needed
         # To patch the read only board ID section with a new serial number

@@ -94,7 +94,10 @@ def set_tensix_disable_count(
     bootfs_bytes = tt_boot_fs.extract_all(bootfs_b16_path, input_base64=True)
 
     bootfs = tt_boot_fs.BootFs.from_binary(bootfs_bytes)
-    cmfwcfg_entry = bootfs.entries[BOOTFS_FWTABLE_NAME]
+    table_idx = fwtable_tooling.get_cmfwcfg_table(bootfs)
+    if table_idx is None:
+        return os.EX_DATAERR
+    cmfwcfg_entry = bootfs.tables[table_idx].entries[BOOTFS_FWTABLE_NAME]
 
     cmfwcfg_addr = cmfwcfg_entry.spi_addr
     cmfwcfg_size = len(cmfwcfg_entry.data)
@@ -147,7 +150,7 @@ def set_tensix_disable_count(
         tt_boot_fs.hexdump(cmfwcfg_addr, cmfwcfg_bytes, checksum=True)
 
     # Update the bootfs with the new cmfwcfg
-    bootfs.entries[BOOTFS_FWTABLE_NAME].data = cmfwcfg_bytes
+    bootfs.tables[table_idx].entries[BOOTFS_FWTABLE_NAME].data = cmfwcfg_bytes
 
     bootfs_bytes = bootfs.to_binary(True)
 

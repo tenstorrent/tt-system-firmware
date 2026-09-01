@@ -18,25 +18,29 @@
 extern "C" {
 #endif
 
-#define TT_BOOT_FS_FD_HEAD_ADDR            (0x0)
-/* These defines must change when BOOT_START or DESC_REGION_SIZE change in python toolchain */
+#define TT_BOOT_FS_HEADER_ADDR             (0x120000)
+#define TT_BOOT_FS_ROM_HEAD_ADDR           (0x0)
 #define TT_BOOT_FS_SECURITY_BINARY_FD_ADDR (0x3FE0)
 #define TT_BOOT_FS_FAILOVER_HEAD_ADDR      (0x4000)
 #define TT_BOOT_FS_IMAGE_TAG_SIZE          8
+#define TT_BOOT_FS_TABLE_COUNT_MAX         16
 
 struct device;
 
+/**
+ * @brief Boot filesystem file flags
+ */
 typedef struct {
 	uint32_t image_size: 24;
 	uint32_t invalid: 1;
 	uint32_t executable: 1;
 	uint32_t fd_flags_rsvd: 6;
-} fd_flags;
+} tt_boot_fs_flags;
 
 typedef union {
 	uint32_t val;
-	fd_flags f;
-} fd_flags_u;
+	tt_boot_fs_flags f;
+} tt_boot_fs_flags_u;
 
 typedef struct {
 	uint32_t signature_size: 12;
@@ -48,11 +52,15 @@ typedef union {
 	security_fd_flags f;
 } security_fd_flags_u;
 
-/* File descriptor */
+/**
+ * @brief Boot filesystem file descriptor
+ *
+ * Describes a binary stored in the boot filesystem.
+ */
 typedef struct {
 	uint32_t spi_addr;
 	uint32_t copy_dest;
-	fd_flags_u flags;
+	tt_boot_fs_flags_u flags;
 	uint32_t data_crc;
 	security_fd_flags_u security_flags;
 	uint8_t image_tag[TT_BOOT_FS_IMAGE_TAG_SIZE];
@@ -79,39 +87,47 @@ typedef enum {
 	TT_BOOT_FS_CHK_FAIL,
 } tt_checksum_res_t;
 
-extern tt_boot_fs boot_fs_data;
+/**
+ * @brief Multi-table boot filesystem header
+ *
+ * Located at @ref TT_BOOT_FS_HEADER_ADDR in flash. The three fixed fields are
+ * immediately followed on flash by a @p table_count -length array of
+ * ``uint32_t`` entries giving the flash address of each descriptor table. The
+ * trailing array is not modelled as a flexible array member to keep the type
+ * usable from C++ translation units that include this header.
+ */
+typedef struct {
+	uint32_t magic;
+	uint32_t version;
+	uint32_t table_count;
+} tt_boot_fs_header;
 
-uint32_t tt_boot_fs_next(uint32_t prev);
-
-int tt_boot_fs_mount(tt_boot_fs *tt_boot_fs, tt_boot_fs_read hal_read, tt_boot_fs_write hal_write,
-		     tt_boot_fs_erase hal_erase);
-
-int tt_boot_fs_add_file(const tt_boot_fs *tt_boot_fs, tt_boot_fs_fd fd_data,
-			const uint8_t *image_data_src, bool isFailoverEntry,
-			bool isSecurityBinaryEntry);
+#define TT_BOOT_FS_MAGIC           0x54544246 /* 'TTBF' in ASCII */
+#define TT_BOOT_FS_CURRENT_VERSION 1
 
 uint32_t tt_boot_fs_cksum(uint32_t cksum, const uint8_t *data, size_t size);
 
-int tt_boot_fs_get_file(const tt_boot_fs *tt_boot_fs, const uint8_t *tag, uint8_t *buf,
-			size_t buf_size, size_t *file_size);
-
 /**
- * @brief List file descriptors in boot filesystem
+ * @brief List file descriptors in a boot filesystem
  *
- * Read up to @p nfds file descriptors from a boot filesystem on flash device @p flash_dev starting
- * from index @p offset. If reading from @p flash_dev causes an error, then this function will
- * return `-EIO`. If @p flash_dev does not contain a valid boot fs, this function returns `-ENXIO`.
- * On success, the number of file descriptors is returned.
+ * Reads up to @p nfds file descriptors from the boot filesystem on flash
+ * device @p dev, starting from descriptor index @p offset. Descriptors from
+ * every table advertised by the boot filesystem header are streamed in table
+ * order, so callers do not need to enumerate tables themselves.
  *
- * This function may also be used to count the number of files that exist on a boot filesystem if @p
- * fds is `NULL`. In that case, the `nfds` and `offset` parameters are ignored.
+ * If @p fds is `NULL`, this function counts the number of files in the boot
+ * filesystem instead of returning any descriptors. In that mode, @p nfds and
+ * @p offset are ignored.
  *
- * @param dev Flash device containing the boot filesystem
- * @param fds Output array to store file descriptors, or `NULL` to count files
- * @param nfds Maximum number of file descriptors to read
- * @param offset File index from which to begin reading file descriptors
+ * @param[in]  dev    Flash device containing the boot filesystem
+ * @param[out] fds    (optional) Array to store descriptors into. Pass `NULL`
+ *                    to count files instead.
+ * @param[in]  nfds   Maximum number of descriptors to write into @p fds.
+ * @param[in]  offset Descriptor index from which to begin reading.
  *
- * @return the number of file descriptors successfully read or a negative error code on failure.
+ * @retval >=0     Number of descriptors read (or total file count when @p fds is `NULL`).
+ * @retval -EIO    Flash read failure.
+ * @retval -ENXIO  @p dev does not contain a valid boot filesystem.
  */
 int tt_boot_fs_ls(const struct device *dev, tt_boot_fs_fd *fds, size_t nfds, size_t offset);
 

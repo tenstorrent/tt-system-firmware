@@ -12,8 +12,13 @@
  * devicetrees when the new fixed bootloader scheme is used.
  */
 
-partitions {
+/*
+ * The descriptors in this bootfs are read by the SMC rom for booting.
+ * The data here should not change after manufacturing.
+ */
+rom-bootfs {
 	compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
+	header-addr = <0x0>;
 	#address-cells = <1>;
 	#size-cells = <1>;
 
@@ -71,6 +76,47 @@ partitions {
 	};
 
 	/*
+	 * Note- there is a gap here to account for the failover partition, which
+	 * is defined in its own bootfs.
+	 */
+
+	/*
+	 * boardcfg has to stay in this table. tt-flash preserves a board's
+	 * existing configuration across an update by reading this descriptor
+	 * off the chip, and released versions only scan the table at 0x0.
+	 * Moving it into the mutable bootfs would make every one of them fail
+	 * with "Couldn't find boardcfg on chip".
+	 */
+	boardcfg: partition@d4000 {
+		label = "boardcfg";
+		reg = <0xd4000 DT_SIZE_K(4)>;
+		binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/read_only.bin";
+		read-only;
+	};
+
+	/*
+	 * bmfw has to stay in this table. 18.x bootloader looks up this tag
+	 * and only scans the descriptor table at 0x0. Moving it into
+	 * the mutable bootfs would make every in-field upgrade from
+	 * 18.x leave DMFW on the pre-BL2 image, because the running
+	 * DMC would never find the ROM-update application.
+	 */
+	bmfw: partition@d6000 {
+		label = "bmfw";
+		reg = <0xd6000 DT_SIZE_K(68)>;
+		binary-path = "$BUILD_DIR/dmc-rom-update/zephyr/zephyr.signed.bin";
+	};
+};
+
+failover-bootfs {
+	compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
+	header-addr = <0x4000>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+	flash-device-size = <DT_SIZE_M(64)>;
+	flash-block-size = <DT_SIZE_K(4)>;
+
+	/*
 	 * MCUBoot partition- will be loaded by bootrom.
 	 * tagged as fail_over_image in tt-boot-fs,
 	 * used if the primary image fails to validate.
@@ -82,13 +128,16 @@ partitions {
 		offset = <0x10000000>;
 		executable;
 	};
+};
 
-	boardcfg: partition@d4000 {
-		label = "boardcfg";
-		reg = <0xd4000 DT_SIZE_K(4)>;
-		binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/read_only.bin";
-		read-only;
-	};
+/* Partitions below here are expected to be updated in the field. */
+mutable-bootfs {
+	compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
+	header-addr = <0x170000>;
+	#address-cells = <1>;
+	#size-cells = <1>;
+	flash-device-size = <DT_SIZE_M(64)>;
+	flash-block-size = <DT_SIZE_K(4)>;
 
 	origcfg: partition@d5000 {
 		label = "origcfg";
@@ -97,23 +146,12 @@ partitions {
 		read-only;
 	};
 
-	/* Partition for bootloader update image */
-	bmfw: partition@d6000 {
-		label = "bmfw";
-		reg = <0xd6000 DT_SIZE_K(68)>;
-		binary-path = "$BUILD_DIR/dmc-rom-update/zephyr/zephyr.signed.bin";
-	};
-
 	/* Partition for new MCUBoot image */
 	blupdate: partition@e7000 {
 		label = "blupdate";
 		reg = <0xe7000 DT_SIZE_K(64)>;
 		binary-path = "$BUILD_DIR/mcuboot-bl2/zephyr/zephyr.bin";
 	};
-
-	/* Leave a gap for future fixed partitions, if needed. */
-
-	/* Partitions below here are expected to be updated in the field. */
 
 	ccfgovr_a: partition@1f5000 {
 		label = "ccfgovra";

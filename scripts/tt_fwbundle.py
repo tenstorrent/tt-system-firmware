@@ -138,31 +138,34 @@ def ls_fw_bundle(bundle: Path, board: str = "", output_json: bool = False):
             print(hdr)
             bar = "-" * len(hdr.expandtabs())
             print(bar)
-            for entry in bootfs:
-                print(
-                    f"{entry['spi_addr']:08x}\t{entry['image_tag']:<8}\t{entry['size']}\t"
-                    f"{entry['copy_dest']:08x}\t{entry['data_crc']:08x}\t"
-                    f"{entry['flags']:08x}\t{entry['fd_crc']:08x}\t{entry['digest']:.10}"
-                )
+            for address, table in bootfs.items():
+                print(f"Table at offset 0x{address:08x}:")
+                for entry in table:
+                    print(
+                        f"{entry['spi_addr']:08x}\t{entry['image_tag']:<8}\t{entry['size']}\t"
+                        f"{entry['copy_dest']:08x}\t{entry['data_crc']:08x}\t"
+                        f"{entry['flags']:08x}\t{entry['fd_crc']:08x}\t{entry['digest']:.10}"
+                    )
     else:
         print(json.dumps(fw_data, indent=2))
 
 
-def build_bootfs_digest_map(bootfs: list[dict]) -> dict[str, str]:
+def build_bootfs_digest_map(bootfs: dict[int, list[dict]]) -> dict[str, str]:
     """
     Builds a map of image tags to digests from a tt-boot-fs listing.
     We prefer digest if present, as these do not change when the image is
     re-signed. If digest is not present, we fall back to using data_crc.
     """
     digest_map = {}
-    for entry in bootfs:
-        tag = entry["image_tag"]
-        digest = entry.get("digest")
-        if digest and digest != "N/A":
-            digest_map[tag] = digest
-        else:
-            # Fall back to data_crc if digest not present
-            digest_map[tag] = f"crc-{entry['data_crc']:08x}"
+    for table in bootfs.values():
+        for entry in table:
+            tag = entry["image_tag"]
+            digest = entry.get("digest")
+            if digest and digest != "N/A":
+                digest_map[tag] = digest
+            else:
+                # Fall back to data_crc if digest not present
+                digest_map[tag] = f"crc-{entry['data_crc']:08x}"
     return digest_map
 
 

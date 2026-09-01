@@ -57,7 +57,17 @@ def main():
 
     # Add the swap-info, image-ok, and copy-done bytes (8 bytes each)
     trailer += bytearray([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])  # swap-info
-    trailer += bytearray([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])  # copy-done
+    # A confirmed trailer also ships copy-done set. MCUBoot writes that byte
+    # itself the first time it boots the slot, which would leave the trailer on
+    # flash one byte away from the one in the firmware bundle and no longer
+    # matching its own boot filesystem CRC. tt-flash rewrites a boot-critical
+    # image in that state, so the recovery trailer would be erased and rewritten
+    # by every subsequent update -- on exactly the boards that have already had
+    # to fall back to recovery. Shipping the byte set makes MCUBoot's write a
+    # no-op and keeps the trailer identical to the bundle for good.
+    trailer += bytearray(
+        [0x01 if args.confirmed else 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+    )  # copy-done
     trailer += bytearray(
         [0x01 if args.confirmed else 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
     )  # image-ok

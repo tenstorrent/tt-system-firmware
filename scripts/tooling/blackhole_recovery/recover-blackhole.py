@@ -92,16 +92,13 @@ def set_board_serial(hex_file, board_name, board_id):
     protobuf_bin = open(
         work_dir / "generated_proto_bins" / board_name / "read_only.bin", "rb"
     ).read()
-    bootfs_entries = tt_boot_fs.BootFs.from_binary(bootfs_data).entries
-    boardcfg = bootfs_entries["boardcfg"]
+    bootfs = tt_boot_fs.BootFs.from_binary(bootfs_data)
+    boardcfg_idx, boardcfg = bootfs.find_by_tag("boardcfg")
     # Recreate boardcfg entry with the protobuf data
-    order = list(bootfs_entries.keys())
-    order.remove("failover")
-    failover = bootfs_entries["failover"]
-    bootfs_entries["boardcfg"] = tt_boot_fs.FsEntry(
+    bootfs.tables[boardcfg_idx].entries["boardcfg"] = tt_boot_fs.FsEntry(
         False, "boardcfg", protobuf_bin, boardcfg.spi_addr, 0x0, False
     )
-    bootfs_data = tt_boot_fs.BootFs(order, bootfs_entries, failover).to_intel_hex(True)
+    bootfs_data = tt_boot_fs.BootFs(bootfs.header, bootfs.tables).to_intel_hex(True)
     with open(work_dir / "new_serial.hex", "wb") as f:
         f.write(bootfs_data)
     original = IntelHex(hex_file)

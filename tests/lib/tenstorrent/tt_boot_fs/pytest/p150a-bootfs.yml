@@ -1,0 +1,51 @@
+name: P150A-1
+product_name: P150A
+gen_name: P150A
+alignment:
+  flash_device_size: 16777216
+  flash_block_size: 4096
+tables:
+- header_addr: 0
+  images:
+  - name: cmfw
+    binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
+    offset: 268435456
+    executable: true
+    source: '81920'
+  - name: safeimg
+    binary: $BUILD_DIR/recovery/zephyr/zephyr.signed.bin
+    source: '212992'
+  - name: boardcfg
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150A/read_only.bin
+    provisioning_only: true
+    source: $END - 0x1000
+  - name: bmfw
+    binary: $BUILD_DIR/dmc/zephyr/zephyr.signed.bin
+    padto: 53248
+- header_addr: 16384
+  images:
+  - name: failover
+    binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
+    offset: 268435456
+    executable: true
+    source: '737280'
+- header_addr: 1507328
+  images:
+  - name: cmfwcfg
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150A/fw_table.bin
+  - name: origcfg
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150A/fw_table.bin
+  - name: ethfwcfg
+    binary: $ROOT/zephyr/blobs/tt_blackhole_erisc_params.bin
+  - name: ethfw
+    binary: $ROOT/zephyr/blobs/tt_blackhole_erisc.bin
+  - name: memfwcfg
+    binary: $ROOT/zephyr/blobs/tt_blackhole_gddr_params_P150A.bin
+  - name: memfw
+    binary: $ROOT/zephyr/blobs/tt_blackhole_gddr_init.bin
+  - name: ethsdreg
+    binary: $ROOT/zephyr/blobs/tt_blackhole_serdes_eth_fwreg.bin
+  - name: ethsdfw
+    binary: $ROOT/zephyr/blobs/tt_blackhole_serdes_eth_fw.bin
+  - name: flshinfo
+    binary: $BUILD_DIR/smc/generated_board_cfg/P150A/flash_info.bin

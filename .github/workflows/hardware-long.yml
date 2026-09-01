@@ -36,6 +36,7 @@ jobs:
     outputs:
       matrix-config: ${{ steps.gen.outputs.matrix-config }}
       mfg-matrix-config: ${{ steps.gen.outputs.mfg-matrix-config }}
+      recovery-matrix-config: ${{ steps.gen.outputs.recovery-matrix-config }}
       p150a-kmd: ${{ steps.gen.outputs.p150a-kmd }}
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +46,14 @@ jobs:
           # Manufacturing test only runs on the standalone PCIe cards (p100a, p150a, p300a)
           MFG_MATRIX_CONFIG="$(jq -c '[.bh[] | select(.board == "p100a" or .board == "p150a" or .board == "p300a")]' .github/ci_boards.json)"
           echo "mfg-matrix-config=$MFG_MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
+          # Recovery runs everywhere the bootfs is either a single image or a
+          # p300 left/right pair, which is every Blackhole system except the
+          # loudbox.
+          echo "recovery-matrix-config=$(jq -c \
+            '[.bh[] | select(.board == "p100a" or .board == "p150a" \
+              or .board == "p300a" or .board == "quietbox2" \
+              or .board == "bh-galaxy-revc")]' \
+            .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
           echo "p150a-kmd=$(jq -r '.bh[] | select(.board == "p150a") | .kmd_build' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
   e2e-stress-test:
@@ -110,6 +119,79 @@ jobs:
 
       - name: Print DMC RTT logs
         # DMC RTT goes over the STLink/SWD adapter; galaxy/loudbox/quietbox2 have none.
+        if: >-
+          ${{ failure()
+          && matrix.config.board != 'bh-galaxy'
+          && matrix.config.board != 'bh-galaxy-revc'
+          && matrix.config.board != 'loudbox'
+          && matrix.config.board != 'quietbox2' }}
+        working-directory: tt-system-firmware
+        run: |
+          echo "DMC RTT logs:"
+          python3 ./scripts/dmc_rtt.py -n
+
+      - name: Dump SMC state
+        if: ${{ failure() }}
+        working-directory: tt-system-firmware
+        run: |
+          echo "SMC state dump:"
+          python3 ./scripts/dump_smc_state.py
+
+  recovery-test:
+    name: BH Recovery Test on ${{ matrix.config.board }}
+    needs: [gen-config]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.recovery-matrix-config) }}
+    runs-on: ${{ matrix.config.board }}
+    container:
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+      options: '--device /dev/tenstorrent --device /dev/bus/usb --device /dev/ipmi0 --privileged'
+    steps:
+      - name: Cleanup State
+        if: ${{ always() }}
+        run: |
+          # Print state of current directory
+          ls -la
+          # Clean up any files left over from previous steps
+          rm -rf *
+
+      - name: Checkout
+        uses: actions/checkout@v4.2.2
+        with:
+          path: tt-system-firmware
+
+      - name: Prepare Container
+        uses: ./tt-system-firmware/.github/workflows/prepare-container
+        with:
+          app-path: tt-system-firmware
+          kmd-version: ${{ matrix.config.kmd_build }}
+
+      - name: run-recovery-test
+        run: |
+          tt-system-firmware/scripts/ci/run-e2e.sh -t recovery \
+            -p 0 ${{ matrix.config.board }}
+
+      - name: Upload Recovery Test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Recovery test results (${{ matrix.config.board }})
+          include-hidden-files: true
+          path: |
+            zephyr/twister-recovery/**/device.log
+            zephyr/twister-recovery/**/handler.log
+            zephyr/twister-recovery/**/twister_harness.log
+            zephyr/twister-recovery/**/zephyr.dts
+            zephyr/twister-recovery/**/.config
+            zephyr/twister-recovery/twister.log
+            zephyr/twister-recovery/twister.json
+
+      - name: Print DMC RTT logs
         if: >-
           ${{ failure()
           && matrix.config.board != 'bh-galaxy'

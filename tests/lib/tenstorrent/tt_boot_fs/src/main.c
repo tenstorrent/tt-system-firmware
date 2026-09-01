@@ -13,12 +13,36 @@
 
 #define FLASH_NODE DT_NODELABEL(flashcontroller0)
 
+#define TT_BOOT_FS_FD_HEAD_ADDR 0x0
+
 const struct device *FLASH_DEVICE = DEVICE_DT_GET(FLASH_NODE);
 
 #define MAX_FDS CONFIG_TT_BOOT_FS_IMAGE_COUNT_MAX
 
 #define IMAGE_ADDR     0x14000
 #define TEST_ALIGNMENT 0x1000
+
+static void publish_bootfs_header(uint32_t version, uint32_t table_count)
+{
+	int rc = flash_erase(FLASH_DEVICE, TT_BOOT_FS_HEADER_ADDR, 4096);
+
+	zassert_equal(rc, 0, "Failed to erase bootfs header area in flash");
+
+	tt_boot_fs_header header = {
+		.magic = TT_BOOT_FS_MAGIC,
+		.version = version,
+		.table_count = table_count,
+	};
+
+	rc = flash_write(FLASH_DEVICE, TT_BOOT_FS_HEADER_ADDR, &header, sizeof(header));
+	zassert_equal(rc, 0, "Failed to write bootfs header to flash");
+
+	uint32_t table_addr = TT_BOOT_FS_FD_HEAD_ADDR;
+
+	rc = flash_write(FLASH_DEVICE, TT_BOOT_FS_HEADER_ADDR + sizeof(header), &table_addr,
+			 sizeof(table_addr));
+	zassert_equal(rc, 0, "Failed to write bootfs table address to flash");
+}
 
 static void setup_fd(tt_boot_fs_fd *fd, uint32_t spi_addr, uint32_t copy_dest, uint32_t flags,
 		     const char *tag, const uint8_t *img, size_t img_len)
@@ -47,6 +71,7 @@ static void *setup_bootfs(void)
 	uint8_t image_C[] = {0x73, 0x73, 0x42, 0x42};
 
 	uint32_t spi_addr = IMAGE_ADDR;
+
 #define ALIGN_UP(x, align) (((x) + ((align) - 1)) & ~((align) - 1))
 
 	setup_fd(&fds[0], spi_addr, 0x1000000, (sizeof(image_A) & 0xFFFFFF) | (1 << 25), "imageA",
@@ -95,6 +120,8 @@ static void *setup_bootfs(void)
 	zassert_equal(rc, 0, "Failed to write image_B to flash");
 	rc = flash_write(FLASH_DEVICE, fds[2].spi_addr, image_C, sizeof(image_C));
 	zassert_equal(rc, 0, "Failed to write image_C to flash");
+
+	publish_bootfs_header(TT_BOOT_FS_CURRENT_VERSION, 1);
 
 	return NULL;
 }
@@ -253,6 +280,25 @@ ZTEST(tt_boot_fs, test_find_fd_by_tag)
 					  "Case %zu: Returned FD tag does not match", i);
 		}
 	}
+}
+
+ZTEST(tt_boot_fs, test_header_validation_and_legacy_fallback)
+{
+	const uint8_t found_tag[8] = "imageA";
+
+	/* An erased header represents an image from before the multi-table format. */
+	int rc = flash_erase(FLASH_DEVICE, TT_BOOT_FS_HEADER_ADDR, 4096);
+
+	zassert_equal(rc, 0, "Failed to erase bootfs header area in flash");
+	zassert_equal(tt_boot_fs_find_fd_by_tag(FLASH_DEVICE, found_tag, NULL), 0,
+		      "Legacy fixed table addresses were not used");
+
+	publish_bootfs_header(TT_BOOT_FS_CURRENT_VERSION, TT_BOOT_FS_TABLE_COUNT_MAX + 1);
+	zassert_equal(tt_boot_fs_find_fd_by_tag(FLASH_DEVICE, found_tag, NULL), -ENXIO,
+		      "An excessive table count should be rejected");
+
+	/* Restore the valid header for any test that runs after this one. */
+	publish_bootfs_header(TT_BOOT_FS_CURRENT_VERSION, 1);
 }
 
 ZTEST_SUITE(tt_boot_fs, NULL, setup_bootfs, NULL, NULL, NULL);

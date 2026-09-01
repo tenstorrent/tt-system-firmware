@@ -11,10 +11,13 @@ from pcie_utils import rescan_pcie
 class TTFlashRunner(ZephyrBinaryRunner):
     """Runner for the tt_flash command"""
 
-    def __init__(self, cfg, force, allow_major_downgrades, tt_flash):
+    def __init__(
+        self, cfg, force, allow_major_downgrades, update_boot_images, tt_flash
+    ):
         super().__init__(cfg)
         self.force = force
         self.allow_major_downgrades = allow_major_downgrades
+        self.update_boot_images = update_boot_images
         # If file is passed, flash that. Otherwise flash update.fwbundle
         # in build dir
         if cfg.file:
@@ -39,6 +42,15 @@ class TTFlashRunner(ZephyrBinaryRunner):
             action="store_true",
             help="Allow major downgrades",
         )
+        parser.add_argument(
+            "--update-boot-images",
+            action="store_true",
+            help=(
+                "Force tt-flash to rewrite boot-critical images (cmfw, safeimg, "
+                "safetail, failover) instead of using its content-compare "
+                "skip_boot_critical shortcut."
+            ),
+        )
         parser.add_argument("--tt-flash", default="tt-flash", help="Path to tt-flash")
 
     @classmethod
@@ -47,6 +59,7 @@ class TTFlashRunner(ZephyrBinaryRunner):
             cfg,
             force=args.force,
             allow_major_downgrades=args.allow_major_downgrades,
+            update_boot_images=args.update_boot_images,
             tt_flash=args.tt_flash,
         )
 
@@ -79,5 +92,7 @@ class TTFlashRunner(ZephyrBinaryRunner):
             cmd.append("--force")
         if self.allow_major_downgrades:
             cmd.append("--allow-major-downgrades")
+        if self.update_boot_images:
+            cmd.append("--update-boot-images")
         self.logger.debug(f"Running {cmd}")
         self.check_call(cmd)

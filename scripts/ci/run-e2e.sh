@@ -82,10 +82,19 @@ echo "Building tt-fw-terminal..."
 make -C $TT_Z_P_ROOT/scripts/tooling -j$(nproc)
 
 if [[ "$TEST_SET" == *"e2e-flash"* ]]; then
-	# Run a full flash test, using tt-flash as the runner
+	# Run a full flash test, using tt-flash as the runner.
+	#
+	# --update-boot-images: force tt-flash to rewrite cmfw, safeimg, safetail,
+	# and failover on every CI run instead of using its skip_boot_critical
+	# content-compare shortcut. Some CI benches were getting stuck with
+	# stale/mismatched boot-critical images (test_mcuboot's failover path
+	# would fail because the failover slot didn't actually hold the current
+	# bundle's MCUBoot). Forcing the rewrite makes each CI run boot-critical
+	# state-independent. Remove once we understand why skip_boot_critical was
+	# false-matching those slots.
 	$ZEPHYR_BASE/scripts/twister -i -p $SMC_BOARD \
 		--tag e2e-flash -T $TT_Z_P_ROOT/app \
-		--west-flash="--force,--allow-major-downgrades" \
+		--west-flash="--force,--allow-major-downgrades,--update-boot-images" \
 		--west-runner tt_flash \
 		--device-testing -c \
 		--device-flash-timeout 240 \
@@ -94,6 +103,32 @@ if [[ "$TEST_SET" == *"e2e-flash"* ]]; then
 		--failure-script "$TT_Z_P_ROOT/scripts/smc_test_recovery.py --asic-id $ASIC_ID" \
 		--flash-before \
 		--outdir $ZEPHYR_BASE/twister-e2e-flash \
+		--extra-args=SB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$KEYFILE\" \
+		-ll DEBUG \
+		$@
+fi
+
+if [[ "$TEST_SET" == *"recovery"* ]]; then
+	# Corrupt the mutable main image, confirm the SMC falls back to recovery,
+	# reflash a good image, and confirm the ROM/failover tables are preserved.
+	#
+	# These tests take an unlaunched DUT and drive tt-flash themselves, so
+	# --flash-before below never actually flashes and the --west-flash flags
+	# never reach the runner. test_rom_and_failover_preserved_on_update puts the
+	# bench on the build under test itself for that reason; do not rely on the
+	# harness having done it.
+	$ZEPHYR_BASE/scripts/twister -i -p $SMC_BOARD \
+		--tag recovery -T $TT_Z_P_ROOT/app \
+		--west-flash="--force,--update-boot-images" \
+		--west-runner tt_flash \
+		--device-testing -c \
+		--device-flash-timeout 240 \
+		--pytest-args=--flash-timeout=240 \
+		--pytest-args=--asic-id=$ASIC_ID \
+		--device-serial-pty "$TT_Z_P_ROOT/scripts/smc_console.py -d $CONSOLE_DEV -p" \
+		--failure-script "$TT_Z_P_ROOT/scripts/smc_test_recovery.py --asic-id $ASIC_ID" \
+		--flash-before \
+		--outdir $ZEPHYR_BASE/twister-recovery \
 		--extra-args=SB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$KEYFILE\" \
 		-ll DEBUG \
 		$@

@@ -26,8 +26,29 @@ tests:
     extra_overlay_confs:
       - sysbuild/recovery.conf
   app.recovery-flash:
+    # Each parametrized corruption case does a bad flash + a good reflash,
+    # test_rom_and_failover_preserved_on_update adds three more, and
+    # test_released_tt_flash_still_flashes a pip install of the previous
+    # tt-flash release and one flash on top of that. On a single-ASIC card a
+    # flash is around a minute, so the sweep fits comfortably inside 15
+    # minutes. tt-flash has no way to address one chip, so on a galaxy every
+    # one of those flashes writes every PCIe-local ASIC on the tray and the
+    # budget has to cover the whole set.
+    timeout: 3600 # 1 hour
     sysbuild: true
     tags: recovery
+    # Wider than the p100a/p150a/p300a default above. Recovery is exercised on
+    # the galaxy too, which has no DMC and no SWD adapter; nothing here needs
+    # either, as the reset the payload corruption relies on goes through the
+    # KMD's reset ioctl. p300c covers the quietbox2, which is a pair of them and
+    # builds as an ordinary p300.
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
+      - tt_blackhole@p300c/tt_blackhole/smc
+      - tt_blackhole@galaxy/tt_blackhole/smc
+      - tt_blackhole@galaxy_revc/tt_blackhole/smc
     harness: pytest
     harness_config:
       pytest_root:

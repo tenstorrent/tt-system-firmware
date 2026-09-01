@@ -45,6 +45,15 @@ static const struct device *const fwtable_dev = DEVICE_DT_GET(FWTABLE_NODE);
 
 #define FD_AREA_ERASE_SIZE 0x1000U
 
+/*
+ * Local copy of the legacy ROM descriptor-table base address. Kept here so the
+ * test fixture can lay down an ad-hoc single-table boot filesystem at flash
+ * address 0 (matching the historical ROM-readable layout) without depending on
+ * a macro that was removed from <tenstorrent/tt_boot_fs.h> when the multi-table
+ * header at TT_BOOT_FS_HEADER_ADDR was introduced.
+ */
+#define TT_BOOT_FS_FD_HEAD_ADDR 0x0U
+
 #define DEFAULT_TDP_LIMIT 150U
 /* Stands in for a cmfwcfg that pins the link speed, as the Galaxy tables do. */
 #define DEFAULT_ETH_SPEED 200U
@@ -191,6 +200,28 @@ static void *suite_setup(void)
 
 	write_fd(0, "ccfgovra", BANK_A_ADDR, BANK_SIZE);
 	write_fd(1, "ccfgovrb", BANK_B_ADDR, BANK_SIZE);
+
+	/*
+	 * Publish a single-table boot-fs header so tt_boot_fs_ls() (which now
+	 * walks tables advertised at TT_BOOT_FS_HEADER_ADDR) can discover the
+	 * descriptors written above.
+	 */
+	rc = flash_erase(flash_dev, TT_BOOT_FS_HEADER_ADDR, FD_AREA_ERASE_SIZE);
+	zassert_equal(rc, 0, "flash_erase header failed with %d", rc);
+
+	tt_boot_fs_header header = {
+		.magic = TT_BOOT_FS_MAGIC,
+		.version = TT_BOOT_FS_CURRENT_VERSION,
+		.table_count = 1,
+	};
+	rc = flash_write(flash_dev, TT_BOOT_FS_HEADER_ADDR, &header, sizeof(header));
+	zassert_equal(rc, 0, "flash_write header failed with %d", rc);
+
+	uint32_t table_addr = TT_BOOT_FS_FD_HEAD_ADDR;
+
+	rc = flash_write(flash_dev, TT_BOOT_FS_HEADER_ADDR + sizeof(header), &table_addr,
+			 sizeof(table_addr));
+	zassert_equal(rc, 0, "flash_write table_addr failed with %d", rc);
 
 	return NULL;
 }

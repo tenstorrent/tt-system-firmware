@@ -1266,9 +1266,12 @@ def test_mcuboot(unlaunched_dut, asic_id):
     arc_chip.as_bh().spi_write(MCUBOOT_HEADER_ADDR, buf)
     # Reset the SMC to trigger the fallback
     del arc_chip  # Force re-detection of the chip
-    smi_reset_cmd = "tt-smi -r"
-    # tt-smi will fail here since it checks for valid telemetry after reset,
-    # we still need to run it to trigger the SMC reboot
+    # The reset is only needed to reboot the SMC. Every reset below leaves the
+    # chip in recovery mode, where it reports board ID 0x0 and tt-smi's
+    # post-reset device detection cannot succeed, so skip it: tt-umd 0.9.8
+    # spends ~300s retrying discovery before giving up. wait_arc_boot does the
+    # re-detection this test actually needs.
+    smi_reset_cmd = "tt-smi -r --no_reinit"
     subprocess.run(smi_reset_cmd.split(), capture_output=False, check=False)
     arc_chip = wait_arc_boot(asic_id, timeout=15)
     # Validate that the SMC has booted into the recovery image
@@ -1282,8 +1285,7 @@ def test_mcuboot(unlaunched_dut, asic_id):
     # descriptor
     arc_chip.as_bh().spi_write(0x0, buf)
     logger.info("Erased ROM header to force failover boot from recovery image")
-    # Reset the SMC to trigger the fallback. Note that we cannot check
-    # the return code here since tt-smi will fail due to missing telemetry.
+    # Reset the SMC to trigger the fallback.
     subprocess.run(smi_reset_cmd.split(), capture_output=False, check=False)
     arc_chip = wait_arc_boot(asic_id, timeout=15)
     with pytest.raises(Exception):
