@@ -20,7 +20,7 @@
  */
 struct board_expected {
 	const char *name;
-	uint8_t board_type; /* the top byte (bits 36-43) of board_id */
+	uint32_t board_type; /* bits 36-55 of board_id (up to 5 hex digits) */
 	uint32_t vendor_id;
 	uint32_t asic_fmax;
 	uint32_t asic_fmin;
@@ -115,7 +115,7 @@ static const struct board_expected *const known_boards[] = {
  * extracted from the loaded read_only table. Returns NULL for boards we
  * haven't characterized yet.
  */
-static const struct board_expected *expected_for_board_type(uint8_t board_type)
+static const struct board_expected *expected_for_board_type(uint32_t board_type)
 {
 	for (size_t i = 0; i < ARRAY_SIZE(known_boards); i++) {
 		if (known_boards[i]->board_type == board_type) {
@@ -135,7 +135,7 @@ static void *suite_setup(void)
 {
 	const struct device *dev = FWTABLE_DEV;
 	const struct _ReadOnly *ro = tt_bh_fwtable_get_read_only_table(dev);
-	uint8_t board_type = (uint8_t)((ro->board_id >> 36) & 0xFF);
+	uint32_t board_type = BOARDTYPE_FROM_BOARD_ID(ro->board_id);
 
 	expected = expected_for_board_type(board_type);
 	return (void *)expected;
