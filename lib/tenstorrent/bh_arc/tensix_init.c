@@ -87,7 +87,7 @@ static const struct device *const flash = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi
 
 void EnableTensixCG(bool broadcast, uint8_t noc_x, uint8_t noc_y)
 {
-	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.cg_en) {
+	if (!tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.cg_en) {
 		return;
 	}
 
