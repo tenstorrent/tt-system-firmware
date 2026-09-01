@@ -656,12 +656,11 @@ uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms)
 {
 	if (interval_ms == 0) {
 		interval_ms = TELEM_UPDATE_INTERVAL_DEFAULT_MS;
-	} else if (interval_ms < TELEM_UPDATE_INTERVAL_MIN_MS ||
-		   interval_ms > TELEM_UPDATE_INTERVAL_MAX_MS) {
+	} else if (interval_ms < TELEM_UPDATE_INTERVAL_MIN_MS) {
 		LOG_WRN("telemetry update interval %u ms rejected, must be 0 (restore default of "
-			"%d ms) or within [%d, %d] ms",
-			interval_ms, TELEM_UPDATE_INTERVAL_DEFAULT_MS, TELEM_UPDATE_INTERVAL_MIN_MS,
-			TELEM_UPDATE_INTERVAL_MAX_MS);
+			"%d ms) or at least %d ms",
+			interval_ms, TELEM_UPDATE_INTERVAL_DEFAULT_MS,
+			TELEM_UPDATE_INTERVAL_MIN_MS);
 		return 1;
 	}
 
