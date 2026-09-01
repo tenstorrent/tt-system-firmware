@@ -29,6 +29,9 @@ extern "C" {
 /** @brief Base address of the BUN2 staging area in SMC local address space */
 #define TT_BUN2_STAGING_AREA_ADDR 0xc0066400UL
 
+/** @brief Base address of the BUN3 staging area in SMC local address space */
+#define TT_BUN3_STAGING_AREA_ADDR 0xc0066400UL
+
 /** @brief AES-128-CBC */
 #define FW_BUNDLE_ENCRYPTION_TYPE_AES (0x01)
 
