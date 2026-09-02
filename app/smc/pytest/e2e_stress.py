@@ -35,6 +35,19 @@ try:
 except ImportError:
     pass  # we should have it from twister
 
+# ccfgovr (bh-mod override) helpers + telemetry tags shared with e2e_smoke.
+from e2e_smoke import (
+    read_telem,
+    wait_arc_boot,
+    _require_bh_mod,
+    _bh_mod_set,
+    _bh_mod_res,
+    _read_tdp_limit,
+    _reset_ccfgovr,
+    TAG_INPUT_POWER,
+    TAG_KERNEL_THROTTLER,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -597,3 +610,294 @@ def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
         f"tt-burnin failed with {burnin_process.returncode}"
     )
     logger.info("  Succeeded")
+
+
+# ---------------------------------------------------------------------------
+# ccfgovr (configurable firmware-table override) stress tests.
+#
+# These exercise the bh-mod override mechanism with the slow paths (tt-flash,
+# tt-smi resets, A/B bank alternation, extreme values, throttling). The quick
+# set/reset smoke check lives in e2e_smoke.py. Helpers are shared from there.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def ccfgovr_clean(asic_id):
+    """
+    Bracket a ccfgovr test with a clean override state: clear all persisted
+    overrides (and re-enumerate the chip) both before and after the test, so it
+    starts from firmware defaults and does not leak state to later tests. Yields
+    the bh-mod path. Non-autouse, so only ccfgovr tests are affected.
+    """
+    bh_mod = _require_bh_mod()
+    wait_arc_boot(asic_id)
+    _reset_ccfgovr(bh_mod, asic_id)
+    yield bh_mod
+    _reset_ccfgovr(bh_mod, asic_id)
+
+
+def test_ccfgovr_bh_mod(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    Test bh-mod can persist overrides in SPI flash via the A/B ccfgovr mechanism,
+    and that they are not overridden by tt-flash.
+
+    Covers:
+    - chip_limits.tdp_limit
+    - the kernel-throttler-at-AICLK-floor config
+      (feature_enable.kernel_throttler_at_floor_en and
+      chip_limits.kernel_throttler_stop_nops_freq), exposed through
+      TAG_KERNEL_THROTTLER telemetry:
+        - bit 0: feature enabled
+        - bits [31:16]: stop-NOPs frequency in MHz
+    """
+    bh_mod = ccfgovr_clean
+
+    # The fixture has already cleared overrides, so this is the FW default.
+    tdp_ref = _read_tdp_limit(asic_id)
+    logger.info(f"Reference tdp_limit_max: {tdp_ref}")
+
+    tdp_target = tdp_ref - 5
+    TARGET_STOP_FREQ = 800  # MHz, within [AICLK_FMIN_MIN=200, AICLK_FMIN_MAX=1400]
+    kt_expected = 1 | (TARGET_STOP_FREQ << 16)
+
+    # Persist overrides for both the TDP limit and the kernel throttler config.
+    result = _bh_mod_set(
+        bh_mod,
+        f"chip_limits.tdp_limit={tdp_target}",
+        "feature_enable.kernel_throttler_at_floor_en=true",
+        f"chip_limits.kernel_throttler_stop_nops_freq={TARGET_STOP_FREQ}",
+    )
+    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+
+    # Verify the overrides were applied by the running firmware.
+    chip = wait_arc_boot(asic_id)
+    measured_tdp = chip.get_telemetry().tdp_limit_max
+    assert measured_tdp == tdp_target, (
+        f"expected tdp_limit_max={tdp_target}, got {measured_tdp}"
+    )
+    measured_kt = read_telem(chip, TAG_KERNEL_THROTTLER)
+    logger.info(f"kernel_throttler after set: 0x{measured_kt:08x}")
+    assert measured_kt == kt_expected, (
+        f"kernel throttler config not applied: expected 0x{kt_expected:08x}, "
+        f"got 0x{measured_kt:08x}"
+    )
+
+    # Re-flash the firmware bundle and confirm the overrides survive.
+    unlaunched_dut.launch()
+    del chip  # force re-detection after the flash and reboot
+    chip = wait_arc_boot(asic_id, timeout=60)
+    measured_tdp_after_flash = chip.get_telemetry().tdp_limit_max
+    assert measured_tdp_after_flash == tdp_target, (
+        f"ccfgovr did not survive tt-flash: "
+        f"expected tdp_limit_max={tdp_target}, got {measured_tdp_after_flash}"
+    )
+    measured_kt_after_flash = read_telem(chip, TAG_KERNEL_THROTTLER)
+    logger.info(f"kernel_throttler after re-flash: 0x{measured_kt_after_flash:08x}")
+    assert measured_kt_after_flash == kt_expected, (
+        f"ccfgovr did not survive tt-flash: expected 0x{kt_expected:08x}, "
+        f"got 0x{measured_kt_after_flash:08x}"
+    )
+
+
+def test_ccfgovr_latest_set_wins(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    Repeatedly persist a new TDP override and verify the most recent value always
+    wins. This exercises the A/B bank alternation (each set lands in the other
+    bank with an incremented sequence number) from the host's point of view.
+    """
+    bh_mod = ccfgovr_clean
+    tdp_ref = _read_tdp_limit(asic_id)
+
+    for target in (tdp_ref - 5, tdp_ref - 8, tdp_ref - 3):
+        result = _bh_mod_set(bh_mod, f"chip_limits.tdp_limit={target}")
+        assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+
+        measured = wait_arc_boot(asic_id).get_telemetry().tdp_limit_max
+        assert measured == target, (
+            f"latest override did not win: expected {target}, got {measured}"
+        )
+        logger.info(f"ccfgovr latest-wins iteration applied tdp_limit={target}")
+
+
+def test_ccfgovr_persists_across_multiple_flashes(
+    ccfgovr_clean, unlaunched_dut, asic_id
+):
+    """
+    A persisted override must survive several consecutive tt-flash cycles, not
+    just one.
+    """
+    bh_mod = ccfgovr_clean
+    target = _read_tdp_limit(asic_id) - 7
+
+    result = _bh_mod_set(bh_mod, f"chip_limits.tdp_limit={target}")
+    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+
+    for i in range(3):
+        unlaunched_dut.launch()
+        chip = wait_arc_boot(asic_id, timeout=60)
+        measured = chip.get_telemetry().tdp_limit_max
+        assert measured == target, (
+            f"override did not survive flash {i}: expected {target}, got {measured}"
+        )
+        logger.info(f"ccfgovr survived tt-flash cycle {i} (tdp_limit={measured})")
+        del chip
+
+
+def test_ccfgovr_extreme_tdp_limit_is_safe(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    A ccfgovr override bypasses the ARC-message range validation used by
+    SET_TDP_LIMIT, so an absurd persisted TDP value must not brick the chip:
+    the firmware must still boot and remain responsive after a reset. Runtime
+    throttling clamps the effective limit downstream.
+    """
+    bh_mod = ccfgovr_clean
+
+    result = _bh_mod_set(bh_mod, "chip_limits.tdp_limit=100000")
+    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+
+    subprocess.run(
+        "tt-smi -r --eth_train_skip".split(), capture_output=True, check=False
+    )
+    chip = wait_arc_boot(asic_id)
+    # Telemetry must still be readable: the extreme override did not brick FW.
+    telemetry = chip.get_telemetry()
+    assert telemetry is not None, "telemetry unavailable after extreme TDP override"
+    logger.info(
+        f"chip responsive after extreme TDP override; "
+        f"tdp_limit_max telemetry={telemetry.tdp_limit_max}"
+    )
+    del chip
+
+
+def test_ccfgovr_tdp_limit_throttles(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    Functional check that a persisted TDP override actually reaches the power
+    throttler, not just telemetry.
+
+    The hard assertion is that the persisted limit is reflected in telemetry
+    (i.e. ccfgovr -> fw_table -> the running throttler config). For the power
+    measurement we compare against the *unconstrained* baseline rather than an
+    absolute value: at the high power state with no compute workload the board
+    sits at its high-power operating floor (well above any low ASIC TDP because
+    of board overhead), so a low limit can only ever throttle *relative* to a
+    high limit -- it cannot pull input power down to the ASIC TDP number.
+
+    NOTE: a strict input-power-vs-limit check would require a compute workload to
+    push the board above its floor; without one this asserts only that a lower
+    limit does not draw more than a high limit, and logs the delta.
+    """
+    bh_mod = ccfgovr_clean
+    HIGH_TDP = 300  # W, effectively unconstrained on supported boards
+    LOW_TDP = 75  # W
+    SETTLE_S = 1.0
+    NOISE_W = 5  # tolerance for measurement noise between the two readings
+
+    def _measure_high_power_input(limit):
+        assert _bh_mod_set(bh_mod, f"chip_limits.tdp_limit={limit}").returncode == 0, (
+            f"bh-mod set tdp_limit={limit} failed"
+        )
+        chip = wait_arc_boot(asic_id)
+        assert chip.get_telemetry().tdp_limit_max == limit, (
+            f"persisted TDP limit {limit}W not reflected in telemetry"
+        )
+        try:
+            chip.set_power_state("high")
+        except Exception:
+            pytest.skip("driver does not support power state control")
+        time.sleep(SETTLE_S)  # allow power to settle in the high state
+        power = read_telem(chip, TAG_INPUT_POWER)
+        del chip
+        return power
+
+    power_high = _measure_high_power_input(HIGH_TDP)
+    logger.info(f"input power @ {HIGH_TDP}W TDP limit: {power_high}W")
+
+    power_low = _measure_high_power_input(LOW_TDP)
+    logger.info(f"input power @ {LOW_TDP}W TDP limit: {power_low}W")
+
+    logger.info(f"TDP throttle delta (high - low): {power_high - power_low}W")
+    # A lower persisted limit must throttle, i.e. never draw *more* than the
+    # unconstrained baseline (within measurement noise).
+    assert power_low <= power_high + NOISE_W, (
+        f"lower TDP limit ({LOW_TDP}W) did not throttle: drew {power_low}W vs "
+        f"{power_high}W at {HIGH_TDP}W limit"
+    )
+
+
+def test_ccfgovr_res_all(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    `bh-mod res` (no args) clears every persisted override, returning the chip to
+    its firmware-default configuration.
+    """
+    bh_mod = ccfgovr_clean
+
+    # The fixture already cleared overrides, so this is the FW default.
+    default_tdp = _read_tdp_limit(asic_id)
+    logger.info(f"firmware-default tdp_limit_max: {default_tdp}")
+
+    target = default_tdp - 5
+    assert _bh_mod_set(bh_mod, f"chip_limits.tdp_limit={target}").returncode == 0, (
+        "bh-mod set failed"
+    )
+    measured = wait_arc_boot(asic_id).get_telemetry().tdp_limit_max
+    assert measured == target, (
+        f"override not applied: expected {target}, got {measured}"
+    )
+
+    res = _bh_mod_res(bh_mod)
+    assert res.returncode == 0, (
+        f"bh-mod res (all) failed, rc={res.returncode}: "
+        f"{res.stderr.decode(errors='replace')}"
+    )
+
+    measured = wait_arc_boot(asic_id).get_telemetry().tdp_limit_max
+    assert measured == default_tdp, (
+        f"res (all) did not restore default tdp_limit: "
+        f"expected {default_tdp}, got {measured}"
+    )
+
+
+def test_ccfgovr_res_specific(ccfgovr_clean, unlaunched_dut, asic_id):
+    """
+    Ensure resetting a specific parameter does not reset other parameters.
+    """
+    bh_mod = ccfgovr_clean
+
+    default_tdp = _read_tdp_limit(asic_id)
+
+    TARGET_STOP_FREQ = 800  # MHz, within [AICLK_FMIN_MIN=200, AICLK_FMIN_MAX=1400]
+    kt_expected = 1 | (TARGET_STOP_FREQ << 16)
+    tdp_target = default_tdp - 5
+
+    # Persist two independent overrides.
+    assert (
+        _bh_mod_set(
+            bh_mod,
+            f"chip_limits.tdp_limit={tdp_target}",
+            "feature_enable.kernel_throttler_at_floor_en=true",
+            f"chip_limits.kernel_throttler_stop_nops_freq={TARGET_STOP_FREQ}",
+        ).returncode
+        == 0
+    ), "bh-mod set failed"
+    wait_arc_boot(asic_id)
+
+    # Reset only the TDP override.
+    res = _bh_mod_res(bh_mod, "chip_limits.tdp_limit")
+    assert res.returncode == 0, (
+        f"bh-mod res <conf> failed, rc={res.returncode}: "
+        f"{res.stderr.decode(errors='replace')}"
+    )
+
+    chip = wait_arc_boot(asic_id)
+    measured_tdp = chip.get_telemetry().tdp_limit_max
+    measured_kt = read_telem(chip, TAG_KERNEL_THROTTLER)
+    del chip
+
+    assert measured_tdp == default_tdp, (
+        f"res <conf> should reset tdp_limit to default {default_tdp}, "
+        f"got {measured_tdp}"
+    )
+    assert measured_kt == kt_expected, (
+        f"res <conf> must not disturb other overrides: "
+        f"expected kt 0x{kt_expected:08x}, got 0x{measured_kt:08x}"
+    )

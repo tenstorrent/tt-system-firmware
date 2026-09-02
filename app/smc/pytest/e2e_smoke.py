@@ -1960,99 +1960,6 @@ def test_bindesc(arc_chip_dut, asic_id):
     logger.info(f"Bindesc version: 0x{bindesc_version:08x}")
 
 
-def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
-    """
-    Test bh-mod can persist overrides in SPI flash via the A/B ccfgovr mechanism,
-    and that they are not overridden by tt-flash.
-
-    Covers:
-    - chip_limits.tdp_limit
-    - the kernel-throttler-at-AICLK-floor config
-      (feature_enable.kernel_throttler_at_floor_en and
-      chip_limits.kernel_throttler_stop_nops_freq), exposed through
-      TAG_KERNEL_THROTTLER telemetry:
-        - bit 0: feature enabled
-        - bits [31:16]: stop-NOPs frequency in MHz
-    """
-    bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
-    if not os.path.isfile(bh_mod):
-        pytest.skip("bh-mod not found (PATH or ~/bh-mod)")
-
-    # Capture baselines.
-    chip = pyluwen.detect_chips()[asic_id]
-    tdp_baseline = chip.get_telemetry().tdp_limit_max
-    kt_baseline = read_telem(chip, TAG_KERNEL_THROTTLER)
-    logger.info(f"Baseline tdp_limit_max: {tdp_baseline}")
-    logger.info(f"Baseline kernel_throttler: 0x{kt_baseline:08x}")
-
-    tdp_target = tdp_baseline - 5
-    TARGET_STOP_FREQ = 800  # MHz, within [AICLK_FMIN_MIN=200, AICLK_FMIN_MAX=1400]
-    kt_expected = 1 | (TARGET_STOP_FREQ << 16)
-
-    # Persist overrides for both the TDP limit and the kernel throttler config.
-    result = subprocess.run(
-        [
-            bh_mod,
-            "--reset-timeout=60s",
-            "set",
-            f"chip_limits.tdp_limit={tdp_target}",
-            "feature_enable.kernel_throttler_at_floor_en=true",
-            f"chip_limits.kernel_throttler_stop_nops_freq={TARGET_STOP_FREQ}",
-        ],
-        capture_output=True,
-        check=False,
-    )
-    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
-
-    # Verify the overrides were applied by the running firmware.
-    chip = pyluwen.detect_chips()[asic_id]
-    measured_tdp = chip.get_telemetry().tdp_limit_max
-    assert measured_tdp == tdp_target, (
-        f"expected tdp_limit_max={tdp_target}, got {measured_tdp}"
-    )
-    measured_kt = read_telem(chip, TAG_KERNEL_THROTTLER)
-    logger.info(f"kernel_throttler after set: 0x{measured_kt:08x}")
-    assert measured_kt == kt_expected, (
-        f"kernel throttler config not applied: expected 0x{kt_expected:08x}, "
-        f"got 0x{measured_kt:08x}"
-    )
-
-    # Re-flash the firmware bundle and confirm the overrides survive.
-    unlaunched_dut.launch()
-    del chip  # force re-detection after the flash and reboot
-    chip = wait_arc_boot(asic_id, timeout=60)
-    measured_tdp_after_flash = chip.get_telemetry().tdp_limit_max
-    assert measured_tdp_after_flash == tdp_target, (
-        f"ccfgovr did not survive tt-flash: "
-        f"expected tdp_limit_max={tdp_target}, got {measured_tdp_after_flash}"
-    )
-    measured_kt_after_flash = read_telem(chip, TAG_KERNEL_THROTTLER)
-    logger.info(f"kernel_throttler after re-flash: 0x{measured_kt_after_flash:08x}")
-    assert measured_kt_after_flash == kt_expected, (
-        f"ccfgovr did not survive tt-flash: expected 0x{kt_expected:08x}, "
-        f"got 0x{measured_kt_after_flash:08x}"
-    )
-
-    # Restore the baseline configuration. Warn (don't fail) if this does not
-    # succeed, since a stale SPI-flash state can flake later tests / CI runs.
-    restore = subprocess.run(
-        [
-            bh_mod,
-            "set",
-            f"chip_limits.tdp_limit={tdp_baseline}",
-            f"feature_enable.kernel_throttler_at_floor_en={'true' if kt_baseline & 1 else 'false'}",
-            f"chip_limits.kernel_throttler_stop_nops_freq={(kt_baseline >> 16) & 0xFFFF}",
-        ],
-        capture_output=True,
-        check=False,
-    )
-    if restore.returncode != 0:
-        logger.warning(
-            f"Failed to restore baseline config (rc={restore.returncode}); "
-            f"SPI flash may be left modified: {restore.stderr.decode(errors='replace')}"
-        )
-
-
 def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     """
     Exercise the ETH link speed override that ccfgovr merges into
@@ -2072,9 +1979,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
       consuming the field.
     - `bh-mod res` clears the override.
     """
-    bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
-    if not os.path.isfile(bh_mod):
-        pytest.skip("bh-mod not found (PATH or ~/bh-mod)")
+    bh_mod = _require_bh_mod()
 
     ETH_SPEED_PATH = "eth_property_table.eth_speed_override"
 
@@ -2085,7 +1990,8 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     speed = 200 if is_galaxy else 400
 
     # A speed no ERISC firmware implements has to be refused before bh-mod
-    # touches the chip, so this leaves state alone.
+    # touches the chip, so this leaves state alone. Do not retry: a luwen
+    # panic must not be counted as a successful rejection.
     reject = subprocess.run(
         [bh_mod, "set", f"{ETH_SPEED_PATH}=137"],
         capture_output=True,
@@ -2097,11 +2003,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
         f"stderr={reject.stderr.decode(errors='replace')!r}"
     )
 
-    write = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "set", f"{ETH_SPEED_PATH}={speed}"],
-        capture_output=True,
-        check=False,
-    )
+    write = _bh_mod_set(bh_mod, f"{ETH_SPEED_PATH}={speed}")
     assert write.returncode == 0, (
         f"bh-mod set {ETH_SPEED_PATH}={speed} failed, rc={write.returncode}; "
         f"stdout={write.stdout.decode(errors='replace')!r} "
@@ -2113,11 +2015,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     # Clear the override so the SPI flash goes back to inheriting from cmfwcfg.
     # Warn (don't fail) if this doesn't succeed, so a stale flash state can't
     # flake later tests / CI runs.
-    restore = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "res", ETH_SPEED_PATH],
-        capture_output=True,
-        check=False,
-    )
+    restore = _bh_mod_res(bh_mod, ETH_SPEED_PATH)
     if restore.returncode != 0:
         logger.warning(
             f"Failed to clear {ETH_SPEED_PATH} (rc={restore.returncode}); "
@@ -2164,4 +2062,90 @@ def test_heartbeat_telemetry(arc_chip_dut, asic_id):
 
     logger.info(
         f"Heartbeat telemetry incrementing correctly: {heartbeat_samples[0]} -> {heartbeat_samples[-1]}"
+    )
+
+
+def _require_bh_mod() -> str:
+    """Return the bh-mod path, or skip the test if it is not installed."""
+    bh_mod = shutil.which("bh-mod") or os.path.expanduser("~/bh-mod")
+    if not os.path.isfile(bh_mod):
+        pytest.skip("bh-mod not found (PATH or ~/bh-mod)")
+    return bh_mod
+
+
+def _run_bh_mod(args, *, retries=3, backoff=2.0):
+    """
+    Run a bh-mod command, retrying on transient luwen ARC-message panics.
+
+    Right after chip init (especially dual-ASIC p300a) the SMC can still be
+    settling, and bh-mod's internal ARC-message "pop" has a tight 500 ms
+    timeout; when it expires bh-mod unwrap()s and exits 101.
+    """
+    result = subprocess.run(args, capture_output=True, check=False)
+    for attempt in range(1, retries):
+        if result.returncode != 101:
+            break
+        stderr = result.stderr.decode(errors="replace")
+        if "Timeout" not in stderr and "panicked" not in stderr:
+            break
+        logger.warning(
+            f"bh-mod transient ARC-message panic (attempt {attempt}/{retries}, "
+            f"rc=101); retrying in {backoff}s:\n{stderr}"
+        )
+        time.sleep(backoff)
+        result = subprocess.run(args, capture_output=True, check=False)
+    return result
+
+
+def _bh_mod_set(bh_mod, *settings):
+    return _run_bh_mod([bh_mod, "--reset-timeout=60s", "set", *settings])
+
+
+def _bh_mod_res(bh_mod, *confs):
+    return _run_bh_mod([bh_mod, "--reset-timeout=60s", "res", *confs])
+
+
+def _read_tdp_limit(asic_id):
+    """Return the chip's current tdp_limit_max telemetry."""
+    chip = pyluwen.detect_chips()[asic_id]
+    tdp = chip.get_telemetry().tdp_limit_max
+    del chip
+    return tdp
+
+
+def _reset_ccfgovr(bh_mod, asic_id):
+    res = _bh_mod_res(bh_mod)
+    if res.returncode != 0:
+        logger.warning(
+            f"Failed to reset ccfgovr config (rc={res.returncode}); "
+            f"SPI flash may be left modified: {res.stderr.decode(errors='replace')}"
+        )
+    # Always re-enumerate: even a failed res may have left the chip mid-reset.
+    wait_arc_boot(asic_id, timeout=60)
+
+
+def test_ccfgovr_set_reset_smoke(asic_id: int):
+    bh_mod = _require_bh_mod()
+
+    # Start from a known-clean state so the "default" we read is the real
+    # firmware default, not a leftover override from an earlier run.
+    _reset_ccfgovr(bh_mod, asic_id)
+    default_tdp = _read_tdp_limit(asic_id)
+    target = default_tdp - 5
+    logger.info(f"ccfgovr smoke: default tdp_limit_max={default_tdp}, target={target}")
+
+    # Persist an override and confirm the running firmware applies it.
+    result = _bh_mod_set(bh_mod, f"chip_limits.tdp_limit={target}")
+    assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+    measured = wait_arc_boot(asic_id).get_telemetry().tdp_limit_max
+    assert measured == target, (
+        f"override not applied: expected {target}, got {measured}"
+    )
+
+    # Clear it and confirm the firmware returns to its default.
+    result = _bh_mod_res(bh_mod)
+    assert result.returncode == 0, f"bh-mod res failed, rc={result.returncode}"
+    measured = wait_arc_boot(asic_id).get_telemetry().tdp_limit_max
+    assert measured == default_tdp, (
+        f"res did not restore default: expected {default_tdp}, got {measured}"
     )

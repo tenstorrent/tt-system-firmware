@@ -83,6 +83,22 @@ jobs:
           app-path: tt-system-firmware
           kmd-version: ${{ matrix.config.kmd_build }}
 
+      - name: Install bh-mod
+        shell: bash
+        env:
+          BH_MOD_TAG: ${{ vars.BH_MOD_TAG || 'bh-mod-v2.1.0' }}
+          LUWEN_REPO_SLUG: ${{ vars.LUWEN_REPO_SLUG || 'tenstorrent/luwen' }}
+        run: |
+          set -euo pipefail
+          if ! command -v curl >/dev/null 2>&1; then
+            apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
+          fi
+          url="https://github.com/${LUWEN_REPO_SLUG}/releases/download/${BH_MOD_TAG}/bh-mod"
+          echo "Downloading bh-mod from $url"
+          curl --proto '=https' --tlsv1.2 -fL "$url" -o /usr/local/bin/bh-mod
+          chmod 0755 /usr/local/bin/bh-mod
+          bh-mod --help
+
       - name: run-e2e-stress-test
         run: |
           tt-system-firmware/scripts/ci/run-stress.sh ${{ matrix.config.board }}
