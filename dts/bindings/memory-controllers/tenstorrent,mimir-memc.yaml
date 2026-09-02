@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+compatible: "tenstorrent,mimir-memc"
+
+description: |
+  Tenstorrent Mimir GDDR7 memory controller.
+
+  A single controller instance drives every GDDR tile on the chip. The tiles it
+  brings up are referenced through mem-tiles; a referenced tile's status enables
+  or disables it in the bring-up (gddr_tile_mask). There are GDDR_NUM_TILES (2)
+  tiles on Mimir.
+
+include: base.yaml
+
+properties:
+  mem-tiles:
+    type: phandles
+    required: true
+    description: |
+      The GDDR tiles this controller brings up. Each
+      phandle references a tenstorrent,mimir-gddr-tile node.
