@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	/* GDDR7 tiles */
+	gddr_tile0: gddr_tile_0 {
+		compatible = "tenstorrent,mimir-gddr-tile";
+		tile-index = <0>;
+		mem-filter-base = <0x04000000>;
+		cce-filter-base = <0x04001000>;
+		cce-cfg-filter-base = <0x04002000>;
+		status = "okay";
+	};
+
+	gddr_tile1: gddr_tile_1 {
+		compatible = "tenstorrent,mimir-gddr-tile";
+		tile-index = <1>;
+		mem-filter-base = <0x04000800>;
+		cce-filter-base = <0x04001800>;
+		cce-cfg-filter-base = <0x04002800>;
+		status = "okay";
+	};
+
+	/* GDDR7 memory controller: brings up the tiles referenced by mem-tiles. */
+	memc: memc {
+		compatible = "tenstorrent,mimir-memc";
+		mem-tiles = <&gddr_tile0 &gddr_tile1>;
+		status = "okay";
+	};
+};
