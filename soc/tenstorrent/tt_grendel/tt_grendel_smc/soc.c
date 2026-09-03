@@ -6,8 +6,33 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/sys/sys_io.h>
 
 #include "platform.h"
+#include "soc.h"
+
+LOG_MODULE_REGISTER(soc, CONFIG_LOG_DEFAULT_LEVEL);
+
+#define GR_SCRATCH_REG_COUNT  16U
+#define GR_SCRATCH_REG_STRIDE 8U
+
+void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+{
+	ARG_UNUSED(esf);
+
+	LOG_ERR("Fatal error: reason %u", reason);
+	for (unsigned int index = 0; index < GR_SCRATCH_REG_COUNT; index++) {
+		LOG_ERR("SCRATCH[%u] = 0x%08x", index,
+			sys_read32(SCRATCH_REG_BASE + (index * GR_SCRATCH_REG_STRIDE)));
+	}
+
+	LOG_PANIC();
+	LOG_ERR("Halting system");
+	k_fatal_halt(reason);
+	CODE_UNREACHABLE;
+}
 
 /*
  * TODO: Temporary shim to resolve header names for Keraunos
