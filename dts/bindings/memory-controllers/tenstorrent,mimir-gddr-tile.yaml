@@ -1,0 +1,32 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+compatible: "tenstorrent,mimir-gddr-tile"
+
+description: |
+  One Tenstorrent Mimir GDDR7 tile.
+
+  The node's status enables or disables the tile in the GDDR bring-up.
+
+include: base.yaml
+
+properties:
+  tile-index:
+    type: int
+    required: true
+    description: Logical GDDR tile index (the gddr_tile_mask bit position).
+
+  mem-filter-base:
+    type: int
+    required: true
+    description: ITN SMN2ITN MEM-tile firewall base address.
+
+  cce-filter-base:
+    type: int
+    required: true
+    description: ITN SMN2ITN CCE-tile firewall base address.
+
+  cce-cfg-filter-base:
+    type: int
+    required: true
+    description: ITN SMN2ITN CCE-CFG-tile firewall base address.

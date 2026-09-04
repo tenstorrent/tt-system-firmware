@@ -7,6 +7,7 @@
 /dts-v1/;
 
 #include <tenstorrent/tt_grendel_smc.dtsi>
+#include <tenstorrent/tt_mimir_gddr.dtsi>
 
 / {
 	chosen {

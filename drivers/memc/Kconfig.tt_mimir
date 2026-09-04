@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config MEMC_TT_MIMIR
+	bool "Tenstorrent Mimir GDDR7 Memory Controller"
+	default n
+	depends on DT_HAS_TENSTORRENT_MIMIR_MEMC_ENABLED
+	select TT_GR_SMC_ERR_STR
+	select TT_GR_SMC_LOG_BRIDGE
+	select LOG
+	help
+	  Enable the Tenstorrent Mimir GDDR7 memory-controller driver.
+
+if MEMC_TT_MIMIR
+
+config MEMC_TT_MIMIR_INIT_PRIORITY
+	int "Tenstorrent Mimir GDDR init priority"
+	default 90
+	help
+	  Device init priority for the Mimir GDDR memc driver.
+
+endif # MEMC_TT_MIMIR

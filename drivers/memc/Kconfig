@@ -1,0 +1,14 @@
+#  Copyright (c) 2026 Tenstorrent AI ULC
+#  SPDX-License-Identifier: Apache-2.0
+
+if MEMC
+
+menu "Memory controller drivers"
+
+# zephyr-keep-sorted-start
+rsource "Kconfig.tt_mimir"
+# zephyr-keep-sorted-stop
+
+endmenu
+
+endif
