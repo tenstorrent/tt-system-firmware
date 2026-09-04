@@ -182,77 +182,110 @@ def reset_dmc(args):
     return os.EX_OK
 
 
-def wait_for_smc_boot(timeout):
+def wait_for_smc_boot(timeout, expected_chips=1):
     """
     Waits for SMC to complete boot after DMC is reset
     @param timeout: time to wait for boot in seconds
+    @param expected_chips: number of ASICs that must reappear (whole card).
+        Callers should pass len(pyluwen.pci_scan()) from before the reset when
+        possible.
     """
+
     remaining = timeout
     delay = 1
-    # First stage- rescan pcie
+
+    # First stage- wait for the full card to re-enumerate (all ASICs).
     while True:
         try:
             pcie_utils.rescan_pcie()
         except PermissionError:
             return os.EX_OSERR
-        if Path("/dev/tenstorrent/0").exists():
+        if pyluwen_found:
+            ids = pyluwen.pci_scan()
+        else:
+            ids = [
+                i
+                for i in range(expected_chips)
+                if Path(f"/dev/tenstorrent/{i}").exists()
+            ]
+        if len(ids) >= expected_chips:
             break
         time.sleep(delay)
         remaining -= delay
         if remaining <= 0:
-            logger.error(f"Card did not enumerate after {timeout} seconds")
+            logger.error(
+                f"Card did not enumerate after {timeout} seconds "
+                f"(have {len(ids)}/{expected_chips} devices: {ids})"
+            )
             return os.EX_UNAVAILABLE
-    # Second stage- is the card firmware working?
+
     if not pyluwen_found:
         logger.warning(
-            "without pyluwen this script can't verify if the SMC firmware is fully working"
+            "without pyluwen this script can't verify if the SMC firmware is fully working."
         )
         return os.EX_OK
-    # Try to detect the card using pyluwen- this indicates ARC has booted
+
+    # detect_chips() opens every scanned interface (whole card). Soft failures
+    # are common while SMC is still initializing — only rescan if the card is
+    # gone. Log the last error only on timeout
+    last_err = None
     while True:
         try:
             chips = pyluwen.detect_chips()
-            chip = chips[0]
-            # Wait for chip to populate telemetry
-            telemetry = chip.get_telemetry()
+            if len(chips) < expected_chips:
+                raise RuntimeError(
+                    f"detect_chips() returned {len(chips)} chips, expected {expected_chips}"
+                )
+            # Confirm telemetry is readable on every ASIC before continuing.
+            telemetries = [chip.get_telemetry() for chip in chips]
             break
-        except Exception:
-            # Rescan PCIe again, in case the card disappeared
-            pcie_utils.rescan_pcie()
-        except BaseException:
-            # Rescan PCIe again, in case the card disappeared
-            pcie_utils.rescan_pcie()
+        except Exception as e:
+            last_err = e
+            if len(pyluwen.pci_scan()) < expected_chips:
+                pcie_utils.rescan_pcie()
         remaining -= delay
         time.sleep(delay)
         if remaining <= 0:
-            logger.error(f"SMC failed to initialize after {timeout} seconds")
+            logger.error(
+                f"SMC failed to initialize after {timeout} seconds"
+                + (f": {last_err}" if last_err is not None else "")
+            )
             return os.EX_UNAVAILABLE
     # TAG_DM_APP_FW_VERSION stays 0 until SMC sends Dm2CmReadyRequest and DMC
     # responds with send_init_data (bh_chip_set_static_info). Telemetry becomes
     # readable before that handshake, so wait for the version to appear.
-    m3_ver = telemetry.m3_app_fw_version
-    while m3_ver == 0:
+    while True:
+        try:
+            telemetries = [chip.get_telemetry() for chip in chips]
+            versions = [t.m3_app_fw_version for t in telemetries]
+        except Exception:
+            versions = [0]
+        if all(v != 0 for v in versions):
+            break
         if remaining <= 0:
             logger.error(
-                f"SMC is not up: DMC app FW version still 0 after {timeout} seconds"
+                f"SMC is not up: DMC app FW version still 0 after {timeout} seconds "
+                f"(versions={[hex(v) for v in versions]})"
             )
             return os.EX_UNAVAILABLE
         time.sleep(delay)
         remaining -= delay
-        try:
-            m3_ver = chip.get_telemetry().m3_app_fw_version
-        except Exception:
-            pass
-    if m3_ver < 0x40000:
+
+    # Skip ping if any ASIC reports an old DMC (same threshold as before).
+    old = [v for v in versions if v < 0x40000]
+    if old:
         logger.warning(
-            f"DMC firmware is too old (0x{m3_ver:x}), no support for SMC ping"
+            f"DMC firmware is too old ({', '.join(f'0x{v:x}' for v in old)}), "
+            "no support for SMC ping"
         )
         return os.EX_OK
-    # Try to verify that the SMC can ping the DMC
+    # Try to verify that every SMC can ping the DMC
     while True:
         try:
-            rsp = chip.arc_msg(pcie_utils.DMC_PING_MSG, True, True, 1, 0)
-            if rsp[0] == 1:
+            if all(
+                chip.arc_msg(pcie_utils.DMC_PING_MSG, True, True, 1, 0)[0] == 1
+                for chip in chips
+            ):
                 break
         except Exception:
             # Just decrement timeout, which we do below
@@ -290,11 +323,12 @@ def main():
                 logger.debug(f"Found {dut['platform']} with JTAG ID {dut['id']}")
                 break
 
+    expected_chips = len(pyluwen.pci_scan()) if pyluwen_found else 1
     ret = reset_dmc(args)
     if ret != os.EX_OK:
         return ret
     if args.wait:
-        return wait_for_smc_boot(60)
+        return wait_for_smc_boot(60, expected_chips=expected_chips or 1)
     return os.EX_OK
 
 
