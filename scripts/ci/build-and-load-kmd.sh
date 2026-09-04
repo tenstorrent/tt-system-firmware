@@ -127,8 +127,13 @@ fi
 # kernel ships a prebuilt objtool linked against GLIBC 2.38+, which
 # cannot run in a 22.04 container (GLIBC 2.35). Skip objtool in that
 # case; it is only used for stack validation and is not required to produce a
-# loadable module. SKIP_STACK_VALIDATION was removed from kbuild, so use the
-# documented OBJECT_FILES_NON_STANDARD switch instead.
+# loadable module.
+#
+# OBJECT_FILES_NON_STANDARD=y only skips per-TU objtool. With IBT/LTO, kbuild
+# still runs objtool on the linked module (tenstorrent.o), which is where the
+# glibc mismatch fails. SKIP_STACK_VALIDATION was removed from kbuild. Point
+# kbuild's `objtool` (scripts/Makefile.lib) at a no-op stub instead;
+# /usr/src is bind-mounted read-only.
 OBJTOOL_BIN="/lib/modules/${KVER}/build/tools/objtool/objtool"
 objtool_can_run() {
 	local err
@@ -144,7 +149,10 @@ objtool_can_run() {
 if ! objtool_can_run "$OBJTOOL_BIN"; then
 	echo "Kernel objtool cannot run in this environment (likely a glibc" \
 		"mismatch with bind-mounted host headers); skipping stack validation"
-	MAKE_ARGS+=("OBJECT_FILES_NON_STANDARD=y")
+	OBJTOOL_STUB="$BUILD_DIR/objtool-stub"
+	printf '#!/bin/sh\nexit 0\n' > "$OBJTOOL_STUB"
+	chmod +x "$OBJTOOL_STUB"
+	MAKE_ARGS+=("objtool=$OBJTOOL_STUB")
 fi
 
 make -C "$BUILD_DIR/tt-kmd" "${MAKE_ARGS[@]+"${MAKE_ARGS[@]}"}"
