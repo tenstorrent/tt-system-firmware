@@ -6,6 +6,14 @@ config TT_GR_SMC
 	help
 	  Enable Tenstorrent Grendel SMC support library components.
 
+config TT_GR_SMC_ERR_STR
+	bool "Grendel SMC error-string table (Sival SDK err.c)"
+	select TT_GR_SMC
+	default n
+	help
+	  Compile grendel_err_to_str from the grendel-sival-sdk tarball's
+	  common/src/err.c
+
 config TT_GR_SMC_LOG_BRIDGE
 	bool "Grendel SMC log bridge"
 	depends on LOG
