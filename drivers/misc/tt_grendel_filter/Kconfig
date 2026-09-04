@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GRENDEL_FILTER
+	bool "Grendel fabric filter (SiVal firewall wrapper)"
+	depends on SOC_TT_KERAUNOS_SMC
+	default y
+	select LOG
+	help
+	  Wrap SiVal firewall.c and program SMC inbound host windows
+	  (scratch, VUART, SEP-safe SRAM, BUN2 staging).
+
+if TT_GRENDEL_FILTER
+
+module = TT_GRENDEL_FILTER
+module-str = tt_grendel_filter
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GRENDEL_FILTER
