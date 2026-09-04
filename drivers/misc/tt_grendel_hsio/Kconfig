@@ -1,0 +1,26 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GRENDEL_HSIO
+	bool "Grendel HSIO tile bring-up"
+	depends on TT_GRENDEL_FILTER
+	depends on TT_GRENDEL_PCIE
+	default n
+	select LOG
+	help
+	  Wrap SiVal HSIO clock/reset helpers and open HSIO/SMN firewalls
+	  after PCIe init and SMC filter policy.
+
+if TT_GRENDEL_HSIO
+
+config TT_GRENDEL_HSIO_INIT_PRIORITY
+	int "HSIO SYS_INIT priority (POST_KERNEL)"
+	default 40
+	help
+	  Must run after the SMC filter POST_KERNEL hook (priority 0).
+
+module = TT_GRENDEL_HSIO
+module-str = tt_grendel_hsio
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GRENDEL_HSIO
