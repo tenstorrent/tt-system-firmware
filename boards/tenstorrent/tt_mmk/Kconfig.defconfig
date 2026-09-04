@@ -9,6 +9,10 @@ config SYS_CLOCK_TICKS_PER_SEC
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 1000000
 
+config SIVAL_SHIM
+	bool
+	default y
+
 if LOG
 
 # Do not enable Tenstorrent virtual logging backend by default on MMK.

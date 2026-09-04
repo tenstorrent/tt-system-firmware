@@ -39,7 +39,7 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
  * (prefixed types, absolute _REG_ADDR). Remove when proper SiVal drop
  * is received with shared header naming scheme.
  */
-#ifdef PLATFORM_KER_SMC
+#ifdef CONFIG_SIVAL_SHIM
 typedef SMC_CPU_UART_WRAP0_UART_CTRL_reg_u UART_CTRL_reg_u;
 typedef SMC_CPU_I3C_WRAP_0_I3C_CTRL_I3C_RESET_CTRL_STATUS_reg_u
 	I3C_CTRL_I3C_RESET_CTRL_STATUS_reg_u;
