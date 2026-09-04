@@ -9,6 +9,10 @@ set -e
 
 echo "## Running formatting check on commits. To skip this check, run git commit --no-verify ##"
 
+# Git worktrees set GIT_DIR to .git/worktrees/<name>. West then treats this
+# checkout as a new workspace and fails importing zephyr/west.yml.
+unset GIT_DIR GIT_WORK_TREE
+
 if [ -z "${ZEPHYR_BASE}" ]; then
 	zep_base=$(west list -f "{abspath}" zephyr)
 	echo "ZEPHYR_BASE not set, using $zep_base"
