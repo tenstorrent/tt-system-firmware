@@ -139,7 +139,7 @@
 
 		nv_flash: nv-flash@0 {
 			compatible = "soc-nv-flash";
-			reg = <0x0 DT_SIZE_M(512)>;
+			reg = <0x0 DT_SIZE_M(64)>;
 			write-block-size = <1>;
 			erase-block-size = <4096>;
 		};

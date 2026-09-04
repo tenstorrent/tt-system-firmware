@@ -9,5 +9,6 @@
 / {
 	chosen {
 		zephyr,sram = &csm_bootloader;
+		mcuboot,image-ram = &csm_app;
 	};
 };
