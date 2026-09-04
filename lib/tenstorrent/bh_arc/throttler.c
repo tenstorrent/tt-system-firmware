@@ -436,12 +436,16 @@ void CalculateThrottlers(void)
 	if (DopplerActive()) {
 		UpdateDoppler(&telemetry_internal_data);
 	} else {
-		UpdateThrottler(kThrottlerTDP, telemetry_internal_data.vcore_power);
+		float tdp_power = telemetry_internal_data.vcore_power +
+				  telemetry_internal_data.gddr_io_power_east +
+				  telemetry_internal_data.gddr_io_power_west;
+
+		UpdateThrottler(kThrottlerTDP, tdp_power);
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerBoardPower, GetInputPower());
 
-		float current_power = telemetry_internal_data.vcore_power;
+		float current_power = tdp_power;
 		float tdp_limit = throttler[kThrottlerTDP].limit;
 
 		UpdateKernelThrottler(current_power, tdp_limit);
