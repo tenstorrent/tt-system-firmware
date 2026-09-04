@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	soc {
+		d2d0: d2d@4200000 {
+			compatible = "tenstorrent,grendel-d2d";
+			reg = <0x0 0x04200000 0x0 0x00180158>;
+			status = "disabled";
+		};
+
+		d2d1: d2d@4400000 {
+			compatible = "tenstorrent,grendel-d2d";
+			reg = <0x0 0x04400000 0x0 0x00180158>;
+			status = "disabled";
+		};
+	};
+};

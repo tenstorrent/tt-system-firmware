@@ -7,9 +7,12 @@
 
 #include <stdint.h>
 
-#define TEST_PASS_VALUE 0xacafaca1
+/* For WRITE_SCRATCH. Defining it here as well would collide with soc.h in any
+ * test that uses the scratch registers for its own reporting.
+ */
+#include <soc.h>
 
-#define WRITE_SCRATCH(num, val) (*(((volatile uint32_t *)0xC0010100) + (num * 2)) = (val))
+#define TEST_PASS_VALUE 0xacafaca1
 
 /*
  * Override ztest's testcase end report macro. We should still report

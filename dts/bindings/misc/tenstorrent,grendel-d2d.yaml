@@ -1,0 +1,99 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent Grendel die-to-die (D2D) tile.
+
+  Each tile contains a Rocket CPU that runs the D2D link firmware. Before the
+  link can train, that firmware has to be written into the Rocket's SRAM, a
+  configuration block has to be filled in for it, and the Rocket has to be
+  released from reset.
+
+  The CPU control register and the Rocket SRAM both live at fixed offsets
+  inside the tile's register map, so a single reg entry describes the tile and
+  the driver derives the rest.
+
+  Chiplets differ in tile count and base address (Mimir has two, Keraunos has
+  five), so these nodes belong in chiplet-specific devicetree rather than the
+  shared Grendel SoC include.
+
+compatible: "tenstorrent,grendel-d2d"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  dmas:
+    type: phandle-array
+    description: |
+      Optional DMA channel used to zero the SRAM window and copy the image
+      into it. Without it the driver writes both with CPU stores, which is
+      correct but issues one bus transaction per word: a 64 KB window plus a
+      27 KB image is around 23000 of them, and under emulation that is slow
+      enough to matter. The reference bring-up uses DMA for exactly this.
+
+  dma-names:
+    description: Name for the channel in dmas. Only the first entry is used.
+
+  sram-size:
+    type: int
+    default: 65536
+    description: |
+      Size in bytes of the SRAM belonging to this D2D tile's own Rocket core,
+      which is where the D2D firmware runs. Not SMC memory. This describes the
+      tile, not the image: every tile runs the same firmware, but the window it
+      is loaded into is per-chiplet hardware. The whole window is zeroed before
+      a load, it has to be large enough to hold the configuration block, and
+      images that would not fit in it are rejected.
+
+  bits-per-channel:
+    type: int
+    default: 16
+    description: Link width reported to the D2D firmware.
+
+  refclk-period-ns:
+    type: int
+    default: 10
+    description: Reference clock period in nanoseconds.
+
+  apb-clk-period-ps:
+    type: int
+    default: 1000
+    description: APB clock period in picoseconds.
+
+  pll-freq-ghz:
+    type: int
+    default: 4
+    description: Target D2D PLL frequency in GHz.
+
+  package-type-this-die:
+    type: int
+    default: 11
+    description: |
+      Package type code for the die this SMC runs on. 11 is the standard
+      Grendel package.
+
+  package-type-other-die:
+    type: int
+    default: 11
+    description: Package type code for the die on the far end of the link.
+
+  bypass-phy:
+    type: boolean
+    description: |
+      Tell the D2D firmware to skip PHY bring-up. Required on emulation, where
+      the PHY lanes are force-wired in the testbench instead of being trained.
+
+  bypass-vreg:
+    type: boolean
+    description: |
+      Tell the D2D firmware to skip voltage regulator bring-up. Required on
+      emulation, which has no regulator model.
+
+  disable-sideband:
+    type: boolean
+    description: |
+      Tell the D2D firmware to skip sideband die-to-die synchronisation.
+      Required on emulation, where the sideband milestones are stubbed out.
