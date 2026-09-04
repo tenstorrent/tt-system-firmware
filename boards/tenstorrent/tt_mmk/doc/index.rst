@@ -25,12 +25,31 @@ The MMK board consists of:
 
 - 1 Keraunos chiplet with:
   - 4 instances of the RISC-V Rocket Chip (5-stage pipeline)
+  - 1 SEP cluster (bring-up target ``tt_mmk/tt_keraunos/sep``)
   - 1 MB of SRAM
   - SiFive CLINT interrupt controller
   - SiFive E300 watchdog timer
   - SiFive PLIC interrupt controller
   - 4x Designware APB UART
   - 6x Cadence I3C controllers
+
+Supported Boards / SoC Targets
+******************************
+
+- ``tt_mmk/tt_keraunos/smc`` — Keraunos SMC
+- ``tt_mmk/tt_keraunos/sep`` — Keraunos SEP
+- ``tt_mmk/tt_mimir/smc`` — Mimir SMC on the MMK board
+
+Programming
+***********
+
+Hello World::
+
+   west build -b tt_mmk/tt_keraunos/sep samples/hello_world
+
+SEP BL1 (unsecured bring-up; no SPI BUN1 reader yet)::
+
+   west build -b tt_mmk/tt_keraunos/sep app/sep_bl1
 
 Interconnects
 *************

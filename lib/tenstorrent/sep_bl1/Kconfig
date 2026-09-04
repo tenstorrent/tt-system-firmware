@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_SEP_BL1
+	bool "SEP BL1 boot services"
+	select TT_FW_BUNDLE
+	help
+	  Mutable SEP BL1 path: BUN2 validation handshake with SMC BL0P5,
+	  policy/hash checks, and SEP mission handoff interface. Hardware
+	  fuses, IRAM jump, and status CSRs are supplied by platform ops.

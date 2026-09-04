@@ -1,0 +1,8 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_FW_BUNDLE
+	bool "Firmware bundle parser"
+	help
+	  Parse and authenticate Grendel BUN2 manifests and TOCs using the
+	  on-wire structs in tt_bundle_loader.h. Does not program hardware.
