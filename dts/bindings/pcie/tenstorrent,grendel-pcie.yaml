@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: Tenstorrent Grendel (Keraunos) PCIe endpoint
+
+compatible: "tenstorrent,grendel-pcie"
+
+include: base.yaml
+
+properties:
+  reg:
+    type: array
+    required: true
+    description: SMN window covering PCIe MGMT / DBI (lib uses fixed MMIO).
+
+  bar4-size:
+    type: array
+    required: true
+    description: |
+      Size in bytes of the 64-bit BAR4 pair (ATU maps this to the SMC/SEP
+      SPA region), two 32-bit cells (high, then low), same encoding as
+      addresses in reg. Default in the SoC dtsi is 64 GiB
+      (<0x10 0x0> = 0x1000000000) so QEMU accepts the BAR. Silicon will
+      use the full aperture (<0x20000 0x0> = 0x2000000000000).
