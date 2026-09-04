@@ -56,4 +56,16 @@
 		reg = <0x0 0xc000280c 0x0 0x4>;
 		status = "okay";
 	};
+
+	sep_safe_off: scratch-reg@c0010168 {
+		/* SCRATCH[13], SEP-safe SRAM offset in [13:0] */
+		compatible = "tenstorrent,scratch-reg";
+		reg = <0x0 0xc0010168 0x0 0x4>;
+	};
+
+	sep_safe_size: scratch-reg@c0010170 {
+		/* SCRATCH[14], SEP-safe SRAM size */
+		compatible = "tenstorrent,scratch-reg";
+		reg = <0x0 0xc0010170 0x0 0x4>;
+	};
 };
