@@ -1,0 +1,12 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* MIS starts at C0067000 to start after ROM protected region, and align with PMP granularity
+ * Available space is 1MB - 28KB (base offset) - 32KB
+ */
+&ram0 {
+	reg = <0x0 0xc0067000 0x0 0xf1000>;
+};
