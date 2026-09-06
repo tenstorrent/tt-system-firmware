@@ -69,14 +69,14 @@ enum tt_vuart_role {
 struct tt_vuart {
 	uint32_t magic;    /**< Magic number used to identify the virtual uart in memory */
 	uint32_t rx_cap;   /**< Receive buffer capacity, in bytes */
-	uint32_t rx_head;  /** Receive head counter */
-	uint32_t rx_tail;  /** Receive tail counter */
+	uint32_t rx_head;  /**< Receive head counter */
+	uint32_t rx_tail;  /**< Receive tail counter */
 	uint32_t tx_cap;   /**< Transmit buffer capacity, in bytes */
-	uint32_t tx_head;  /** Transmit head counter */
-	uint32_t tx_oflow; /** Number of transmit overflows (device to host) */
-	uint32_t tx_tail;  /** Transmit tail counter */
+	uint32_t tx_head;  /**< Transmit head counter */
+	uint32_t tx_oflow; /**< Number of transmit overflows (device to host) */
+	uint32_t tx_tail;  /**< Transmit tail counter */
 	uint32_t version;  /**< Version info MS-Byte to LS-Byte [INST.MAJOR.MINOR.PATCH] */
-	uint8_t buf[];     /** Buffer area of `tx_cap` bytes followed by `rx_cap` bytes */
+	uint8_t buf[];     /**< Buffer area of `tx_cap` bytes followed by `rx_cap` bytes */
 };
 
 /**
@@ -196,7 +196,7 @@ static inline int tt_vuart_poll_in(volatile struct tt_vuart *vuart, unsigned cha
 /**
  * @brief Poll the virtual UART buffer with outgoing data.
  *
- * This method transmits one byte of data from the virtual UART buffer, if possible.
+ * This method transmits one byte of data to the virtual UART buffer, if possible.
  * If the buffer is empty, this method simply returns.
  *
  * If writing to the virtual UART results in buffer overflow, the overflow counter is incremented

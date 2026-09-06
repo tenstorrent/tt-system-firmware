@@ -40,11 +40,11 @@ struct bh_chip_config {
 };
 
 struct bh_chip_data {
-	/* Flag set when bootrom has been loaded and the arc_soft_reset sequence can be appled. */
+	/* Flag set when bootrom has been loaded and the arc_soft_reset sequence can be applied. */
 	bool workaround_applied;
 
 	/*
-	 * Flag set when need to send or receive 1 time info to chip.
+	 * Flag set when we need to send or receive 1 time info to chip.
 	 * Could be used for static data or config of peripherals.
 	 */
 	bool arc_needs_init_msg;
