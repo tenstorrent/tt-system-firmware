@@ -211,7 +211,7 @@ static int parse_args(struct tracing *tracing, int argc, char **argv)
 			errno = 0;
 			addr = strtol(optarg, NULL, 0);
 			if (errno != 0) {
-				E("invalid operand to -i %s: %s", optarg, strerror(errno));
+				E("invalid operand to -a %s: %s", optarg, strerror(errno));
 				usage(basename(argv[0]));
 				return -errno;
 			}
