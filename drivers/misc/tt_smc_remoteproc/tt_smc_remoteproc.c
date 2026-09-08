@@ -29,18 +29,26 @@ struct tt_smc_remoteproc_data {
 	struct occp_backend_i3c occp_backend; /* OCCP I3C backend */
 };
 
-int tt_smc_remoteproc_boot(const struct device *dev, uint64_t addr, uint8_t *img_data,
-			   size_t img_size)
+int tt_smc_remoteproc_load(const struct device *dev, uint64_t addr, const uint8_t *bin_data,
+			   size_t bin_size)
 {
 	struct tt_smc_remoteproc_data *data = dev->data;
 	int ret;
 
 	/* Write image to target */
-	ret = occp_write_data(&data->occp_backend.base, addr, img_data, img_size);
+	ret = occp_write_data(&data->occp_backend.base, addr, bin_data, bin_size);
 	if (ret != 0) {
 		LOG_ERR("Failed to write image to remote SMC: %d", ret);
 		return ret;
 	}
+
+	return 0;
+}
+
+int tt_smc_remoteproc_boot(const struct device *dev, uint64_t addr)
+{
+	struct tt_smc_remoteproc_data *data = dev->data;
+	int ret;
 
 	/* Execute image on CPU 0 */
 	ret = occp_execute_image(&data->occp_backend.base, addr, 0);

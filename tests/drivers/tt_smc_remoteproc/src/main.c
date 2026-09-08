@@ -31,8 +31,11 @@ ZTEST(tt_smc_remoteproc, test_boot)
 
 	zassert_true(device_is_ready(smc_dev), "Remote SMC device not ready");
 
-	ret = tt_smc_remoteproc_boot(smc_dev, SMC_SRAM_OCCP_BASE, remote_smc_bin,
+	ret = tt_smc_remoteproc_load(smc_dev, SMC_SRAM_OCCP_BASE, remote_smc_bin,
 				     remote_smc_bin_len);
+	zassert_equal(ret, 0, "Failed to load remote SMC image: %d", ret);
+
+	ret = tt_smc_remoteproc_boot(smc_dev, SMC_SRAM_OCCP_BASE);
 	zassert_equal(ret, 0, "Failed to boot remote SMC: %d", ret);
 
 	/*

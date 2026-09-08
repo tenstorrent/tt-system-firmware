@@ -59,16 +59,24 @@ static int tt_mimir_remote_boot_init(const struct device *dev)
 			LOG_ERR("remoteproc[%zu] is not ready", i);
 			return -ENODEV;
 		}
-
 		/* TODO - D2D FW copy via OCCP */
 
-		/* Remote execute the M-SMC_BL1 */
-		ret = tt_smc_remoteproc_boot(cfg->remoteprocs[i], entry->load_addr,
+		/* OCCP load firmware bin */
+		ret = tt_smc_remoteproc_load(cfg->remoteprocs[i], entry->load_addr,
 					     (uint8_t *)(TT_BUN2_STAGING_AREA_ADDR +
 							 manifest->payload_offset + entry->offset),
 					     (size_t)entry->length);
 		if (ret != 0) {
 			LOG_ERR("Failed to OCCP-load Mimir FW on remoteproc[%zu]: %d", i, ret);
+			return ret;
+		}
+	}
+
+	for (size_t i = 0; i < cfg->num_remoteprocs; i++) {
+		/* Remote execute the M-SMC_BL1 */
+		ret = tt_smc_remoteproc_boot(cfg->remoteprocs[i], entry->load_addr);
+		if (ret != 0) {
+			LOG_ERR("Failed to OCCP-boot Mimir FW on remoteproc[%zu]: %d", i, ret);
 			return ret;
 		}
 	}
