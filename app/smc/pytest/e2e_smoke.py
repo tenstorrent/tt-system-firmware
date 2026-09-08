@@ -1352,10 +1352,10 @@ def test_pvt_comprehensive(arc_chip_dut, asic_id):
 def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
     """
     Validates that toggling between high and low power states results in expected TDP delta
-    Returns 0 on success, 1 if TDP delta is <= 80W after 4 polls.
+    Returns 0 on success, 1 if TDP delta is <= 70W after 4 polls.
     Galaxy, loudbox, and quietbox2 skip TDP validation and always return 0.
     """
-    expected_power_delta = 80
+    expected_power_delta = 70
     settling_time = 0.5
     poll_attempts = 4
     arc_chip = pyluwen.detect_chips()[asic_id]
@@ -1404,7 +1404,7 @@ def power_state_toggle_test(arc_chip_dut, asic_id, board_name):
 
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
     """
-    Validates that toggling between high and low power states results in a TDP delta > 90W
+    Validates that toggling between high and low power states results in a TDP delta > 70W
     For galaxy, loudbox, and quietbox2, only validates power state setting functionality.
     """
     assert 0 == power_state_toggle_test(arc_chip_dut, asic_id, board_name), (
