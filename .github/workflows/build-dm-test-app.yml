@@ -1,0 +1,45 @@
+# One-button build of app/dm_test_app for the MK DMC.
+# Does not run the rest of the Build workflow.
+name: Build dm_test_app
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-dm-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      - name: Build dm_test app
+        shell: bash
+        run: |
+          west build \
+            -d build-dm-test-grendel-mk-bu \
+            -p \
+            -b tt_grendel_mk_bu_dmc \
+            tt-system-firmware/app/dm_test_app \
+            -- -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y
+
+      - name: Upload dm_test assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: dm-test-grendel-mk-bu
+          path: |
+            build-dm-test-grendel-mk-bu/**/.config
+            build-dm-test-grendel-mk-bu/**/devicetree_generated.h
+            build-dm-test-grendel-mk-bu/**/zephyr.bin
+            build-dm-test-grendel-mk-bu/**/zephyr.dts
+            build-dm-test-grendel-mk-bu/**/zephyr.elf
+            build-dm-test-grendel-mk-bu/**/zephyr.hex
+            build-dm-test-grendel-mk-bu/**/zephyr.map
+            build-dm-test-grendel-mk-bu/**/zephyr.stat
