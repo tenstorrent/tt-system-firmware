@@ -256,6 +256,26 @@ static inline void tt_vuart_poll_out(volatile struct tt_vuart *vuart, unsigned c
  */
 volatile struct tt_vuart *uart_tt_virt_get(const struct device *dev);
 
+/**
+ * @brief Look up the virtual UART descriptor published by a previous boot stage.
+ *
+ * Boards that publish the descriptor address somewhere persistent (e.g. a scratch register)
+ * may override this hook so that later boot stages continue writing into the same buffer
+ * instead of starting a new one.
+ *
+ * @param inst Instance number of the virtual UART
+ * @return Pointer to the descriptor, or NULL if none is available
+ */
+volatile struct tt_vuart *uart_tt_virt_lookup_callback(size_t inst);
+
+/**
+ * @brief Notify the board that a virtual UART descriptor is ready for use.
+ *
+ * @param dev Pointer to the device
+ * @param inst Instance number of the virtual UART
+ */
+void uart_tt_virt_init_callback(const struct device *dev, size_t inst);
+
 #endif
 
 /**

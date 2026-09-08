@@ -49,6 +49,27 @@ include: uart-controller.yaml
 
 properties:
 
+  memory-region:
+    type: phandle
+    description: |
+      Memory region holding the virtual UART descriptor and its buffers. When omitted, the
+      descriptor is allocated in the .bss section of the running image, which means its
+      contents are lost whenever a new image takes over the processor.
+
+      Pointing several boot stages at the same fixed region allows console output to be
+      carried across the handoffs between them. The region must be at least
+      sizeof(struct tt_vuart) + tx-cap + rx-cap bytes large and must not overlap any region
+      that is cleared or reused during boot.
+
+  init-metadata:
+    type: boolean
+    description: |
+      Initialize the descriptor metadata and discard any buffered data at driver init.
+
+      This should be set on the earliest boot stage, which is responsible for putting the
+      descriptor into a known state. Later boot stages leave it unset so that they adopt the
+      descriptor published by the previous stage instead of resetting it.
+
   loopback:
     type: boolean
     description: |

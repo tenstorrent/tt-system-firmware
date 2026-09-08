@@ -20,13 +20,21 @@ LOG_MODULE_REGISTER(uart_tt_virt, CONFIG_UART_LOG_LEVEL);
 
 struct uart_tt_virt_config {
 	volatile struct tt_vuart *vuart;
+	bool init_metadata;
 	bool loopback;
+	uint32_t magic;
+	uint32_t version;
+	uint32_t rx_cap;
+	uint32_t tx_cap;
 };
 
 struct uart_tt_virt_data {
 #ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
 	struct uart_config cfg;
 #endif
+
+	/* Descriptor in use, either the one from the config or one adopted from a previous stage */
+	volatile struct tt_vuart *vuart;
 
 	uint32_t err_flags;
 
@@ -103,7 +111,7 @@ static int uart_tt_virt_fifo_fill(const struct device *dev, const uint8_t *tx_da
 {
 	struct uart_tt_virt_data *data = dev->data;
 	const struct uart_tt_virt_config *config = dev->config;
-	volatile struct tt_vuart *vuart = config->vuart;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	__ASSERT_NO_MSG(size >= 0);
 
@@ -138,8 +146,7 @@ static int uart_tt_virt_fifo_fill(const struct device *dev, const uint8_t *tx_da
 static int uart_tt_virt_fifo_read(const struct device *dev, uint8_t *rx_data, int size)
 {
 	struct uart_tt_virt_data *data = dev->data;
-	const struct uart_tt_virt_config *config = dev->config;
-	volatile struct tt_vuart *vuart = config->vuart;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	__ASSERT_NO_MSG(size >= 0);
 
@@ -236,9 +243,8 @@ static void uart_tt_virt_irq_rx_enable(const struct device *dev)
 static int uart_tt_virt_irq_rx_ready(const struct device *dev)
 {
 	int available = 0;
-	const struct uart_tt_virt_config *config = dev->config;
 	struct uart_tt_virt_data *const data = dev->data;
-	volatile struct tt_vuart *vuart = config->vuart;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	K_SPINLOCK(&data->vuart_lock) {
 		if (!data->rx_irq_en) {
@@ -254,9 +260,8 @@ static int uart_tt_virt_irq_rx_ready(const struct device *dev)
 static int uart_tt_virt_irq_tx_complete(const struct device *dev)
 {
 	bool tx_complete = false;
-	const struct uart_tt_virt_config *config = dev->config;
 	struct uart_tt_virt_data *const data = dev->data;
-	volatile struct tt_vuart *vuart = config->vuart;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	K_SPINLOCK(&data->vuart_lock) {
 		tx_complete = tt_vuart_buf_empty(vuart->tx_head, vuart->tx_tail);
@@ -292,9 +297,8 @@ static void uart_tt_virt_irq_tx_enable(const struct device *dev)
 static int uart_tt_virt_irq_tx_ready(const struct device *dev)
 {
 	int available = 0;
-	const struct uart_tt_virt_config *config = dev->config;
 	struct uart_tt_virt_data *const data = dev->data;
-	volatile struct tt_vuart *vuart = config->vuart;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	K_SPINLOCK(&data->vuart_lock) {
 		if (!data->tx_irq_en) {
@@ -314,16 +318,16 @@ static void uart_tt_virt_irq_update(const struct device *dev)
 
 static int uart_tt_virt_poll_in(const struct device *dev, unsigned char *p_char)
 {
-	const struct uart_tt_virt_config *config = dev->config;
-	volatile struct tt_vuart *vuart = config->vuart;
+	struct uart_tt_virt_data *data = dev->data;
+	volatile struct tt_vuart *vuart = data->vuart;
 
 	return (tt_vuart_poll_in(vuart, p_char, TT_VUART_ROLE_DEVICE) == -1) ? -1 : 0;
 }
 
 void uart_tt_virt_poll_out(const struct device *dev, unsigned char out_char)
 {
-	const struct uart_tt_virt_config *config = dev->config;
-	volatile struct tt_vuart *const vuart = config->vuart;
+	struct uart_tt_virt_data *data = dev->data;
+	volatile struct tt_vuart *const vuart = data->vuart;
 
 	tt_vuart_poll_out(vuart, out_char, TT_VUART_ROLE_DEVICE);
 }
@@ -360,54 +364,104 @@ __weak void uart_tt_virt_init_callback(const struct device *dev, size_t inst)
 	ARG_UNUSED(inst);
 }
 
+__weak volatile struct tt_vuart *uart_tt_virt_lookup_callback(size_t inst)
+{
+	ARG_UNUSED(inst);
+
+	return NULL;
+}
+
 volatile struct tt_vuart *uart_tt_virt_get(const struct device *dev)
 {
-	const struct uart_tt_virt_config *config = dev->config;
+	struct uart_tt_virt_data *data = dev->data;
 
-	return config->vuart;
+	return data->vuart;
+}
+
+/*
+ * A descriptor published by a previous boot stage may only be adopted if it lives where this
+ * stage expects it to and describes the same buffer layout. Anything else (a cold boot, a stale
+ * scratch register, a mismatched image) means the buffer contents cannot be trusted.
+ */
+static bool uart_tt_virt_adoptable(const struct uart_tt_virt_config *config,
+				   volatile const struct tt_vuart *vuart)
+{
+	return (vuart == config->vuart) && (vuart->magic == config->magic) &&
+	       (vuart->version == config->version) && (vuart->rx_cap == config->rx_cap) &&
+	       (vuart->tx_cap == config->tx_cap);
 }
 
 static int uart_tt_virt_init(const struct device *dev)
 {
 	const struct uart_tt_virt_config *config = dev->config;
+	struct uart_tt_virt_data *const data = dev->data;
+	size_t inst = config->version >> 24;
+
+	data->vuart = config->vuart;
+
+	if (config->init_metadata ||
+	    !uart_tt_virt_adoptable(config, uart_tt_virt_lookup_callback(inst))) {
+		/* Populate header fields and drop whatever the buffer area held before */
+		data->vuart->magic = config->magic;
+		data->vuart->version = config->version;
+		data->vuart->rx_cap = config->rx_cap;
+		data->vuart->rx_head = 0;
+		data->vuart->rx_tail = 0;
+		data->vuart->tx_cap = config->tx_cap;
+		data->vuart->tx_head = 0;
+		data->vuart->tx_oflow = 0;
+		data->vuart->tx_tail = 0;
+	}
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	struct uart_tt_virt_data *const data = dev->data;
-
 	data->dev = dev;
 	k_timer_init(&data->irq_timer, uart_tt_virt_irq_handler, NULL);
 #endif
 
-	uart_tt_virt_init_callback(dev, tt_vuart_inst(config->vuart));
+	uart_tt_virt_init_callback(dev, inst);
 
 	return 0;
 }
 
 #define UART_TT_VIRT_DESC_SIZE(_inst)                                                              \
-	(DIV_ROUND_UP(sizeof(struct tt_vuart) + DT_INST_PROP(_inst, rx_cap) +                      \
-			      DT_INST_PROP(_inst, tx_cap),                                         \
-		      sizeof(uint32_t)))
+	(sizeof(struct tt_vuart) + DT_INST_PROP(_inst, rx_cap) + DT_INST_PROP(_inst, tx_cap))
 
-#define DEFINE_UART_TT_VIRT(_inst)                                                                 \
+/* Descriptor placed in .bss, contents are lost when a new image takes over the processor */
+#define UART_TT_VIRT_DEFINE_AREA(_inst)                                                            \
 	struct uart_tt_virt_area_##_inst {                                                         \
 		union {                                                                            \
-			uint32_t mem[UART_TT_VIRT_DESC_SIZE(_inst)];                               \
+			uint32_t mem[DIV_ROUND_UP(UART_TT_VIRT_DESC_SIZE(_inst),                   \
+						  sizeof(uint32_t))];                              \
 			struct tt_vuart vuart;                                                     \
 		};                                                                                 \
 	};                                                                                         \
-	static struct uart_tt_virt_area_##_inst uart_tt_virt_area_##_inst = {                      \
-		.vuart =                                                                           \
-			{                                                                          \
-				.magic = DT_INST_PROP(_inst, magic),                               \
-				.version = ((DT_INST_REG_ADDR(_inst)) << 24) |                     \
-					   (DT_INST_PROP(_inst, version) & GENMASK(0, 24)),        \
-				.rx_cap = DT_INST_PROP(_inst, rx_cap),                             \
-				.tx_cap = DT_INST_PROP(_inst, tx_cap),                             \
-			},                                                                         \
-	};                                                                                         \
+	static struct uart_tt_virt_area_##_inst uart_tt_virt_area_##_inst;
+
+/* Descriptor placed at a fixed address, contents survive across boot stages */
+#define UART_TT_VIRT_CHECK_REGION(_inst)                                                           \
+	BUILD_ASSERT(DT_REG_SIZE(DT_INST_PHANDLE(_inst, memory_region)) >=                         \
+			     UART_TT_VIRT_DESC_SIZE(_inst),                                        \
+		     "tenstorrent,vuart memory-region is too small for its buffers");
+
+#define UART_TT_VIRT_PTR(_inst)                                                                    \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(_inst, memory_region),                                   \
+		    ((struct tt_vuart *)(uintptr_t)DT_REG_ADDR(                                    \
+			    DT_INST_PHANDLE(_inst, memory_region))),                               \
+		    ((struct tt_vuart *)&uart_tt_virt_area_##_inst.vuart))
+
+/* clang-format off */
+#define DEFINE_UART_TT_VIRT(_inst)                                                                 \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(_inst, memory_region),                                   \
+		    (UART_TT_VIRT_CHECK_REGION(_inst)), (UART_TT_VIRT_DEFINE_AREA(_inst)))         \
 	static const struct uart_tt_virt_config uart_tt_virt_config_##_inst = {                    \
-		.vuart = (struct tt_vuart *)&uart_tt_virt_area_##_inst.vuart,                      \
+		.vuart = UART_TT_VIRT_PTR(_inst),                                                  \
+		.init_metadata = DT_INST_PROP(_inst, init_metadata),                               \
 		.loopback = DT_INST_PROP(_inst, loopback),                                         \
+		.magic = DT_INST_PROP(_inst, magic),                                               \
+		.version = ((DT_INST_REG_ADDR(_inst)) << 24) |                                     \
+			   (DT_INST_PROP(_inst, version) & GENMASK(23, 0)),                        \
+		.rx_cap = DT_INST_PROP(_inst, rx_cap),                                             \
+		.tx_cap = DT_INST_PROP(_inst, tx_cap),                                             \
 	};                                                                                         \
 	static struct uart_tt_virt_data uart_tt_virt_data_##_inst;                                 \
                                                                                                    \
@@ -415,4 +469,5 @@ static int uart_tt_virt_init(const struct device *dev)
 			      &uart_tt_virt_data_##_inst, &uart_tt_virt_config_##_inst,            \
 			      PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY, &uart_tt_virt_api);
 
+/* clang-format on */
 DT_INST_FOREACH_STATUS_OKAY(DEFINE_UART_TT_VIRT)

@@ -103,9 +103,20 @@
 	};
 
 	/* note: ram0-ram7 are separated into 128KB regions */
-	ram0: memory@c0060000 {
+	/* Base is rounded up to 4K to satisfy CONFIG_PMP_GRANULARITY. */
+	/* Top 12K is carved out for vuart_ram and is not part of ram0. */
+	ram0: memory@c0067000 {
 		device_type = "memory";
-		reg = <0x0 0xc0060000 0x0 0x100000>;
+		reg = <0x0 0xc0067000 0x0 0xf1000>;
+	};
+
+	/* Backing store for the virtual UART ring buffers. It occupies the last bytes of the
+	 * SRAM map so that it stays at a fixed address across every boot stage, letting console
+	 * output survive the BL0P5 -> BL1 -> MIS handoffs.
+	 */
+	vuart_ram: memory@c0158000 {
+		compatible = "mmio-sram";
+		reg = <0x0 0xc0158000 0x0 0x3000>;
 	};
 
 	soc {

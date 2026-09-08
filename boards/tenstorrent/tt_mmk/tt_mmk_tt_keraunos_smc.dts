@@ -18,6 +18,8 @@
 			compatible = "tenstorrent,vuart";
 			version = <0x00000000>;
 			reg = <0x0>;
+			tx-cap = <11228>;
+			memory-region = <&vuart_ram>;
 			status = "okay";
 		};
 	};

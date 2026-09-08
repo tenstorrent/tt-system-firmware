@@ -4,9 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* BL0P5 starts 64KB from the end of ram0, 48KB available */
+/* BL0P5 starts 64KB from the end of ram0, 32KB available before vuart_ram */
 &ram0 {
-	reg = <0x0 0xc0150000 0x0 0xc000>;
+	reg = <0x0 0xc0150000 0x0 0x8000>;
+};
+
+/* First stage to run on Keraunos, so it puts the persistent vuart into a known state */
+&vuart0 {
+	init-metadata;
 };
 
 /* Not used by BUN2/BL0P5; disables the remoteproc driver and the I3C bus it depends on */

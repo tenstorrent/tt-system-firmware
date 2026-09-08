@@ -11,6 +11,11 @@
 	reg = <0x0 0xc013b000 0x0 0x1d000>;
 };
 
+/* First stage to run on Mimir, so it puts the persistent vuart into a known state */
+&vuart0 {
+	init-metadata;
+};
+
 &{/soc} {
 	/* Mimir SPA view of Keraunos' mbox0: writing even channel x (outbound)
 	 * here triggers Keraunos's RX on its inbound channel x+1. No local

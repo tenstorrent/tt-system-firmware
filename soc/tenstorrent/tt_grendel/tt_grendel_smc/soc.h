@@ -11,6 +11,7 @@
 
 /* Convenience macro since we use scratch registers for debugging */
 #define WRITE_SCRATCH(num, val) (*(((volatile uint32_t *)SCRATCH_REG_BASE) + ((num) * 2)) = (val))
+#define READ_SCRATCH(num)       (*(((volatile uint32_t *)SCRATCH_REG_BASE) + ((num) * 2)))
 
 /* Debug registers defined for this SOC */
 
