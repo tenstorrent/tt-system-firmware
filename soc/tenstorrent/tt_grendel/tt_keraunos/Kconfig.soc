@@ -9,5 +9,13 @@ config SOC_TT_KERAUNOS_SMC
 	help
 	  Tenstorrent KERAUNOS System Management Controller (SMC)
 
+config SOC_TT_KERAUNOS_SEP
+	bool
+	select SOC_FAMILY_TT_GRENDEL
+	select TT_GRENDEL_SEP
+	help
+	  Tenstorrent KERAUNOS Secure Enclave Processor (SEP)
+
 config SOC
 	default "tt_keraunos" if SOC_TT_KERAUNOS_SMC
+	default "tt_keraunos" if SOC_TT_KERAUNOS_SEP

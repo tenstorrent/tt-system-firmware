@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+# printk goes to the SEP virtual console scratch register (see
+# soc/tenstorrent/tt_grendel/tt_grendel_sep/sep_console.c), not a UART.
+CONFIG_CONSOLE=n
+CONFIG_SERIAL=n
+CONFIG_UART_CONSOLE=n
+CONFIG_UART_TT_VIRT=n
+CONFIG_TENSTORRENT_VIRT_CONSOLE=n
+CONFIG_PRINTK=y
+# Harvard split: initialized data is loaded alongside text in ICCM and copied
+# into DCCM at startup, so the payload BL0 loads stays contiguous.
+CONFIG_XIP=y
+CONFIG_FPU=n
+CONFIG_MP_MAX_NUM_CPUS=1
+# ARC carves its exception stack out of the top half of the ISR stack, so this
+# must stay at least 2 * CONFIG_ARC_EXCEPTION_STACK_SIZE.
+CONFIG_ISR_STACK_SIZE=2048
+CONFIG_IDLE_STACK_SIZE=256
+CONFIG_MAIN_STACK_SIZE=2048
+CONFIG_TT_BOOT_BANNER=n
+CONFIG_SYS_CLOCK_EXISTS=n
+CONFIG_LOG=n

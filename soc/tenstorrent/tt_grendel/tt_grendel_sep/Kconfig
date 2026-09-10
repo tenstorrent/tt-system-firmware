@@ -1,0 +1,10 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+# Grendel SEP cluster. Selected by Keraunos SEP; not a standalone SoC name.
+config TT_GRENDEL_SEP
+	bool
+	select ARC
+	select CPU_EM4
+	help
+	  Tenstorrent Grendel SEP cluster.

@@ -1,0 +1,23 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Linked clear of both the BUN2 staging area (0xc0066400 + 0x20000, ending at
+ * 0xc0086400) and BL0P5 itself (0xc0150000 + 0xc000), so a staged bundle and
+ * its own execute location never overlap. Must match the load_addr the test
+ * puts in the BUN2 TOC entry.
+ */
+&ram0 {
+	reg = <0x0 0xc0090000 0x0 0x20000>;
+};
+
+/* Not used by the stub; disables the remoteproc driver and the I3C bus it needs */
+&remoteproc {
+	status = "disabled";
+};
+
+&i3c1 {
+	status = "disabled";
+};

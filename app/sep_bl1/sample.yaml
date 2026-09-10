@@ -1,0 +1,13 @@
+sample:
+  name: SEP BL1
+tests:
+  app.sep_bl1.keraunos:
+    platform_allow: tt_mmk/tt_keraunos/sep
+    tags:
+      - sep
+      - boot
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "Hello World! (.*)"

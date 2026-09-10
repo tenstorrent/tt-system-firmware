@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Keraunos SEP CPU view. The SEP is an ARC EM4 (ARCv2) core with a Harvard
+ * split: BL1 executes from ICCM SRAM and keeps its data in DCCM. The 64 KiB
+ * SRAM is a scratch pad shared with the rest of the system, not the image
+ * region. SYS_CLOCK_EXISTS is disabled, so no timer is claimed.
+ *
+ * SMC resources appear at the SEP's view of the SMC base, which differs from
+ * the SMC-local addresses app/bl0p5 uses from its own base.
+ */
+
+#include "skeleton.dtsi"
+
+/ {
+	compatible = "tenstorrent,keraunos-sep";
+	model = "tenstorrent,keraunos-sep";
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu@0 {
+			device_type = "cpu";
+			compatible = "snps,arcem";
+			reg = <0>;
+		};
+	};
+
+	intc: arcv2-intc {
+		compatible = "snps,arcv2-intc";
+		interrupt-controller;
+		#interrupt-cells = <2>;
+	};
+
+	/* BL0 copies BL1 to the start of ICCM SRAM and jumps there. */
+	iccm0: iccm@70010000 {
+		compatible = "arc,iccm";
+		reg = <0x70010000 0x20000>;
+	};
+
+	/* Stops 0x80 short of the 64 KiB DCCM: BL0 leaves its handoff struct at
+	 * the end of DCCM for BL1 to walk back from.
+	 */
+	dccm0: dccm@80000000 {
+		compatible = "arc,dccm";
+		reg = <0x80000000 0xff80>;
+	};
+
+	/* RoT extension scratch pad, also the window shared with the system. */
+	ram0: memory@c1800000 {
+		compatible = "mmio-sram";
+		reg = <0xc1800000 0x10000>;
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges;
+
+		smc_cpu_ctrl: smc-cpu-ctrl@2010000 {
+			compatible = "syscon";
+			reg = <0x02010000 0x11c0>;
+			status = "okay";
+		};
+
+		host_boot_state: scratch-reg@2010160 {
+			compatible = "tenstorrent,scratch-reg";
+			reg = <0x02010160 0x4>;
+			status = "okay";
+		};
+
+		bundle_validation: scratch-reg@2010150 {
+			compatible = "tenstorrent,scratch-reg";
+			reg = <0x02010150 0x4>;
+			status = "okay";
+		};
+
+		serdes0_sram: memory@22400000 {
+			reg = <0x22400000 0x8000>;
+			status = "okay";
+		};
+
+		bun2_staging: memory@2066400 {
+			reg = <0x02066400 0x20000>;
+			status = "okay";
+		};
+	};
+};
