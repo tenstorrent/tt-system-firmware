@@ -19,6 +19,16 @@ typedef SMC_CPU_SMC_OUTBOUND_MAILBOX_0_IRQEN_reg_u SMC_MAILBOX_IRQEN_reg_u;
 typedef SMC_CPU_SMC_OUTBOUND_MAILBOX_0_IRQP_reg_u SMC_MAILBOX_IRQP_reg_u;
 typedef SMC_CPU_SMC_CPU_CTRL_RESET_CTRL_reg_u SMC_CPU_CTRL_RESET_CTRL_reg_u;
 typedef SMC_CPU_AXI_DATA_ACCEL_AXI_DMA_CTRL_CONFIG_reg_u AXI_DMA_CTRL_CONFIG_reg_u;
+typedef SMC_CPU_AXI_DATA_ACCEL_AXI_DMA_CTRL_STATUS_0_reg_u AXI_DMA_CTRL_STATUS_reg_u;
+/* busy is a 10-bit field at offset 0 in the SDK's status reg_u, not a plain mask define */
+#define AXI_DMA_CTRL_STATUS_BUSY_MASK 0x3FFU
+/* D2D tile register names differ between Mimir (D2D_0_) and Keraunos (D2D0_) */
+#if defined(PLATFORM_MIMIR_SMC)
+typedef D2D_0_D2D_D2D_SS_ASYNC_CPU_CTRL_reg_u D2D_SS_ASYNC_CPU_CTRL_reg_u;
+typedef D2D_0_STRAP_RESET_reg_u TT_MIMIR_D2D_STRAP_RESET_reg_u;
+#elif defined(PLATFORM_KER_SMC)
+typedef D2D0_D2D_D2D_SS_ASYNC_CPU_CTRL_reg_u D2D_SS_ASYNC_CPU_CTRL_reg_u;
+#endif
 
 #ifndef SMC_CPU_CTRL_LOCAL_BASE_REG_DEFAULT
 #define SMC_CPU_CTRL_LOCAL_BASE_REG_DEFAULT 0

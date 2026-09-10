@@ -61,38 +61,5 @@ if(D2D_FW_STUB_UNIT)
 endif()
 
 # chip_init.c calls the drop's basic_init library rather than restating the
-# reset and firewall sequence, so the test needs the Sival SDK. The SDK is
-# closed source and not carried in this tree; without the tarball the test does
-# not build.
-set(SIVAL_EXTDIR ${CMAKE_BINARY_DIR}/grendel-sival-sdk)
-set(SIVAL_BLOBS_TARBALL
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../../zephyr/blobs/grendel-sival-sdk.tar.gz)
-
-if(NOT EXISTS "${SIVAL_BLOBS_TARBALL}")
-  message(FATAL_ERROR
-          "The Sival SDK drop is missing:\n  ${SIVAL_BLOBS_TARBALL}\n"
-          "It is closed source and distributed separately.")
-endif()
-
-file(MAKE_DIRECTORY ${SIVAL_EXTDIR})
-execute_process(COMMAND tar -xzf ${SIVAL_BLOBS_TARBALL}
-  WORKING_DIRECTORY ${SIVAL_EXTDIR}
-)
-
-set(SIVAL_SDK ${SIVAL_EXTDIR}/grendel_sival_sdk)
-target_include_directories(app PRIVATE
-                           ${SIVAL_SDK}/common/include/registers
-                           ${SIVAL_SDK}/common/include/registers/common
-                           ${SIVAL_SDK}/common/include/registers/mimir
-                           ${SIVAL_SDK}/firmware/chiplet_config
-                           ${SIVAL_SDK}/firmware/common/include
-                           ${SIVAL_SDK}/firmware/drivers/addr_remap/include
-                           ${SIVAL_SDK}/firmware/drivers/firewall/include
-                           ${SIVAL_SDK}/firmware/drivers/noc/include
-                           ${SIVAL_SDK}/firmware/drivers/smc/include
-                           ${SIVAL_SDK}/firmware/libs/basic_init/include)
-
-target_sources(app PRIVATE
-               ${SIVAL_SDK}/firmware/drivers/firewall/src/firewall.c
-               ${SIVAL_SDK}/firmware/drivers/smc/src/smc_init.c
-               ${SIVAL_SDK}/firmware/libs/basic_init/src/basic_init.c)
+# reset and firewall sequence.
+target_link_libraries(app PRIVATE gr_smc)
