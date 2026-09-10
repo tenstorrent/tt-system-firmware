@@ -1,0 +1,8 @@
+common:
+  tags:
+    - drivers
+tests:
+  drivers.tt_pcie.endpoint:
+    build_only: true
+    platform_allow:
+      - tt_mmk/tt_keraunos/smc

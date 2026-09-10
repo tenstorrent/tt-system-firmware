@@ -1,0 +1,18 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Emul mtime is ~100 kHz vs CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC=1 MHz, so
+ * cdns_i3c_bus_init()'s k_busy_wait(201) plus DAA/CCC timeouts miss a 10 ms
+ * sim-time budget. This app does not use I3C.
+ */
+&i3c1 {
+	status = "disabled";
+};
+
+&remoteproc {
+	status = "disabled";
+};
