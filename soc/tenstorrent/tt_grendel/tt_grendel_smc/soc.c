@@ -11,7 +11,7 @@
 #include <zephyr/sys/sys_io.h>
 
 #include "platform.h"
-#ifdef CONFIG_SIVAL_SHIM
+#ifdef CONFIG_SIVAL_SDK
 #include "tt_grendel_shim.h"
 #endif
 #include "soc.h"

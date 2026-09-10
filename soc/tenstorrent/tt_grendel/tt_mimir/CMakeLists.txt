@@ -5,7 +5,7 @@ zephyr_include_directories(.)
 # Add SOC setup
 zephyr_compile_definitions(PLATFORM_MIMIR_SMC=1)
 
-if(CONFIG_SIVAL_SHIM)
+if(CONFIG_SIVAL_SDK)
   set(SIVAL_EXTDIR ${CMAKE_BINARY_DIR}/grendel-sival-sdk)
   set(SIVAL_BLOBS_TARBALL ${CMAKE_CURRENT_SOURCE_DIR}/../../../../zephyr/blobs/grendel-sival-sdk.tar.gz)
 

@@ -17,7 +17,7 @@ LOG_MODULE_REGISTER(tt_d2d, CONFIG_TT_D2D_LOG_LEVEL);
 #include <d2d_api_general_definitions.h>
 #include <platform.h>
 
-#ifdef CONFIG_SIVAL_SHIM
+#ifdef CONFIG_SIVAL_SDK
 #include "tt_grendel_shim.h"
 #endif
 

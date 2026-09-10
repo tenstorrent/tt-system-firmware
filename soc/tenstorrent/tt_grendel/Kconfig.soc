@@ -9,9 +9,11 @@ config SOC_FAMILY
 
 rsource "*/Kconfig.soc"
 
-config SIVAL_SHIM
+config SIVAL_SDK
 	bool
 	default y if SOC_TT_KERAUNOS_SMC
 	help
-	  Map SiVal SMC_CPU_* register types to the short names used by
-	  shared Grendel drivers.
+	  Indicates we are building with the SiVal SDK (tarball currently not in tree).
+	  For source files using the definitions in the SiVal "sources" tarball, we
+	  map SDK definitions to those present in "Sources" so that the code can
+	  compile with either header. See tt_grendel_shim.h

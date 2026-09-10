@@ -3,7 +3,7 @@
 
 config TT_GR_SMC
 	bool "Grendel SMC support library"
-	select SIVAL_SHIM
+	select SIVAL_SDK
 	help
 	  Enable Tenstorrent Grendel SMC support library components.
 
