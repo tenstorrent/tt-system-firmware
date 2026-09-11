@@ -10,7 +10,7 @@
     {
       "board": "p100a",
       "supports_smoke": true,
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
@@ -19,7 +19,7 @@
     {
       "board": "p150a",
       "supports_smoke": true,
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
@@ -28,7 +28,7 @@
     {
       "board": "p300a",
       "supports_smoke": true,
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-p300:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-p300:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole_p300",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
@@ -36,7 +36,7 @@
     },
     {
       "board": "quietbox2",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-qb-ge:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-qb-ge:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole_qb_ge",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
@@ -44,16 +44,15 @@
     },
     {
       "board": "loudbox",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-loudbox:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-loudbox:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole_loudbox",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
       "kmd_build": "2.11.0"
     },
-
     {
       "board": "bh-galaxy-revc",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-glx:v0.74.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-glx:v0.78.0-dev20260827-35-g31a9a54154d",
       "metal-target": "blackhole_glx",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
