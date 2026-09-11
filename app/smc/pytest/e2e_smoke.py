@@ -856,9 +856,7 @@ def arc_watchdog_test(asic_id):
         logger.error(f"Base exception error while detecting chips: {e}")
     # Delay a bit, then rescan PCIe
     time.sleep(1.0)
-    # Rescan PCIe, and see if ARC chip has been reset
-    rescan_pcie()
-    arc_chip = pyluwen.detect_chips()[asic_id]
+    arc_chip = wait_arc_boot(asic_id)
     hang_pc = arc_chip.axi_read32(ARC_HANG_PC_REG_ADDR)
     if hang_pc == 0:
         logger.error("ARC core was not reset, but PCIe device re-enumerated?")
