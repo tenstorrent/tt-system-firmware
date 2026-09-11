@@ -531,8 +531,9 @@ static void update_telemetry(void)
 		telemetry_internal_data
 			.vcore_voltage; /* reported in mV, will be truncated to uint32_t */
 	telemetry[TAG_TDP] =
+		telemetry_internal_data.vcore_power + telemetry_internal_data.gddr_io_power_east +
 		telemetry_internal_data
-			.vcore_power; /* reported in W, will be truncated to uint32_t */
+			.gddr_io_power_west; /* reported in W, will be truncated to uint32_t */
 	telemetry[TAG_TDC] =
 		telemetry_internal_data
 			.vcore_current; /* reported in A, will be truncated to uint32_t */
