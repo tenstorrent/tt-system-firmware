@@ -157,3 +157,94 @@ jobs:
           # Clean out metal
           rm -f $HOME/fw_pack-*.fwbundle
           kill $(pgrep -f network-keepalive) || true
+
+  metal-deploy-test:
+    name: Metal Deploy Test on ${{ matrix.config.board }}
+    needs: [build-fw-artifact, generate-matrix]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.config.board }}
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /dev/hugepages:/dev/hugepages
+        # Host kernel build tree, required to compile tt-kmd in-container.
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
+      options: ${{ matrix.config.metal-options }}
+    env:
+      ARCH_NAME: ${{ matrix.config.arch-name }}
+      HOME: /home/user/tt-metal
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.HOME }}
+    steps:
+      - name: Checkout KMD build script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/ci/build-and-load-kmd.sh
+          sparse-checkout-cone-mode: false
+          path: tt-system-firmware
+
+      - name: Build and load tt-kmd
+        shell: bash
+        run: |
+          sudo bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/build-and-load-kmd.sh" \
+            "${{ matrix.config.kmd_build }}"
+
+      - id: mkdir-home-user-tt-metal
+        run: |
+          mkdir -p $HOME
+      - name: Download the latest firmware bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-fw-artifact.outputs.combined-fwbundle-artifact }}
+          path: ${{ env.HOME }}
+      - name: Flash the firmware
+        run: |
+          python -m venv .env
+          source .env/bin/activate
+          pip install tt-flash==3.10.0
+          tt-flash $HOME/fw_pack-*.fwbundle --force
+          tt-smi -r
+
+      - name: Run Deploy Test
+        timeout-minutes: 120
+        env:
+          ITERS: 1
+          DRAM_TEST_FAST: 1
+        run: |
+          # Keep the network alive by periodically pulling tenstorrent.com.
+          # This prevents a bug in the container runtime where the network interface can
+          # drop after a period of inactivity, which would cause our tests to fail.
+          echo "while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
+          chmod +x /tmp/network-keepalive
+          /tmp/network-keepalive &
+          echo "Network keepalive started."
+          mkdir -p /tmp/deploy-logs
+          set +e
+          # test_runner.sh is not executable in the Metal image (mode 0644).
+          sh tests/tt_metal/tt_metal/deployment/test_runner.sh -l /tmp/deploy-logs 2>&1 \
+            | tee /tmp/deploy-logs/summary.log
+          status=$?
+          cp -f "$HOME"/out.json /tmp/deploy-logs/ 2>/dev/null || true
+          exit "$status"
+
+      - name: Upload Test Output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: metal-deploy-test-${{ matrix.config.board }}-output
+          path: /tmp/deploy-logs
+
+      - name: cleanup
+        if: ${{ always() }}
+        run: |
+          # Clean out metal
+          rm -f $HOME/fw_pack-*.fwbundle
+          kill $(pgrep -f network-keepalive) || true
