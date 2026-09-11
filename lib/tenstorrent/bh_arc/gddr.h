@@ -9,7 +9,21 @@
 #include "gddr_telemetry_table.h"
 #include "gddr_params.h"
 
+#include <zephyr/sys/util.h>
 #include <zephyr/sys_clock.h>
+
+/* Oldest telemetry table version the SMC can still consume. Tables older than
+ * GDDR_TELEMETRY_TABLE_T_VERSION simply lack the newer trailing fields.
+ */
+#define GDDR_TELEMETRY_TABLE_T_VERSION_MIN 2
+
+/* gddr_params_table_t feature_bits fields (bh-mrisc feature_bit_t) */
+#define GDDR_FEATURE_AC_TIMING_OVERRIDE       BIT(0)
+#define GDDR_FEATURE_CTRL_PHY_PARAMS_OVERRIDE BIT(1)
+#define GDDR_FEATURE_ENABLE_INLINE_ECC        BIT(2)
+#define GDDR_FEATURE_CA_SETTINGS_VALID        BIT(3)
+#define GDDR_FEATURE_ENABLE_CA_MARGIN_CHECK   BIT(4)
+#define GDDR_FEATURE_ENABLE_CA_SWEEP_FALLBACK BIT(5)
 
 #define MIN_GDDR_SPEED             12000
 #define MAX_GDDR_SPEED             20000
@@ -28,11 +42,22 @@
 #define MRISC_POST_CODE                 RISC_CTRL_A_SCRATCH_1__REG_ADDR
 #define MRISC_MSG_REGISTER              RISC_CTRL_A_SCRATCH_2__REG_ADDR
 
-#define MRISC_INIT_FINISHED            0xdeadbeef
-#define MRISC_INIT_FAILED              0xfa11
-#define MRISC_INIT_BEFORE              0x11111111
-#define MRISC_INIT_STARTED             0x0
-#define MRISC_INIT_TIMEOUT             1000 /* In ms */
+#define MRISC_INIT_FINISHED 0xdeadbeef
+#define MRISC_INIT_FAILED   0xfa11
+#define MRISC_INIT_BEFORE   0x11111111
+#define MRISC_INIT_STARTED  0x0
+#ifdef CONFIG_TT_BH_ARC_GDDR_CA_LATCH
+/* The CA sweep fallback (MRISC 2.17+) can escalate through the full
+ * 15 VREFC x 4 termination x 8 driver strength matrix when no setting
+ * satisfies the +/-N margin requirement. Measured worst case is ~28 s on a
+ * P300 (failing points are dominated by training retries); allow for it.
+ * Healthy boots still finish in well under a second - this only delays the
+ * failure verdict for controllers that are already in trouble.
+ */
+#define MRISC_INIT_TIMEOUT 40000 /* In ms */
+#else
+#define MRISC_INIT_TIMEOUT 1000 /* In ms */
+#endif
 #define MRISC_MEMTEST_TIMEOUT          1000 /* In ms */
 #define MRISC_POWER_SETTING_TIMEOUT_MS 1000
 

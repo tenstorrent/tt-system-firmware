@@ -1,0 +1,24 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Two 4 KB gddrcal banks, each exactly one erase block, matching the layout in
+ * boards/tenstorrent/tt_blackhole/tt_blackhole_fixed_partitions.dtsi. Placed
+ * above storage_partition (which ends at 0x100000) so they do not overlap any
+ * partition native_sim already defines.
+ */
+&flash0 {
+	partitions {
+		gddrcal_a: partition@100000 {
+			label = "gddrcala";
+			reg = <0x100000 DT_SIZE_K(4)>;
+		};
+
+		gddrcal_b: partition@101000 {
+			label = "gddrcalb";
+			reg = <0x101000 DT_SIZE_K(4)>;
+		};
+	};
+};

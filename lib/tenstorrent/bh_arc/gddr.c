@@ -6,6 +6,7 @@
 
 #include "bh_reset.h"
 #include "gddr.h"
+#include "gddr_cal.h"
 #include "harvesting.h"
 #include "init.h"
 #include "noc.h"
@@ -15,6 +16,7 @@
 #include "status_reg.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #include <tenstorrent/bh_power.h>
 #include <tenstorrent/msgqueue.h>
@@ -34,6 +36,7 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_tt_bh_noc.h>
 #include <zephyr/drivers/dma/dma_arc_hs.h>
+#include <zephyr/sys/util.h>
 
 static const struct device *const pll_dev_3 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll3));
 static const struct device *flash = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi_flash));
@@ -54,13 +57,13 @@ uint8_t get_gddr_mrisc_noc2axi_port(uint8_t gddr_inst)
 	return (gddr_inst == 0) ? 2 : MRISC_FW_NOC2AXI_PORT;
 }
 
-#define MRISC_SETUP_TLB       13
-#define MRISC_L1_ADDR         (1ULL << 37)
-#define MRISC_REG_ADDR        (1ULL << 40)
-#define MRISC_FW_CFG_OFFSET   0x3C00
-#define ARC_NOC0_X            8
-#define ARC_NOC0_Y            0
-#define MRISC_L1_SIZE         (128 * 1024)
+#define MRISC_SETUP_TLB     13
+#define MRISC_L1_ADDR       (1ULL << 37)
+#define MRISC_REG_ADDR      (1ULL << 40)
+#define MRISC_FW_CFG_OFFSET 0x3C00
+#define ARC_NOC0_X          8
+#define ARC_NOC0_Y          0
+#define MRISC_L1_SIZE       (128 * 1024)
 
 #define MRISC_FW_TAG     "memfw"
 #define MRISC_FW_CFG_TAG "memfwcfg"
@@ -71,6 +74,37 @@ static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtab
 
 static struct gddr_bist_info gddr_bist;
 static uint8_t gddr_telemetry_version_ok;
+
+BUILD_ASSERT(GDDR_CAL_NUM_CONTROLLERS == NUM_GDDR, "gddrcal table entry count mismatch");
+
+/* Flash-backed per-ASIC, per-controller CA calibration table. Zero (all entries invalid)
+ * when the gddrcal partitions are empty or corrupt; entries get populated by the latch path.
+ */
+static gddr_cal_table_t gddr_cal_table;
+/* This ASIC's row of gddr_cal_table, or NULL if the ASIC location is out of range. */
+static gddr_cal_entry_t *gddr_asic_cal;
+
+/* Row of the gddrcal table belonging to this ASIC: 0 on single-ASIC boards, 0/1 on P300,
+ * SPI-provisioned UBB-local ASIC location on Galaxy. Allows one provisioned table image to
+ * be broadcast to every ASIC's flash.
+ *
+ * @return the row index, or -EINVAL if the ASIC location does not fit the table. Aliasing
+ * an out-of-range location onto another ASIC's row would silently apply the wrong CA
+ * settings, so CA seeding and latching are skipped instead.
+ */
+static int GddrCalAsicIndex(void)
+{
+	uint32_t asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
+
+	if (asic_location >= GDDR_CAL_NUM_ASICS) {
+		LOG_WRN_ONCE("asic_location %u outside gddrcal table (%u rows); CA seed/latch "
+			     "disabled",
+			     asic_location, GDDR_CAL_NUM_ASICS);
+		return -EINVAL;
+	}
+
+	return asic_location;
+}
 
 struct gddr_bist_info get_gddr_bist_info(void)
 {
@@ -136,29 +170,43 @@ static void MriscRegWrite32(uint8_t gddr_inst, uint32_t addr, uint32_t val)
 
 int read_gddr_telemetry_table(uint8_t gddr_inst, gddr_telemetry_table_t *gddr_telemetry)
 {
-#ifdef CONFIG_DMA_ARC_HS
-	volatile uint8_t *mrisc_l1 = SetupMriscL1Tlb(gddr_inst);
 	bool dma_ok = false;
 
 #ifdef CONFIG_DMA_ARC_HS
+	volatile uint8_t *mrisc_l1 = SetupMriscL1Tlb(gddr_inst);
+
 	dma_ok = dma_arc_hs_transfer(arc_dma_dev, 0,
 				     (const void *)(mrisc_l1 + GDDR_TELEMETRY_TABLE_ADDR),
 				     gddr_telemetry, sizeof(*gddr_telemetry), K_MSEC(500)) >= 0;
 #endif
+	/* Fall back to word-at-a-time reads when DMA is unavailable or failed.
+	 * MriscL1Read32() sets up its own TLB, so this needs no prior SetupMriscL1Tlb().
+	 */
 	if (!dma_ok) {
 		for (int i = 0; i < sizeof(*gddr_telemetry) / 4; i++) {
 			((uint32_t *)gddr_telemetry)[i] =
 				MriscL1Read32(gddr_inst, GDDR_TELEMETRY_TABLE_ADDR + i * 4);
 		}
 	}
-#endif
-	/* Check that version matches expectation. */
-	if (gddr_telemetry->telemetry_table_version != GDDR_TELEMETRY_TABLE_T_VERSION) {
-		LOG_WRN_ONCE("GDDR telemetry table version mismatch: %d (expected %d)",
+	/* Check that version is within the supported range. */
+	if (!IN_RANGE(gddr_telemetry->telemetry_table_version, GDDR_TELEMETRY_TABLE_T_VERSION_MIN,
+		      GDDR_TELEMETRY_TABLE_T_VERSION)) {
+		LOG_WRN_ONCE("GDDR telemetry table version mismatch: %d (expected %d-%d)",
 			     gddr_telemetry->telemetry_table_version,
-			     GDDR_TELEMETRY_TABLE_T_VERSION);
+			     GDDR_TELEMETRY_TABLE_T_VERSION_MIN, GDDR_TELEMETRY_TABLE_T_VERSION);
 		return -ENOTSUP;
 	}
+
+	/* A v2 MRISC only publishes up to uncorr_edc_wr_error, so the read above pulled
+	 * unrelated L1 contents into the v3 CA fields. Zero them so callers can rely on
+	 * absent fields reading as zero.
+	 */
+	if (gddr_telemetry->telemetry_table_version < 3) {
+		const size_t v3_start = offsetof(gddr_telemetry_table_t, ca_vrefc_offset);
+
+		memset((uint8_t *)gddr_telemetry + v3_start, 0, sizeof(*gddr_telemetry) - v3_start);
+	}
+
 	return 0;
 }
 
@@ -224,6 +272,26 @@ static int LoadMriscFwCfg(uint8_t gddr_inst, uint8_t *buf, size_t buf_size, size
 			LOG_WRN_ONCE("MRISC params table version %d does not support controller_id "
 				     "field (>= 6 required)",
 				     params_table->params_table_version);
+		}
+		if (IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_LATCH) &&
+		    params_table->params_table_version >= 7) {
+			uint32_t feature_bits = params_table->feature_bits;
+			const gddr_cal_entry_t *entry =
+				gddr_asic_cal ? &gddr_asic_cal[gddr_inst] : NULL;
+
+			feature_bits |= GDDR_FEATURE_ENABLE_CA_MARGIN_CHECK |
+					GDDR_FEATURE_ENABLE_CA_SWEEP_FALLBACK;
+			if (entry != NULL && entry->valid) {
+				params_table->ca_vrefc_offset = entry->ca_vrefc_offset;
+				params_table->ca_termination_offset = entry->ca_termination_offset;
+				if (params_table->params_table_version >= 8) {
+					/* 0xFF = "not seeded", MRISC keeps its board default */
+					params_table->ca_ocd_pulldown_offset =
+						entry->ca_ocd_pulldown_offset;
+				}
+				feature_bits |= GDDR_FEATURE_CA_SETTINGS_VALID;
+			}
+			params_table->feature_bits = feature_bits;
 		}
 	}
 
@@ -477,6 +545,23 @@ static int InitMrisc(void)
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_LATCH)) {
+		/* Resolve this ASIC's row up front. Done independently of the flash read so
+		 * that the latch path can still populate an initially empty table.
+		 */
+		int asic_row = GddrCalAsicIndex();
+
+		if (asic_row >= 0) {
+			gddr_asic_cal = gddr_cal_table.entries[asic_row];
+			rc = gddr_cal_read(&gddr_cal_table);
+			if (rc < 0) {
+				LOG_INF("No valid gddrcal table (%d); MRISC will use default CA "
+					"settings",
+					rc);
+			}
+		}
+	}
+
 	rc = tt_boot_fs_find_fd_by_tag(flash, MRISC_FW_CFG_TAG, &tag_fd);
 	if (rc < 0) {
 		LOG_ERR("%s (%s) failed: %d", "tt_boot_fs_find_fd_by_tag", MRISC_FW_CFG_TAG, rc);
@@ -543,9 +628,11 @@ static int CheckGddrTraining(uint8_t gddr_inst, k_timepoint_t timeout)
 								 offsetof(gddr_telemetry_table_t,
 									  telemetry_table_version));
 
-			if (version != GDDR_TELEMETRY_TABLE_T_VERSION) {
-				LOG_ERR("%s[%d]: version mismatch: %d (expected %d)",
+			if (!IN_RANGE(version, GDDR_TELEMETRY_TABLE_T_VERSION_MIN,
+				      GDDR_TELEMETRY_TABLE_T_VERSION)) {
+				LOG_ERR("%s[%d]: version mismatch: %d (expected %d-%d)",
 					"GDDR telemetry table", gddr_inst, version,
+					GDDR_TELEMETRY_TABLE_T_VERSION_MIN,
 					GDDR_TELEMETRY_TABLE_T_VERSION);
 				return -ENOTSUP;
 			}
@@ -609,6 +696,97 @@ static int CheckGddrHwTest(void)
 	return any_error;
 }
 
+/**
+ * @brief Pull the applied CA settings out of MRISC telemetry into the cal table cache.
+ *
+ * Reads the CA result fields the MRISC FW published after training. If MRISC reports that
+ * the applied settings differ from the seeded/default ones (i.e. the runtime CA sweep
+ * picked a new best setting), the cached gddrcal entry is updated.
+ *
+ * @return true if the cached table changed and needs to be written back to flash.
+ */
+static bool LatchGddrCaSettings(uint8_t gddr_inst)
+{
+	if (!IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_LATCH) || gddr_asic_cal == NULL) {
+		return false;
+	}
+
+	uint32_t version = MriscL1Read32(
+		gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
+				   offsetof(gddr_telemetry_table_t, telemetry_table_version));
+
+	/* CA result fields only exist in telemetry table v3+ */
+	if (version < 3) {
+		return false;
+	}
+
+	/* ca_vrefc_offset, ca_termination_offset, ca_settings_source and ca_settings_changed
+	 * are adjacent uint8_t fields sharing one 32-bit word.
+	 */
+	uint32_t ca_word =
+		MriscL1Read32(gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
+						 offsetof(gddr_telemetry_table_t, ca_vrefc_offset));
+	uint8_t vrefc_offset = FIELD_GET(GENMASK(7, 0), ca_word);
+	uint8_t termination_offset = FIELD_GET(GENMASK(15, 8), ca_word);
+	uint8_t settings_changed = FIELD_GET(GENMASK(31, 24), ca_word);
+
+	if (settings_changed == 0) {
+		return false;
+	}
+
+	/* Applied CA driver strength. MRISC reports 0xFF when it did not pick a value;
+	 * seeding that back through the params table makes MRISC keep its default.
+	 */
+	uint32_t ca_word2 = MriscL1Read32(
+		gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
+				   offsetof(gddr_telemetry_table_t, ca_ocd_pulldown_offset));
+	uint8_t ocd_pulldown_offset = FIELD_GET(GENMASK(7, 0), ca_word2);
+
+	/* Anything persisted here is seeded back into MRISC on every later boot, so refuse
+	 * values the encodings cannot represent rather than making a bad read permanent.
+	 */
+	if (vrefc_offset > GDDR_CA_VREFC_OFFSET_MAX ||
+	    termination_offset > GDDR_CA_TERMINATION_OFFSET_MAX ||
+	    (ocd_pulldown_offset > GDDR_CA_OCD_PULLDOWN_OFFSET_MAX &&
+	     ocd_pulldown_offset != GDDR_CA_OCD_PULLDOWN_UNSET)) {
+		LOG_WRN("GDDR %d reported out-of-range CA settings: vrefc_offset=0x%x "
+			"termination_offset=%d ocd_pulldown_offset=0x%x; not latching",
+			gddr_inst, vrefc_offset, termination_offset, ocd_pulldown_offset);
+		return false;
+	}
+
+	gddr_cal_entry_t *entry = &gddr_asic_cal[gddr_inst];
+
+	if (entry->valid && entry->ca_vrefc_offset == vrefc_offset &&
+	    entry->ca_termination_offset == termination_offset &&
+	    entry->ca_ocd_pulldown_offset == ocd_pulldown_offset) {
+		return false;
+	}
+
+	*entry = (gddr_cal_entry_t){
+		.ca_vrefc_offset = vrefc_offset,
+		.ca_termination_offset = termination_offset,
+		.ca_ocd_pulldown_offset = ocd_pulldown_offset,
+		.valid = 1,
+	};
+	LOG_INF("GDDR %d CA settings changed: vrefc_offset=0x%x termination_offset=%d "
+		"ocd_pulldown_offset=0x%x",
+		gddr_inst, vrefc_offset, termination_offset, ocd_pulldown_offset);
+	return true;
+}
+
+/* Write the cached cal table to the gddrcal flash partition. */
+static void WriteGddrCaSettings(void)
+{
+	int rc = gddr_cal_write(&gddr_cal_table);
+
+	if (rc < 0) {
+		LOG_WRN("%s() failed: %d", "gddr_cal_write", rc);
+	} else {
+		LOG_INF("Latched updated GDDR CA settings to flash");
+	}
+}
+
 static int gddr_training(void)
 {
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ARC_INIT_STEPE);
@@ -626,6 +804,7 @@ static int gddr_training(void)
 	}
 
 	bool init_errors = false;
+	bool cal_dirty = false;
 	k_timepoint_t timeout = sys_timepoint_calc(K_MSEC(MRISC_INIT_TIMEOUT));
 
 	for (uint8_t gddr_inst = 0; gddr_inst < NUM_GDDR; gddr_inst++) {
@@ -638,6 +817,8 @@ static int gddr_training(void)
 			} else if (error) {
 				LOG_ERR("GDDR instance %d failed training", gddr_inst);
 				init_errors = true;
+			} else {
+				cal_dirty |= LatchGddrCaSettings(gddr_inst);
 			}
 		}
 	}
@@ -648,6 +829,14 @@ static int gddr_training(void)
 			LOG_ERR("GDDR HW test failed");
 			record_init_failure(INIT_STAGE_GDDR_TRAIN);
 			return -EIO;
+		}
+
+		/* Only now are the new settings known to survive a memory test. Persisting
+		 * them earlier would let a CA choice that trains but cannot hold data be
+		 * seeded back on every subsequent boot.
+		 */
+		if (cal_dirty) {
+			WriteGddrCaSettings();
 		}
 	} else {
 		record_init_failure(INIT_STAGE_GDDR_TRAIN);

@@ -241,6 +241,25 @@ partitions {
 		binary-path = "$BUILD_DIR/mcuboot_magic_test.bin";
 	};
 
+	/*
+	 * Per-controller GDDR CA calibration data, latched by the SMC after
+	 * MRISC training. Two banks, each exactly one erase block: the SMC only
+	 * ever erases the bank that is not currently active, so a power loss
+	 * mid-update leaves the previous good table readable. See gddr_cal.c.
+	 *
+	 * No binary-path: the banks start erased and are written in the field
+	 * (or provisioned from characterization data).
+	 */
+	gddrcal_a: partition@31e000 {
+		label = "gddrcala";
+		reg = <0x31e000 DT_SIZE_K(4)>;
+	};
+
+	gddrcal_b: partition@31f000 {
+		label = "gddrcalb";
+		reg = <0x31f000 DT_SIZE_K(4)>;
+	};
+
 	/* Leave some space for future fixed partitions, if needed. */
 
 	/* Free space for storage */
