@@ -151,6 +151,6 @@ static int tt_grendel_smc_filter_post_pcie_init(void)
 				  "BUN2 staging");
 }
 
-SYS_INIT(tt_grendel_smc_filter_pre_pcie_init, PRE_KERNEL_2, 0);
+SYS_INIT(tt_grendel_smc_filter_pre_pcie_init, POST_KERNEL, 10);
 
-SYS_INIT(tt_grendel_smc_filter_post_pcie_init, POST_KERNEL, 0);
+SYS_INIT(tt_grendel_smc_filter_post_pcie_init, POST_KERNEL, 30);

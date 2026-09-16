@@ -91,7 +91,7 @@ static int tt_grendel_pcie_init(const struct device *dev)
 		.bar4_size = ((uint64_t)DT_INST_PROP_BY_IDX(inst, bar4_size, 0) << 32) |           \
 			     DT_INST_PROP_BY_IDX(inst, bar4_size, 1),                              \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(inst, tt_grendel_pcie_init, NULL, NULL, &config_##inst,              \
-			      PRE_KERNEL_2, CONFIG_TT_GRENDEL_PCIE_INIT_PRIORITY, NULL);
+	DEVICE_DT_INST_DEFINE(inst, tt_grendel_pcie_init, NULL, NULL, &config_##inst, POST_KERNEL, \
+			      CONFIG_TT_GRENDEL_PCIE_INIT_PRIORITY, NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(TT_GRENDEL_PCIE_DEFINE)
