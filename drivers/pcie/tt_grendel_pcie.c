@@ -12,6 +12,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/drivers/misc/tt_bundle_loader.h>
+#include <inttypes.h>
 
 #include "pcie_init.h"
 
@@ -32,10 +34,10 @@ struct tt_grendel_pcie_config {
  * Boot spec Table 149 differs (BAR0 SYSIN0, BAR2 APPIN0 mailbox, BAR4 APPIN1
  * DRAM). Do not override the lib maps here.
  *
- * pcie_load_firmware() currently copies baked iccm/dccm arrays inside
- * libdriver_pcie.a. SiVal will retarget that symbol to a staged ICCM+DCCM
- * SERDES bin; keep calling pcie_load_firmware() (via the state machine).
  */
+
+const uint32_t *_binary_pcie_serdes_iccm_fw_bin_start;
+const uint32_t *_binary_pcie_serdes_dccm_fw_bin_start;
 
 static int tt_grendel_pcie_init(const struct device *dev)
 {
@@ -45,6 +47,27 @@ static int tt_grendel_pcie_init(const struct device *dev)
 #ifdef CONFIG_TT_GRENDEL_PCIE_HW_INIT
 	const struct tt_grendel_pcie_config *config = dev->config;
 	pcie_config_t cfg;
+	const uint32_t serdes_fw_toc_idx = 2U;
+
+	const struct fw_bundle_manifest *manifest =
+		(const struct fw_bundle_manifest *)TT_BUN1_STAGING_AREA_ADDR;
+	const struct fw_bundle_toc *toc = (const struct fw_bundle_toc *)(TT_BUN1_STAGING_AREA_ADDR +
+									 manifest->payload_offset);
+
+	/* SERDES FW is always at TOC 2 */
+	if (serdes_fw_toc_idx >= toc->image_count) {
+		LOG_ERR("No SERDES FW image found at TOC[2] in staged bundle %" PRIu64,
+			toc->image_count);
+		return -ENOENT;
+	}
+
+	const struct fw_bundle_toc_entry *serdes_fw_entry = &toc->entries[serdes_fw_toc_idx];
+
+	_binary_pcie_serdes_iccm_fw_bin_start =
+		(uint32_t *)(TT_BUN1_STAGING_AREA_ADDR /*Base on SEP Safe start?*/
+			     + manifest->payload_offset + serdes_fw_entry->offset);
+
+	_binary_pcie_serdes_dccm_fw_bin_start = _binary_pcie_serdes_iccm_fw_bin_start + 16384;
 
 	pcie_init_config(&cfg);
 	cfg.bars[2].size = config->bar4_size;
