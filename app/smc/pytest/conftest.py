@@ -30,6 +30,12 @@ def pytest_addoption(parser):
         default="build/update.fwbundle",
         help="The FW bundle to use for flashing with no twister harness",
     )
+    parser.addoption(
+        "--skip-flash",
+        action="store_true",
+        default=False,
+        help="Skip flashing the DUT; use firmware already running on the card",
+    )
 
 
 @pytest.fixture(scope="session")
@@ -45,6 +51,11 @@ def board_name(request):
 @pytest.fixture(scope="session")
 def fwbundle(request):
     return request.config.getoption("--fwbundle")
+
+
+@pytest.fixture(scope="session")
+def skip_flash(request):
+    return request.config.getoption("--skip-flash")
 
 
 def pytest_exception_interact(node, call, report):

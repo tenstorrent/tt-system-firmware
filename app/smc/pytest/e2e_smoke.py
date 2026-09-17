@@ -192,18 +192,22 @@ def convert_telemetry_to_float(value):
 
 
 @pytest.fixture(scope="session")
-def launched_arc_dut(unlaunched_dut: DeviceAdapter, board_name, asic_id):
+def launched_arc_dut(unlaunched_dut: DeviceAdapter, board_name, asic_id, skip_flash):
     """
     This fixture launches the Zephyr DUT once per test session, and returns
     a reference to the launched DUT. This is used by tests that need to
     flash the DUT once, and then run multiple tests against it.
     """
-    logger.info("Flashing ARC DUT")
+    if skip_flash:
+        logger.info("Skipping ARC DUT flash (--skip-flash)")
+    else:
+        logger.info("Flashing ARC DUT")
     _prepare_and_launch_dut(
         unlaunched_dut,
         flash_mcuboot_bl2=True,
         board_name=board_name,
         asic_id=asic_id,
+        skip_flash=skip_flash,
     )
     time.sleep(1)  # Wait for ARC to start
     return unlaunched_dut
@@ -256,15 +260,26 @@ def _prepare_and_launch_dut(
     board_name=None,
     asic_id=0,
     timeout=20,
+    skip_flash=False,
 ):
     """
     Optionally flash mcuboot-bl2 before launching so DMC does not remain
     on an older firmware signing path.
+
+    When skip_flash is True, do not program the card; wait for the already
+    running firmware and check versions.
     """
+    min_chips = _expected_chip_count(board_name)
+
+    if skip_flash:
+        logger.info("Skipping DUT flash (--skip-flash)")
+        wait_arc_boot(asic_id, timeout=timeout, min_chips=min_chips)
+        _verify_running_versions(board_name=board_name, asic_id=asic_id)
+        return
+
     should_flash_mcuboot_bl2 = flash_mcuboot_bl2 and (
         board_name is None or not _skip_boards(board_name)
     )
-    min_chips = _expected_chip_count(board_name)
 
     if flash_mcuboot_bl2 and board_name is not None and _skip_boards(board_name):
         logger.info("Skipping mcuboot-bl2 flash on board '%s'", board_name)
