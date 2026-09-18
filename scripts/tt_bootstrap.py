@@ -240,7 +240,18 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
         # Pull the board configuration files into the tt-boot-fs image
         # Create empty failover entry at 0x5000 (in recovery image region)
         failover = tt_boot_fs.FsEntry(False, "failover", b"", 0x5000, 0x10000000, True)
-        bootfs = tt_boot_fs.BootFs(order, bootfs_entries, failover)
+        boot_header = tt_boot_fs.tt_boot_fs_header(
+            magic=tt_boot_fs.BOOTFS_HEADER_MAGIC,
+            version=tt_boot_fs.BOOTFS_VERSION,
+            num_tables=2,
+        )
+        boot_tables = [
+            tt_boot_fs.BootTable(order, bootfs_entries, tt_boot_fs.FD_HEAD_ADDR),
+            tt_boot_fs.BootTable(
+                ["failover"], {"failover": failover}, tt_boot_fs.FAILOVER_HEAD_ADDR
+            ),
+        ]
+        bootfs = tt_boot_fs.BootFs(boot_header, boot_tables)
         # Write out the bootfs binary for debugging
         with open(self.build_dir / "bootfs.bin", "wb") as f:
             self.logger.debug("Writing bootfs binary to build directory")
@@ -320,17 +331,14 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
                 "rb",
             ).read()
             # Load the blob as a bootfs, and set the board ID
-            bootfs_entries = tt_boot_fs.BootFs.from_binary(cfg["bootfs"]).entries
-            boardcfg = bootfs_entries["boardcfg"]
+            bootfs = tt_boot_fs.BootFs.from_binary(cfg["bootfs"])
+            boardcfg_idx, boardcfg = bootfs.find_by_tag("boardcfg")
             # Recreate boardcfg entry with the protobuf data
-            order = list(bootfs_entries.keys())
-            order.remove("failover")
-            failover = bootfs_entries["failover"]
-            bootfs_entries["boardcfg"] = tt_boot_fs.FsEntry(
+            bootfs.tables[boardcfg_idx].entries["boardcfg"] = tt_boot_fs.FsEntry(
                 False, "boardcfg", protobuf_bin, boardcfg.spi_addr, 0x0, False
             )
             cfg["bootfs"] = tt_boot_fs.BootFs(
-                order, bootfs_entries, failover
+                bootfs.header, bootfs.tables
             ).to_intel_hex(True)
 
         # Now, create FlashOperation objects for each ASIC on board

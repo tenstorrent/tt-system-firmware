@@ -7,12 +7,71 @@
 /dts-v1/;
 
 / {
-	partitions {
+	rom_bootfs {
 		compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
 		#address-cells = <0x1>;
 		#size-cells = <0x1>;
 		flash-device-size = <0x1000000>;
 		flash-block-size = <0x1000>;
+		header-addr = <0x0>;
+
+		cmfw@14000 {
+			label = "cmfw";
+			reg = <0x14000 0x1a800>;
+			offset = <0x10000000>;
+			executable;
+			binary-path = "$BUILD_DIR/mcuboot/zephyr/zephyr.bin";
+		};
+
+		safeimg@34000 {
+			label = "safeimg";
+			reg = <0x34000 0x80000>;
+			binary-path = "$BUILD_DIR/recovery/zephyr/zephyr.signed.bin";
+		};
+
+		boardcfg@53000 {
+			label = "boardcfg";
+			reg = <0x53000 0x1000>;
+			source = "$END - 0x1000";
+			binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/read_only.bin";
+			provisioning-only;
+			read-only;
+		};
+
+		bmfw@45000 {
+			label = "bmfw";
+			reg = <0x45000 0xd000>;
+			source = "$AUTO";
+			padto = <0xd000>;
+			binary-path = "$BUILD_DIR/dmc/zephyr/zephyr.signed.bin";
+			read-only;
+		};
+	};
+
+	failover_bootfs {
+		compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
+		#address-cells = <0x1>;
+		#size-cells = <0x1>;
+		flash-device-size = <0x1000000>;
+		flash-block-size = <0x1000>;
+		header-addr = <0x4000>;
+
+		failover@b4000 {
+			label = "failover";
+			reg = <0xb4000 0x13000>;
+			offset = <0x10000000>;
+			executable;
+			binary-path = "$BUILD_DIR/mcuboot/zephyr/zephyr.bin";
+		};
+	};
+
+	mutable_bootfs {
+		compatible = "tenstorrent,tt-boot-fs", "fixed-partitions";
+		#address-cells = <0x1>;
+		#size-cells = <0x1>;
+		flash-device-size = <0x1000000>;
+		flash-block-size = <0x1000>;
+		header-addr = <0x170000>;
 
 		cmfwcfg@14000 {
 			label = "cmfwcfg";
@@ -28,15 +87,6 @@
 			source = "$AUTO";
 			binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/fw_table.bin";
 			read-only;
-		};
-
-		cmfw@10000000 {
-			label = "cmfw";
-			reg = <0x10000000 0x1a800>;
-			offset = <0x10000000>;
-			executable;
-			source = "$AUTO";
-			binary-path = "$BUILD_DIR/smc/zephyr/zephyr.bin";
 		};
 
 		ethfwcfg@30000 {
@@ -87,39 +137,11 @@
 			read-only;
 		};
 
-		bmfw@45000 {
-			label = "bmfw";
-			reg = <0x45000 0xd000>;
-			source = "$AUTO";
-			padto = <0xd000>;
-			binary-path = "$BUILD_DIR/dmc/zephyr/zephyr.signed.bin";
-			read-only;
-		};
-
 		flshinfo@52000 {
 			label = "flshinfo";
 			source = "$AUTO";
 			reg = <0x52000 0x1000>;
-			binary-path =
-				"$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/flash_info.bin";
-			read-only;
-		};
-
-		boardcfg@53000 {
-			label = "boardcfg";
-			reg = <0x53000 0x1000>;
-			source = "$END - 0x1000";
-			binary-path = "$BUILD_DIR/smc/generated_board_cfg/$BOARD_REV/read_only.bin";
-			provisioning-only;
-			read-only;
-		};
-
-		failover@10000000 {
-			label = "failover";
-			reg = <0x10000000 0x13000>;
-			offset = <0x10000000>;
-			source = "$AUTO";
-			binary-path = "$BUILD_DIR/recovery/zephyr/zephyr.bin";
+			binary-path = "$BUILD_DIR/smc/generated_board_cfg/P150A/flash_info.bin";
 			read-only;
 		};
 	};

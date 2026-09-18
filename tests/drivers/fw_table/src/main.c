@@ -219,6 +219,28 @@ static void *suite_setup(void)
 	write_fd(0, "ccfgovra", BANK_A_ADDR, BANK_SIZE);
 	write_fd(1, "ccfgovrb", BANK_B_ADDR, BANK_SIZE);
 
+	/*
+	 * Publish a single-table boot-fs header so tt_boot_fs_ls() (which now
+	 * walks tables advertised at TT_BOOT_FS_HEADER_ADDR) can discover the
+	 * descriptors written above.
+	 */
+	rc = flash_erase(flash_dev, TT_BOOT_FS_HEADER_ADDR, FD_AREA_ERASE_SIZE);
+	zassert_equal(rc, 0, "flash_erase header failed with %d", rc);
+
+	tt_boot_fs_header header = {
+		.magic = TT_BOOT_FS_MAGIC,
+		.version = TT_BOOT_FS_CURRENT_VERSION,
+		.table_count = 1,
+	};
+	rc = flash_write(flash_dev, TT_BOOT_FS_HEADER_ADDR, &header, sizeof(header));
+	zassert_equal(rc, 0, "flash_write header failed with %d", rc);
+
+	uint32_t table_addr = TT_BOOT_FS_FD_HEAD_ADDR;
+
+	rc = flash_write(flash_dev, TT_BOOT_FS_HEADER_ADDR + sizeof(header), &table_addr,
+			 sizeof(table_addr));
+	zassert_equal(rc, 0, "flash_write table_addr failed with %d", rc);
+
 	return NULL;
 }
 

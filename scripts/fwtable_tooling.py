@@ -59,10 +59,11 @@ def get_board_names_with_cmfwcfg_from_bundle_metadata(bundle_metadata) -> set[st
             continue
 
         board_name = meta_name
-        for part in meta_data["bootfs"]:
-            if part["image_tag"] == BOOTFS_FWTABLE_NAME:
-                board_names.append(board_name)
-                break
+        for table in meta_data["bootfs"].values():
+            for part in table:
+                if part["image_tag"] == BOOTFS_FWTABLE_NAME:
+                    board_names.append(board_name)
+                    break
 
     return set(board_names)
 
@@ -113,6 +114,20 @@ def get_cmfwcfg_from_bootfs_metadata(bootfs):
             return part
 
     return None
+
+
+def get_cmfwcfg_table(bootfs):
+    table_idx = None
+    for idx, table in enumerate(bootfs.tables):
+        if BOOTFS_FWTABLE_NAME in table.entries:
+            table_idx = idx
+            break
+
+    if table_idx is None:
+        _logger.error(f"{BOOTFS_FWTABLE_NAME} not found in bootfs")
+        return None
+
+    return table_idx
 
 
 def do_update(

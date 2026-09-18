@@ -7,24 +7,26 @@ alignment:
   flash_device_size: 0x1000000
   flash_block_size: 4096
 
-images:
+tables:
+  - header_addr: 0x0
+    images:
+      - name: cmfw
+        binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
+        executable: true
+        offset: 0x10000000
 
-  - name: cmfw
-    binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
-    executable: true
-    offset: 0x10000000
+      # Recovery image, loaded by mcuboot
+      - name: safeimg
+        binary: $BUILD_DIR/recovery/zephyr/zephyr.signed.bin
+        source: '212992'
 
-  # Recovery image, loaded by mcuboot
-  - name: recovery
-    binary: $BUILD_DIR/recovery/zephyr/zephyr.signed.bin
-    source: '212992'
-
-  # Trailer for recovery image indicating it can be booted
-  - name: imgtail
-    binary: $BUILD_DIR/mcuboot_magic_confirmed.bin
-    source: '733184'
-
-fail_over_image:
-  name: failover
-  binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
-  offset: 0x10000000
+      # Trailer for recovery image indicating it can be booted
+      - name: safetail
+        binary: $BUILD_DIR/mcuboot_magic_confirmed.bin
+        source: '733184'
+  - header_addr: 0x4000
+    images:
+      # failover image
+      - name: failover
+        binary: $BUILD_DIR/mcuboot/zephyr/zephyr.bin
+        offset: 0x10000000

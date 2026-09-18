@@ -8,11 +8,16 @@ west
 
 # zephyr-keep-sorted-start
 pyluwen>=0.8.1; sys_platform == "linux"
-tt-burnin>=0.4.0; sys_platform == "linux"
-tt-flash==3.8.0; sys_platform == "linux"
-tt-smi==5.2.0; sys_platform == "linux"
+tt-burnin>=0.4.4; sys_platform == "linux"
+tt-flash==3.11.0rc1; sys_platform == "linux"
+tt-smi==6.2.1; sys_platform == "linux"
 tt-tools-common>=1.4.31; sys_platform == "linux"
 # zephyr-keep-sorted-stop
+
+# tt-flash 3.11.0-rc.1 is the first release that understands the split
+# ROM/mutable descriptor tables, and it is where --update-boot-images, which
+# scripts/ci/run-e2e.sh passes, was added. It needs pyluwen 0.9, so tt-smi and
+# tt-burnin are held at the first releases that moved to pyluwen 0.9 too.
 
 # restrict tt-smi to < 4.0.0 for now, to avoid the issue with long reset times
 # due to waiting for ethernet training to complete or time out

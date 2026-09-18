@@ -10,6 +10,7 @@ import os
 import pykwalify.core
 import pytest
 import requests
+import subprocess
 import sys
 import tarfile
 import types
@@ -144,6 +145,22 @@ def gen_test_image(tmp_path: Path):
             padding = pad_byte * pad_size
             fs += padding
 
+            pad_size = tt_boot_fs.TT_BOOT_FS_HEADER_ADDR - len(fs)
+            padding = pad_byte * pad_size
+            fs += padding
+            # append bootfs header
+            fs += tt_boot_fs.tt_boot_fs_header(
+                magic=tt_boot_fs.BOOTFS_HEADER_MAGIC,
+                version=tt_boot_fs.BOOTFS_VERSION,
+                num_tables=2,
+            )
+            fs += tt_boot_fs.FD_HEAD_ADDR.to_bytes(
+                4, byteorder="little"
+            )  # bootfs rom header addr
+            fs += tt_boot_fs.FAILOVER_HEAD_ADDR.to_bytes(
+                4, byteorder="little"
+            )  # failover fd head addr
+
             f.write(fs)
             _cached_test_image = (fs, pth)
 
@@ -250,6 +267,34 @@ def test_tt_boot_fs_fsck(tmp_path: Path):
     )
 
 
+def test_tt_boot_fs_header_validation(tmp_path: Path):
+    data, _ = gen_test_image(tmp_path)
+
+    bad_version = bytearray(data)
+    bad_version[
+        tt_boot_fs.TT_BOOT_FS_HEADER_ADDR + 4 : tt_boot_fs.TT_BOOT_FS_HEADER_ADDR + 8
+    ] = (tt_boot_fs.BOOTFS_VERSION + 1).to_bytes(4, "little")
+    with pytest.raises(ValueError, match="unsupported bootfs version"):
+        tt_boot_fs.BootFs.from_binary(bad_version)
+
+    bad_count = bytearray(data)
+    bad_count[
+        tt_boot_fs.TT_BOOT_FS_HEADER_ADDR + 8 : tt_boot_fs.TT_BOOT_FS_HEADER_ADDR + 12
+    ] = (tt_boot_fs.BOOTFS_TABLE_COUNT_MAX + 1).to_bytes(4, "little")
+    with pytest.raises(ValueError, match="invalid bootfs table count"):
+        tt_boot_fs.BootFs.from_binary(bad_count)
+
+    legacy = bytearray(data)
+    legacy[
+        tt_boot_fs.TT_BOOT_FS_HEADER_ADDR : tt_boot_fs.TT_BOOT_FS_HEADER_ADDR + 4
+    ] = bytes(4)
+    fs = tt_boot_fs.BootFs.from_binary(legacy)
+    assert [table.offset for table in fs.tables] == [
+        tt_boot_fs.FD_HEAD_ADDR,
+        tt_boot_fs.FAILOVER_HEAD_ADDR,
+    ]
+
+
 def test_tt_boot_fs_cksum():
     """
     Test the ability to generate a correct tt_boot_fs checksum.
@@ -274,129 +319,133 @@ def test_tt_boot_fs_ls(tmp_path: Path):
     """
 
     # Note: values are specific to fw_pack-80.15.0.0.fwbundle due to get_released_image_path()
-    expected_fds = [
-        {
-            "spi_addr": 81920,
-            "image_tag": "cmfwcfg",
-            "size": 56,
-            "copy_dest": 0,
-            "data_crc": 2024482826,
-            "digest": "N/A",
-            "flags": 56,
-            "fd_crc": 4034542600,
-        },
-        {
-            "spi_addr": 86016,
-            "image_tag": "cmfw",
-            "size": 86600,
-            "copy_dest": 268435456,
-            "data_crc": 1374720981,
-            "digest": "N/A",
-            "flags": 33641032,
-            "fd_crc": 3680084864,
-        },
-        {
-            "spi_addr": 176128,
-            "image_tag": "ethfwcfg",
-            "size": 512,
-            "copy_dest": 0,
-            "data_crc": 2352493,
-            "digest": "N/A",
-            "flags": 512,
-            "fd_crc": 3455414089,
-        },
-        {
-            "spi_addr": 180224,
-            "image_tag": "ethfw",
-            "size": 34304,
-            "copy_dest": 0,
-            "data_crc": 433295191,
-            "digest": "N/A",
-            "flags": 34304,
-            "fd_crc": 2151631411,
-        },
-        {
-            "spi_addr": 217088,
-            "image_tag": "memfwcfg",
-            "size": 256,
-            "copy_dest": 0,
-            "data_crc": 15943,
-            "digest": "N/A",
-            "flags": 256,
-            "fd_crc": 3453442091,
-        },
-        {
-            "spi_addr": 221184,
-            "image_tag": "memfw",
-            "size": 10032,
-            "copy_dest": 0,
-            "data_crc": 3642299916,
-            "digest": "N/A",
-            "flags": 10032,
-            "fd_crc": 1066009376,
-        },
-        {
-            "spi_addr": 233472,
-            "image_tag": "ethsdreg",
-            "size": 1152,
-            "copy_dest": 0,
-            "data_crc": 897437643,
-            "digest": "N/A",
-            "flags": 1152,
-            "fd_crc": 273632020,
-        },
-        {
-            "spi_addr": 237568,
-            "image_tag": "ethsdfw",
-            "size": 19508,
-            "copy_dest": 0,
-            "data_crc": 3168980852,
-            "digest": "N/A",
-            "flags": 19508,
-            "fd_crc": 818321009,
-        },
-        {
-            "spi_addr": 258048,
-            # Device Mgmt FW (called bmfw here for historical reasons)
-            "image_tag": "bmfw",
-            "size": 35704,
-            "copy_dest": 0,
-            "data_crc": 3947396359,
-            "digest": "0ae8f44524478cd3a7fd278b9f87bdd3e49b153fee4adbb4f855774e3517f0e1",
-            "flags": 35704,
-            "fd_crc": 1655924193,
-        },
-        {
-            "spi_addr": 294912,
-            "image_tag": "flshinfo",
-            "size": 4,
-            "copy_dest": 0,
-            "data_crc": 50462976,
-            "digest": "N/A",
-            "flags": 4,
-            "fd_crc": 3672136659,
-        },
-        {
-            "spi_addr": 299008,
-            "image_tag": "failover",
-            "size": 65828,
-            "copy_dest": 268435456,
-            "data_crc": 2239637331,
-            "digest": "N/A",
-            "flags": 33620260,
-            "fd_crc": 1985122380,
-        },
-        {
-            "spi_addr": 16773120,
-            "image_tag": "boardcfg",
-            "size": 0,
-            "copy_dest": 0,
-            "data_crc": 0,
-            "digest": "N/A",
-            "flags": 0,
-            "fd_crc": 3670524614,
-        },
-    ]
+    expected_fds = {
+        0: [
+            {
+                "spi_addr": 81920,
+                "image_tag": "cmfwcfg",
+                "size": 56,
+                "copy_dest": 0,
+                "data_crc": 2024482826,
+                "digest": "N/A",
+                "flags": 56,
+                "fd_crc": 4034542600,
+            },
+            {
+                "spi_addr": 86016,
+                "image_tag": "cmfw",
+                "size": 86600,
+                "copy_dest": 268435456,
+                "data_crc": 1374720981,
+                "digest": "N/A",
+                "flags": 33641032,
+                "fd_crc": 3680084864,
+            },
+            {
+                "spi_addr": 176128,
+                "image_tag": "ethfwcfg",
+                "size": 512,
+                "copy_dest": 0,
+                "data_crc": 2352493,
+                "digest": "N/A",
+                "flags": 512,
+                "fd_crc": 3455414089,
+            },
+            {
+                "spi_addr": 180224,
+                "image_tag": "ethfw",
+                "size": 34304,
+                "copy_dest": 0,
+                "data_crc": 433295191,
+                "digest": "N/A",
+                "flags": 34304,
+                "fd_crc": 2151631411,
+            },
+            {
+                "spi_addr": 217088,
+                "image_tag": "memfwcfg",
+                "size": 256,
+                "copy_dest": 0,
+                "data_crc": 15943,
+                "digest": "N/A",
+                "flags": 256,
+                "fd_crc": 3453442091,
+            },
+            {
+                "spi_addr": 221184,
+                "image_tag": "memfw",
+                "size": 10032,
+                "copy_dest": 0,
+                "data_crc": 3642299916,
+                "digest": "N/A",
+                "flags": 10032,
+                "fd_crc": 1066009376,
+            },
+            {
+                "spi_addr": 233472,
+                "image_tag": "ethsdreg",
+                "size": 1152,
+                "copy_dest": 0,
+                "data_crc": 897437643,
+                "digest": "N/A",
+                "flags": 1152,
+                "fd_crc": 273632020,
+            },
+            {
+                "spi_addr": 237568,
+                "image_tag": "ethsdfw",
+                "size": 19508,
+                "copy_dest": 0,
+                "data_crc": 3168980852,
+                "digest": "N/A",
+                "flags": 19508,
+                "fd_crc": 818321009,
+            },
+            {
+                "spi_addr": 258048,
+                # Device Mgmt FW (called bmfw here for historical reasons)
+                "image_tag": "bmfw",
+                "size": 35704,
+                "copy_dest": 0,
+                "data_crc": 3947396359,
+                "digest": "0ae8f44524478cd3a7fd278b9f87bdd3e49b153fee4adbb4f855774e3517f0e1",
+                "flags": 35704,
+                "fd_crc": 1655924193,
+            },
+            {
+                "spi_addr": 294912,
+                "image_tag": "flshinfo",
+                "size": 4,
+                "copy_dest": 0,
+                "data_crc": 50462976,
+                "digest": "N/A",
+                "flags": 4,
+                "fd_crc": 3672136659,
+            },
+            {
+                "spi_addr": 16773120,
+                "image_tag": "boardcfg",
+                "size": 0,
+                "copy_dest": 0,
+                "data_crc": 0,
+                "digest": "N/A",
+                "flags": 0,
+                "fd_crc": 3670524614,
+            },
+        ],
+        tt_boot_fs.FAILOVER_HEAD_ADDR: [
+            {
+                "spi_addr": 299008,
+                "image_tag": "failover",
+                "size": 65828,
+                "copy_dest": 268435456,
+                "data_crc": 2239637331,
+                "digest": "N/A",
+                "flags": 33620260,
+                "fd_crc": 1985122380,
+            },
+        ],
+    }
     actual_fds = tt_boot_fs.ls(
         get_released_image_path(tmp_path),
         verbose=-2,
@@ -416,11 +465,8 @@ def test_tt_boot_fs_gen_yaml(tmp_path: Path):
     Expects build/tt_boot_fs.yaml to already exist from sysbuild.
     """
 
-    # Fetch expected YAML from v18.7.0 tag on GitHub
-    expected_yaml_raw = "https://raw.githubusercontent.com/tenstorrent/tt-system-firmware/refs/tags/v18.7.0/boards/tenstorrent/tt_blackhole/bootfs/p150a-bootfs.yaml"
-    response = requests.get(expected_yaml_raw)
-    response.raise_for_status()
-    expected_yaml = yaml.safe_load(response.text)
+    yaml_text = open(TEST_ROOT / "p150a-bootfs.yml", "r").read()
+    expected_yaml = yaml.safe_load(yaml_text)
 
     # Generate YAML from bootfs
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -792,3 +838,52 @@ def test_compat_variables_in_fwbundle(tmp_path: Path):
     tt_fwbundle.create_fw_bundle(plain, [19, 1, 0, 0], {"P100A-1": bootfs})
     with tarfile.open(plain, "r") as tar:
         assert "./P100A-1/compat-variables.json" not in tar.getnames()
+
+
+# MCUBoot's trailer fields sit at the end of the slot, each padded to
+# BOOT_MAX_ALIGN (8) and followed by the 16-byte magic.
+TRAILER_MAGIC = bytes.fromhex("77c295f360d2ef7f3552500f2cb67980")
+TRAILER_IMAGE_OK = -24
+TRAILER_COPY_DONE = -32
+
+
+def gen_trailer(tmp_path: Path, confirmed: bool) -> bytes:
+    out = tmp_path / ("confirmed.bin" if confirmed else "test.bin")
+    command = [sys.executable, str(MODULE_ROOT / "scripts" / "gen-mcuboot-trailer.py")]
+    command.append(str(out))
+    if confirmed:
+        command.append("--confirmed")
+    subprocess.run(command, check=True)
+    return out.read_bytes()
+
+
+def test_gen_mcuboot_trailer_confirmed_ships_copy_done_set(tmp_path: Path):
+    """
+    MCUBoot writes copy-done into a slot the first time it boots it. The
+    confirmed trailer, which marks the recovery image bootable, has to ship with
+    that byte already set so the write is a no-op. Otherwise the trailer on
+    flash stops matching both the firmware bundle and its own boot filesystem
+    CRC the moment a board falls back to recovery, and tt-flash rewrites the
+    recovery trailer on every update from then on -- on exactly the boards that
+    have already needed recovery once.
+    """
+    trailer = gen_trailer(tmp_path, confirmed=True)
+
+    assert len(trailer) == 0x1000
+    assert trailer[-16:] == TRAILER_MAGIC
+    assert trailer[TRAILER_COPY_DONE] == 0x01, "confirmed trailer must set copy-done"
+    assert trailer[TRAILER_IMAGE_OK] == 0x01, "confirmed trailer must set image-ok"
+
+
+def test_gen_mcuboot_trailer_test_mode_leaves_flags_erased(tmp_path: Path):
+    """
+    The test-mode trailer backs the main and DMC slots, where MCUBoot relies on
+    copy-done being set without image-ok to scrub an image that loaded but never
+    confirmed itself. Both flags have to stay erased for that path to work.
+    """
+    trailer = gen_trailer(tmp_path, confirmed=False)
+
+    assert len(trailer) == 0x1000
+    assert trailer[-16:] == TRAILER_MAGIC
+    assert trailer[TRAILER_COPY_DONE] == 0xFF
+    assert trailer[TRAILER_IMAGE_OK] == 0xFF
