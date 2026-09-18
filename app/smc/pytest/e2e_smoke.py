@@ -331,6 +331,7 @@ def wait_arc_boot(asic_id, timeout=15, min_chips=None):
             logger.warning(
                 "Detected %d/%d ARC chip(s); rescanning PCIe bus", len(chips), needed
             )
+            del chips
         except Exception as e:
             logger.warning("SMC firmware requires a reset. Rescanning PCIe bus: %s", e)
         except BaseException as e:
@@ -338,7 +339,7 @@ def wait_arc_boot(asic_id, timeout=15, min_chips=None):
             # sometimes throws rust exceptions when the chip is resetting.
             # log them with a higher severity so we can track them
             logger.error(f"Base exception error while detecting chips: {e}")
-        time.sleep(0.5)
+        time.sleep(2)
         if time.time() - start > timeout:
             # Dump the SMC state for debugging
             smc_test_recovery.recover_smc(asic_id)
@@ -347,20 +348,19 @@ def wait_arc_boot(asic_id, timeout=15, min_chips=None):
         # Removing a chip that is merely mid-boot drops the one function we
         # already have, and it may not come back.
         rescan_pcie(remove=_chips_reachable() == 0)
+        time.sleep(1)
     chip = chips[asic_id]
     try:
         status = chip.axi_read32(ARC_STATUS)
-    except Exception:
-        logger.warning("SMC firmware requires a reset. Rescanning PCIe bus")
-        rescan_pcie()
-        status = chip.axi_read32(ARC_STATUS)
+    except Exception as e:
+        raise RuntimeError(f"Failed to read ARC status: {e}") from e
     assert (status & 0xFFFF0000) == 0xC0DE0000, "SMC firmware postcode is invalid"
     # Check post code status of firmware
     assert (status & 0xFFFF) >= 0x1D, "SMC firmware boot failed"
     # Remove references to chip objects so pyluwen will close file descriptors.
     # Otherwise these may become stale when SMC resets.
     logger.info("SMC detected")
-    return chips[asic_id]
+    return chip
 
 
 @pytest.fixture()
@@ -832,15 +832,15 @@ def arc_watchdog_test(asic_id):
     try:
         arc_chip = pyluwen.detect_chips()[asic_id]
         hang_pc = arc_chip.axi_read32(ARC_HANG_PC_REG_ADDR)
+        del arc_chip
         # If the ARC chip was reset, the hang program counter should have been set
         if hang_pc == 0:
             logger.warning(
                 "ARC did not reset, waiting 10 additional seconds to see if ARC core resets"
             )
-            del arc_chip
             time.sleep(10)
             rescan_pcie()
-            arc_chip = pyluwen.detect_chips()[asic_id]
+            arc_chip = wait_arc_boot(asic_id)
             hang_pc = arc_chip.axi_read32(ARC_HANG_PC_REG_ADDR)
             del arc_chip
             if hang_pc == 0:
@@ -858,7 +858,7 @@ def arc_watchdog_test(asic_id):
     time.sleep(1.0)
     # Rescan PCIe, and see if ARC chip has been reset
     rescan_pcie()
-    arc_chip = pyluwen.detect_chips()[asic_id]
+    arc_chip = wait_arc_boot(asic_id)
     hang_pc = arc_chip.axi_read32(ARC_HANG_PC_REG_ADDR)
     if hang_pc == 0:
         logger.error("ARC core was not reset, but PCIe device re-enumerated?")
