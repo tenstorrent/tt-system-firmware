@@ -200,7 +200,7 @@ jobs:
           fi
           echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
 
-      # Build bh-mod to be used by ccfgovr tests
+      # Build bh-mod from luwen main so ccfgovr tests always exercise current luwen.
       - name: Build bh-mod
         shell: bash
         env:
