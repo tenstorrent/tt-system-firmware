@@ -20,6 +20,7 @@
  *   2. tt_d2d_load_fw()       - put firmware in the Rocket's SRAM and fill in
  *      its configuration block. Leaves the Rocket in reset.
  *   3. tt_d2d_start()         - release the Rocket so the firmware runs.
+ *   4. tt_d2d_wait_link()     - wait for the firmware to train the link.
  *
  * Step 3 is deliberately not folded into step 2. Both ends of a link must be
  * started close together, and with sideband synchronisation disabled (as it is
@@ -27,6 +28,10 @@
  * each Rocket as soon as its own image landed has been observed to leave
  * Keraunos and the far Mimir unable to train. The caller is expected to load
  * every tile first and start them as a group.
+ *
+ * Training itself is not driven from here. Once started, each side's firmware
+ * runs the sequence on its own and the two negotiate over the link; all this
+ * side can do is watch its own receiver come up, which is step 4.
  *
  * Two things have to be true before any of this works, and neither is done
  * here because neither belongs to a single tile:
@@ -43,6 +48,7 @@
 #include <stdint.h>
 
 #include <zephyr/device.h>
+#include <zephyr/kernel.h>
 
 /**
  * @brief Deassert a D2D tile's subsystem resets.
@@ -85,5 +91,43 @@ int tt_d2d_load_fw(const struct device *dev, const uint8_t *img, size_t img_size
  * @retval 0 on success
  */
 int tt_d2d_start(const struct device *dev);
+
+/**
+ * @brief Wait for a D2D tile's link to finish training.
+ *
+ * Polls the tile's firmware progress code until it reports training complete,
+ * which is the point at which traffic can cross the link. Only reports on this
+ * end: a trained receiver here means the far side is transmitting, but says
+ * nothing about whether the far side's own receiver has come up, so each end
+ * has to wait for itself.
+ *
+ * The progress code is read from the tile's SRAM rather than the receiver's
+ * status register, because the link layer registers are not modelled on
+ * emulation and reading them there does not return.
+ *
+ * Both ends must already have been started, and started close together, or
+ * this cannot succeed however long it waits.
+ *
+ * @param dev D2D tile device
+ * @param timeout How long to wait, or K_FOREVER
+ *
+ * @retval 0 if the link trained
+ * @retval -EIO if the firmware reported a training failure
+ * @retval -ETIMEDOUT if it did neither, having logged the progress code
+ */
+int tt_d2d_wait_link(const struct device *dev, k_timeout_t timeout);
+
+/**
+ * @brief Read how far a D2D tile's firmware has got.
+ *
+ * Mainly useful for working out where a link that failed to train got stuck.
+ * The values are defined by the firmware, in the drop's
+ * d2d_api_fw_progress_codes.h; zero means it has not reported anything yet.
+ *
+ * @param dev D2D tile device
+ *
+ * @return the firmware's current progress code
+ */
+uint32_t tt_d2d_progress_code(const struct device *dev);
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_MISC_TT_D2D_H_ */

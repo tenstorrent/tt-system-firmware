@@ -7,3 +7,35 @@ tests:
     platform_allow:
       - tt_mimir/tt_mimir/smc
       - tt_mmk/tt_mimir/smc
+  # Only builds here. Training needs both dies of an MM package running this
+  # image at once, which no board target describes, so the run itself is driven
+  # from zebu/train_config.yaml.
+  drivers.tt_d2d.train:
+    build_only: true
+    extra_configs:
+      - CONFIG_TT_D2D_TEST_TRAIN=y
+    extra_dtc_overlay_files:
+      - train.overlay
+    platform_allow:
+      - tt_mmk/tt_mimir/smc
+  # The same image built for an MMK package, where Mimir1 has a tile at each
+  # end and so brings up both. Runs out of zebu/train_mmk_config.yaml, which
+  # needs the Keraunos image below alongside it.
+  drivers.tt_d2d.train_mmk:
+    build_only: true
+    extra_configs:
+      - CONFIG_TT_D2D_TEST_TRAIN=y
+      - CONFIG_TT_D2D_TEST_TRAIN_KERAUNOS=y
+    extra_dtc_overlay_files:
+      - train.overlay
+    platform_allow:
+      - tt_mmk/tt_mimir/smc
+  # The Keraunos end of that package, on D2D2.
+  drivers.tt_d2d.train_keraunos:
+    build_only: true
+    extra_configs:
+      - CONFIG_TT_D2D_TEST_TRAIN=y
+    extra_dtc_overlay_files:
+      - keraunos_train.overlay
+    platform_allow:
+      - tt_mmk/tt_keraunos/smc

@@ -25,9 +25,11 @@ typedef SMC_CPU_AXI_DATA_ACCEL_AXI_DMA_CTRL_STATUS_0_reg_u AXI_DMA_CTRL_STATUS_r
 /* D2D tile register names differ between Mimir (D2D_0_) and Keraunos (D2D0_) */
 #if defined(PLATFORM_MIMIR_SMC)
 typedef D2D_0_D2D_D2D_SS_ASYNC_CPU_CTRL_reg_u D2D_SS_ASYNC_CPU_CTRL_reg_u;
-typedef D2D_0_STRAP_RESET_reg_u TT_MIMIR_D2D_STRAP_RESET_reg_u;
+typedef D2D_0_STRAP_RESET_reg_u TT_D2D_STRAP_RESET_reg_u;
 #elif defined(PLATFORM_KER_SMC)
 typedef D2D0_D2D_D2D_SS_ASYNC_CPU_CTRL_reg_u D2D_SS_ASYNC_CPU_CTRL_reg_u;
+/* Keraunos files the same staged-deassert register under the NOC2AXI strap block. */
+typedef KeraunosD2dTile_Reset_reg_u TT_D2D_STRAP_RESET_reg_u;
 #endif
 
 #ifndef SMC_CPU_CTRL_LOCAL_BASE_REG_DEFAULT

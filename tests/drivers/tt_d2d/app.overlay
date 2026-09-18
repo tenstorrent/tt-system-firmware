@@ -26,3 +26,21 @@
 &d2d1 {
 	status = "okay";
 };
+
+/*
+ * Link at the SMC SPM base rather than the board's usual ram0 base.
+ *
+ * The ZeBu harnesses that run this test load the image at the SPM alias base,
+ * 0xc0060000, and on the two-die path (chippy's sip/m2m_run_emu) that address
+ * is fixed: only the reset vector is configurable. ram0 starts 0x7000 above it
+ * to clear the bundle loader staging area and to keep vuart_ram at a fixed
+ * address across the BL0P5 -> BL1 -> MIS handoffs. Leaving the two disagreeing
+ * means the cores come out of reset onto whatever sits at the vector, which
+ * presents as neither die ever running.
+ *
+ * Nothing here needs the reclaimed 0x7000: this test loads no bundles and does
+ * not talk to OCCP. The top stops short of vuart_ram at 0xc0158000.
+ */
+&ram0 {
+	reg = <0x0 0xc0060000 0x0 0xf8000>;
+};

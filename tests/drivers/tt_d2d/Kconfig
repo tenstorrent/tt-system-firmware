@@ -1,0 +1,26 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"
+
+config TT_D2D_TEST_TRAIN
+	bool "Build the two-die link training suite instead of the loader suite"
+	help
+	  The loader suite runs on a single die. Training needs a second die
+	  running the other end of the link, so the two cannot share a run:
+	  the loader tests leave the tile loaded and started, which is not
+	  where training wants to begin. Selecting this builds an image that
+	  trains the link and nothing else.
+
+config TT_D2D_TEST_TRAIN_KERAUNOS
+	bool "Train the Mimir1-to-Keraunos link as well"
+	depends on TT_D2D_TEST_TRAIN
+	help
+	  Build the Mimir image for an MMK package rather than an MM one.
+	  Keraunos adds a second link, from its D2D2 to Mimir1's D2D1, which
+	  makes Mimir1 the die in the middle with a tile at each end. Without
+	  this Mimir1 brings up only the tile facing Mimir0, and Keraunos0's
+	  end of the second link would wait for a partner that never loads.
+
+	  Has no effect on the Keraunos image, which exists only in a package
+	  that has one.

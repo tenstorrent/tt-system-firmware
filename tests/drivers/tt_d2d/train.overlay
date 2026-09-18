@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Training uses whichever tile faces the other die: d2d1 on Mimir0, d2d0 on
+ * Mimir1. Both ends therefore have to be configured for the platform the test
+ * runs on, and this one runs on emulation.
+ *
+ * app.overlay deliberately leaves d2d1 without the emulation bypasses so the
+ * loader suite can show the flags are coming from devicetree rather than being
+ * applied unconditionally by the driver. That asymmetry is fine when nothing
+ * has to talk to anything, but here it would leave Mimir0's end trying to
+ * bring up a PHY and regulator that emulation does not model, waiting on a PLL
+ * lock that never arrives, while Mimir1's end is bypassed and ready. Give both
+ * ends the same treatment.
+ */
+
+&d2d1 {
+	bypass-phy;
+	disable-sideband;
+};
+
+/*
+ * The reference bring-up for this package runs the regulator init for real
+ * even on emulation -- it bypasses the PHY and the sideband, but not the
+ * regulator. app.overlay sets bypass-vreg on d2d0 to give the loader suite a
+ * tile with every flag set; keeping it here would mean training against a
+ * configuration nothing else uses.
+ */
+&d2d0 {
+	/delete-property/ bypass-vreg;
+};

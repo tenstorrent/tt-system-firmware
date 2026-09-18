@@ -1,0 +1,45 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * The Keraunos end of the MMK D2D link.
+ *
+ * Keraunos has five D2D tiles, one per HSIO tile, and the link to Mimir1
+ * leaves on D2D2. The other four stay off, and not just because nothing uses
+ * them: each sits inside an HSIO tile that this test never clocks or opens the
+ * firewalls in front of, so touching one would hang on an unanswered bus
+ * rather than fail. The suite releases the reset of every tile devicetree has
+ * enabled, which makes leaving them disabled here the thing that keeps it away
+ * from them.
+ *
+ * app.overlay turns on d2d0 and d2d1 for the loader suite, which runs on
+ * Mimir, where those are the two tiles that exist. Turning them back off is
+ * what makes that overlay harmless here.
+ */
+
+&d2d0 {
+	status = "disabled";
+};
+
+&d2d1 {
+	status = "disabled";
+};
+
+/*
+ * Bypasses matching the reference bring-up for this package: PHY and sideband
+ * bypassed because emulation does not model them, the regulator left to
+ * initialise for real because it does. The same combination the Mimir ends use
+ * in train.overlay -- both ends of a link have to agree.
+ *
+ * No DMA channel: the tile is reached through the HSIO fabric rather than
+ * directly off the management network, and the CPU-store path the driver falls
+ * back to needs nothing beyond the firewalls this test already opens.
+ */
+&d2d2 {
+	status = "okay";
+	bypass-phy;
+	disable-sideband;
+};

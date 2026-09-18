@@ -43,7 +43,17 @@ endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(tt_d2d)
 
-target_sources(app PRIVATE src/main.c src/chip_init.c src/d2d_fw_blob.c)
+# The loader suite and the training suite are separate images rather than two
+# suites in one: the loader tests end with a tile loaded and started, which is
+# not the state training starts from, and only one of the two can run on a
+# single die anyway.
+if(CONFIG_TT_D2D_TEST_TRAIN)
+  target_sources(app PRIVATE src/train.c)
+else()
+  target_sources(app PRIVATE src/main.c)
+endif()
+
+target_sources(app PRIVATE src/chip_init.c src/d2d_fw_blob.c)
 
 # Turns the image into byte initialisers for d2d_fw_blob.c to include. The
 # generated file depends on the image, so a new drop rebuilds it.
