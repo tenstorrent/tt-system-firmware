@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 chip_limits {
-  asic_fmax: 1350
+  asic_fmax: 1200
   asic_fmin: 800
   vdd_max: 900
   vdd_min: 700
