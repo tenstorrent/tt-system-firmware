@@ -494,12 +494,32 @@ typedef union {
  */
 #define TAG_FLASH_JEDEC_ID 80
 
+/** @brief QSFP cage discovery status.
+ *
+ * Present on every board. Remains 0 if the DMC never publishes
+ * CMFW_SMBUS_QSFP_STATUS.
+ *
+ * Packed little-endian: one byte per cage, byte 0 = cage A ... byte 3 = D.
+ *
+ * Per-cage byte:
+ *   bit 7     present flag (QSFP_TELEM_PRESENT_FLAG)
+ *   bits 6:0  SFF-8024 identifier when present (7 bits)
+ *
+ * Not-present codes (bit 7 clear):
+ *   0x00  expander absent (no I2C ACK)
+ *   0x01  expander present, no module seated
+ *   0x02  module seated, identifier read at 0x50 failed
+ *   0x03  bus stuck (all four bytes set)
+ *   0x04-0x7F reserved. Hosts must treat unknown values as not present.
+ */
+#define TAG_QSFP_STATUS 81
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 81
+#define TAG_COUNT 82
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -529,6 +549,7 @@ int StartTelemetryTimer(void);
  */
 uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms);
 void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version);
+void UpdateTelemetryQsfp(uint32_t qsfp_status);
 void UpdateTelemetryNocTranslation(bool translation_enabled);
 void UpdateTelemetryBoardPowerLimit(uint32_t power_limit);
 void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
