@@ -185,6 +185,7 @@ static struct telemetry_table telemetry_table = {
 		[75] = {TAG_FLASH_JEDEC_ID, TELEM_OFFSET(TAG_FLASH_JEDEC_ID)},
 		[76] = {TAG_CCFGOVR_STATE, TELEM_OFFSET(TAG_CCFGOVR_STATE)},
 		[77] = {TAG_CCFGOVR_SEQ, TELEM_OFFSET(TAG_CCFGOVR_SEQ)},
+		[78] = {TAG_QSFP_STATUS, TELEM_OFFSET(TAG_QSFP_STATUS)},
 	},
 };
 /* clang-format on */
@@ -231,6 +232,11 @@ void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version)
 {
 	telemetry[TAG_DM_BL_FW_VERSION] = bl_version;
 	telemetry[TAG_DM_APP_FW_VERSION] = app_version;
+}
+
+void UpdateTelemetryQsfp(uint32_t qsfp_status)
+{
+	telemetry[TAG_QSFP_STATUS] = qsfp_status;
 }
 
 void UpdateTelemetryNocTranslation(bool translation_enabled)

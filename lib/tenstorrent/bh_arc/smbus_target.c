@@ -143,6 +143,8 @@ static const struct smbus_cmd_registration smbus_cmds[] = {
 	SMBUS_CMD_WRITE_WORD_ENTRY(CMFW_SMBUS_THERM_TRIP_COUNT, 1U, Dm2CmSendThermTripCountHandler),
 #endif
 	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_DMC_LOG, 1U, Dm2CmDMCLogHandler),
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_QSFP_MGMT_RESPONSE, 1U, Dm2CmQsfpMgmtResponseHandler),
+	SMBUS_CMD_BLOCK_WR_ENTRY(CMFW_SMBUS_QSFP_STATUS, 1U, Dm2CmQsfpStatusHandler),
 	SMBUS_CMD_READ_BYTE_ENTRY(CMFW_SMBUS_TEST_READ, 1U, ReadByteTest),
 	SMBUS_CMD_WRITE_BYTE_ENTRY(CMFW_SMBUS_TEST_WRITE, 1U, WriteByteTest),
 	SMBUS_CMD_READ_WORD_ENTRY(CMFW_SMBUS_TEST_READ_WORD, 1U, ReadWordTest),
@@ -157,7 +159,6 @@ static const struct smbus_cmd_registration smbus_cmds[] = {
 static int InitSmbusTarget(void)
 {
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_ARC_INIT_STEPB);
-
 
 	if (!device_is_ready(smbus_target)) {
 		printk("SMBUS target device not ready\n");
