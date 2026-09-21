@@ -9,6 +9,11 @@ project(dmc)
 
 FILE(GLOB app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
+if(CONFIG_TT_QSFP)
+  FILE(GLOB qsfp_sources src/qsfp/*.c)
+  target_sources(app PRIVATE ${qsfp_sources})
+endif()
+target_include_directories(app PRIVATE ../../include)
 
 # status_reg.h is SoC-owned; DMC SOC_FULL_DIR is STM32, so add Blackhole include/.
 target_include_directories(app PRIVATE
