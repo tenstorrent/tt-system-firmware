@@ -1207,7 +1207,6 @@ def _generate_bootfs_yaml(
     }
 
     _logger.debug(partitions_yml)
-
     for partitions_node in partitions_nodes:
         table_entry = {
             "header_addr": partitions_node.props["header-addr"].val,
@@ -1215,8 +1214,11 @@ def _generate_bootfs_yaml(
         }
 
         for partition in partitions_node.children.values():
-            # Galaxy, galaxy_revc and galaxy_bin6 do not have BM firmware
-            if args.board.startswith("galaxy") and partition.label == "bmfw":
+            # Galaxy, galaxy_revc and galaxy_cf do not have BM firmware
+            if (
+                args.board in {"galaxy", "galaxy_revc", "galaxy_cf"}
+                and partition.label == "bmfw"
+            ):
                 continue
             # P300 right chip does not have BM firmware
             if name[-5:] == "right" and partition.label == "bmfw":

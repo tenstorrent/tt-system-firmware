@@ -28,7 +28,7 @@ bool bh_chip_info_is_ubb(void)
 {
 	uint32_t board_type = tt_bh_fwtable_get_board_type(fwtable_dev);
 
-	return board_type == BOARDTYPE_UBB || board_type == BOARDTYPE_GALAXY_BIN6;
+	return board_type == BOARDTYPE_UBB || board_type == BOARDTYPE_GALAXY_CF;
 }
 
 uint32_t bh_chip_info_additional_board_power(void)

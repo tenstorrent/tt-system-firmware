@@ -41,7 +41,7 @@ const struct _ReadOnly *tt_bh_fwtable_get_read_only_table(const struct device *d
 #define BOARDTYPE_P300A                   0x45
 #define BOARDTYPE_P300C                   0x46
 #define BOARDTYPE_UBB                     0x47
-#define BOARDTYPE_GALAXY_BIN6             0x202
+#define BOARDTYPE_GALAXY_CF               0x202
 
 typedef enum {
 	PcbTypeOrionSLT = 0,
