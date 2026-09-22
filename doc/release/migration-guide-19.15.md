@@ -22,7 +22,6 @@ The first board variable is SPI EEPROM JEDEC ID (`BOARD_VAR_SPI_JEDEC_ID` = 0).
 - **Second-source SPI boards** (any other JEDEC ID): you need both
   - a 19.15.0 (or later) firmware bundle, which includes `compat-variables.json`, and
   - a tt-flash that implements the board-variable interlock ([tt-flash#112](https://github.com/tenstorrent/tt-flash/pull/112)).
-- **Galaxy bin6** (board type `0x202`): tt-flash 3.11.0 or later, in addition to the interlock above if the board is second-source.
 
 Until tt-flash#112 is in a numbered release, flashing a second-source board requires a tt-flash build that includes that change.
 
@@ -75,7 +74,3 @@ Every production firmware table ships `cg_en: true`, so after upgrade Tensix clo
 ## Optional: PCIe max generation override
 
 `pci0_property_table.max_pcie_speed` and `pci1_property_table.max_pcie_speed` can be overridden with `bh-mod` and persist across firmware upgrades. Valid values are `{0, 1, 2, 3, 4, 5}`; `0` is unconstrained (Gen 5 default). `bh-mod res` restores the cmfwcfg value. Set the instance whose `pcie_mode` is EP. This requires tt-flash 3.8.0 or later to preserve `ccfgovr` across flashes.
-
-## Galaxy bin6
-
-Galaxy bin6 is a new UBB board type (`0x202`, `tt_blackhole@galaxy_bin6`). Host tools that switch on board type need to treat `0x202` as a Galaxy/UBB variant (one harvested DRAM instance; SPI tables based on Galaxy Rev C). tt-flash 3.11.0 adds this type.

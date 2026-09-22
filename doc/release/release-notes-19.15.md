@@ -5,7 +5,6 @@ We are pleased to announce the release of TT System Firmware version 19.15.0 ðŸ¥
 Major enhancements with this release include:
 
 - Second-source SPI flash support on Blackhole Galaxy, with a flash-tool interlock so an image that cannot drive the fitted EEPROM cannot be written.
-- Galaxy bin6 board revision (`0x202`), for UBB parts that permit one harvested DRAM instance.
 - Persistent `bh-mod` override of per-instance PCIe max generation.
 - Fix of inverted Tensix clock-gate enable: `feature_enable.cg_en` now actually enables clock gating (lower idle / light-load Tensix power on production tables).
 
@@ -36,10 +35,6 @@ Writing an MT25-only image onto a second-source board would leave firmware that 
 
 Original Micron MT25 boards are exempt from the JEDEC-ID requirement, so existing tt-flash continues to work on those boards. Second-source boards require a tt-flash that implements the interlock and a 19.15 (or later) bundle. See the [19.15 Migration Guide](https://github.com/tenstorrent/tt-system-firmware/tree/main/doc/release/migration-guide-19.15.md) and the [board variables documentation](https://github.com/tenstorrent/tt-system-firmware/tree/main/doc/services/board_variables/index.rst).
 
-### Boards
-
-- New board revision: Galaxy bin6 (`tt_blackhole@galaxy_bin6`, board type `0x202`). SPI config is based on Galaxy Rev C with `product_spec_harvesting.dram_disable_count` set to 1 (one harvested DRAM instance). The SMC overlay reuses Rev C GDDR parameters.
-
 ### Persistent SPI Flash Parameters
 
 - Expose `pci0_property_table.max_pcie_speed` and
@@ -65,7 +60,7 @@ Original Micron MT25 boards are exempt from the JEDEC-ID requirement, so existin
 ### Host Interface
 
 - `TT_SMC_MSG_FLASH_UNLOCK` now accepts a verified-board-variable bitmap. The reply always reports the variables this board requires in `data[1]`. See `flash_unlock_rqst` in `msgqueue.h`.
-- Board type extracted from `board_id` is a `uint32_t` (was narrower), covering up to 5-hex-digit types such as Galaxy bin6.
+- Board type extracted from `board_id` is a `uint32_t` (was narrower), covering up to 5-hex-digit types.
 
 ### Drivers
 
