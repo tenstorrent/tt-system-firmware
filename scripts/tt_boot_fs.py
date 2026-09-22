@@ -1006,9 +1006,9 @@ def _generate_bootfs_yaml(
     _logger.debug(partitions_yml)
 
     for partition in partitions_node.children.values():
-        # Galaxy, galaxy_revc and galaxy_bin6 do not have BM firmware
+        # Galaxy, galaxy_revc and galaxy_cf do not have BM firmware
         if (
-            args.board in {"galaxy", "galaxy_revc", "galaxy_bin6"}
+            args.board in {"galaxy", "galaxy_revc", "galaxy_cf"}
             and partition.label == "bmfw"
         ):
             continue

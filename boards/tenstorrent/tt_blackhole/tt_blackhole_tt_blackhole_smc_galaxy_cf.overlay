@@ -13,7 +13,7 @@
 /delete-node/ &dmfw;
 /delete-node/ &dmfwimg;
 
-/* No GDDR parameter blob is published for bin6; the revc parameters apply. */
+/* No GDDR parameter blob is published for galaxy_cf; the revc parameters apply. */
 &memfwcfg {
 	binary-path = "$BLOBS_DIR/tt_blackhole_gddr_params_GALAXY_REVC.bin";
 };
