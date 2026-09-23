@@ -183,6 +183,8 @@ static struct telemetry_table telemetry_table = {
 		[73] = {TAG_FW_CAPABILITIES_0, TELEM_OFFSET(TAG_FW_CAPABILITIES_0)},
 		[74] = {TAG_FW_ACTIVE_CONFIG_0, TELEM_OFFSET(TAG_FW_ACTIVE_CONFIG_0)},
 		[75] = {TAG_FLASH_JEDEC_ID, TELEM_OFFSET(TAG_FLASH_JEDEC_ID)},
+		[76] = {TAG_EST_BOARD_POWER, TELEM_OFFSET(TAG_EST_BOARD_POWER)},
+		[77] = {TAG_EST_BOARD_POWER_LIMIT, TELEM_OFFSET(TAG_EST_BOARD_POWER_LIMIT)},
 	},
 };
 /* clang-format on */
@@ -245,6 +247,11 @@ void UpdateTelemetryBoardPowerLimit(uint32_t power_limit)
 void UpdateTelemetryTdpLimit(uint32_t tdp_limit)
 {
 	telemetry[TAG_TDP_LIMIT_MAX] = tdp_limit;
+}
+
+void UpdateTelemetryEstBoardPowerLimit(uint32_t power_limit)
+{
+	telemetry[TAG_EST_BOARD_POWER_LIMIT] = power_limit;
 }
 
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count)
@@ -455,6 +462,7 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_THM_LIMIT_THROTTLE] = fw_table->chip_limits.thm_limit;
 	telemetry[TAG_TDC_LIMIT_MAX] = fw_table->chip_limits.tdc_limit;
 	telemetry[TAG_TDP_LIMIT_MAX] = fw_table->chip_limits.tdp_limit;
+	telemetry[TAG_EST_BOARD_POWER_LIMIT] = fw_table->chip_limits.est_board_power_limit;
 
 	/* Get the static values */
 	telemetry[TAG_BOARD_ID_HIGH] =
@@ -610,6 +618,8 @@ static void update_telemetry(void)
 	telemetry[TAG_GDDR_WEST_IO_POWER] = telemetry_internal_data.gddr_io_power_west;
 	/* reported in W, truncated to uint32_t */
 	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
+	/* reported in W, truncated to uint32_t */
+	telemetry[TAG_EST_BOARD_POWER] = telemetry_internal_data.est_board_power;
 	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
 	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telem_update_interval);
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */

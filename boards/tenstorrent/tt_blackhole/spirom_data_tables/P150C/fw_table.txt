@@ -35,6 +35,7 @@ feature_enable {
   doppler_en: true
   kernel_throttler_at_floor_en: false
   gddr_therm_trip_en: false
+  est_board_power_throttler_en: false
 }
 
 fan_table {

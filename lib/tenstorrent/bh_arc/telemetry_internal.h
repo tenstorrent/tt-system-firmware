@@ -14,10 +14,13 @@ typedef struct {
 	float vcore_voltage;          /* mV */
 	float vcore_power;            /* W */
 	float vcore_current;          /* A */
+	float vcorem_current;         /* A */
+	float vcorem_power;           /* W */
 	float asic_temperature;       /* degC */
 	struct gddr_temps gddr_temps; /* per-instance GDDR die temps + max across all dies, degC */
 	float gddr_io_power_west;     /* W */
 	float gddr_io_power_east;     /* W */
+	float est_board_power;        /* W - vcore + vcorem + GDDR IO */
 } TelemetryInternalData;
 
 void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data);

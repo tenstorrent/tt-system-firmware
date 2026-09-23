@@ -182,6 +182,8 @@ enum char_submsg_ids {
 	TT_SUB_MSG_SET_GDDR_THERM_TRIP_ENABLED = 0x4,
 	/** @brief Set the periodic telemetry update interval */
 	TT_SUB_MSG_SET_TELEMETRY_UPDATE_INTERVAL = 0x5,
+	/** @brief Set estimated board power throttler limit */
+	TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT = 0x6,
 };
 
 /** @} */

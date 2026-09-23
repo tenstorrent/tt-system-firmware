@@ -7,7 +7,7 @@ chip_limits {
   vdd_max: 900
   vdd_min: 700
   voltage_margin: 25
-  tdp_limit: 130
+  tdp_limit: 500
   tdc_limit: 500
   thm_limit: 90
   tdc_fast_limit: 400
@@ -16,7 +16,8 @@ chip_limits {
   frequency_margin: 0
   gddr_thm_limit: 89
   kernel_throttler_stop_nops_freq: 0
-  max_tdp_limit: 200
+  max_tdp_limit: 500
+  est_board_power_limit: 50
 }
 
 feature_enable {
@@ -30,6 +31,7 @@ feature_enable {
   harvesting_en: true
   doppler_en: false
   kernel_throttler_at_floor_en: false
+  est_board_power_throttler_en: true
 }
 
 fan_table {

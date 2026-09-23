@@ -26,6 +26,7 @@ static bool doppler;
 static bool doppler_slow;
 static bool doppler_t2;
 static bool doppler_t3;
+static bool est_board_power_throttler;
 static const bool thermal_throttling = true;
 
 /*
@@ -52,6 +53,7 @@ typedef enum {
 	kThrottlerBoardPower,
 	kThrottlerGDDRThm,
 	kThrottlerDopplerSlow,
+	kThrottlerEstBoardPower,
 	kThrottlerCount,
 } ThrottlerId;
 
@@ -71,6 +73,7 @@ static const ThrottlerLimitRange throttler_limit_ranges[kThrottlerCount] = {
 	[kThrottlerBoardPower]	= { .min = 50, .max = 600, },
 	[kThrottlerGDDRThm]	= { .min = 50, .max = 100, },
 	[kThrottlerDopplerSlow]	= { .min = 50, .max = 1200, },
+	[kThrottlerEstBoardPower] = { .min = 50, .max = 600, },
 };
 /* clang-format on */
 
@@ -147,6 +150,14 @@ static Throttler throttler[kThrottlerCount] = {
 					.alpha_filter = 1.0,
 					.p_gain = 0.0025,
 					.d_gain = 0.3,
+				},
+		},
+	[kThrottlerEstBoardPower] = {
+			.arb_max = aiclk_arb_max_est_board_power,
+			.params = {
+					.alpha_filter = 1.0,
+					.p_gain = 0.1,
+					.d_gain = 0.1,
 				},
 		},
 };
@@ -239,6 +250,8 @@ void InitThrottlers(void)
 	doppler_slow = doppler;
 	doppler_t2 = doppler;
 	doppler_t3 = doppler;
+	est_board_power_throttler = tt_bh_fwtable_get_fw_table(fwtable_dev)
+					    ->feature_enable.est_board_power_throttler_en;
 
 	kernel_throttler_stop_nops_freq_default =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)
@@ -274,12 +287,21 @@ void InitThrottlers(void)
 
 	SetThrottlerLimit(kThrottlerDopplerSlow, DEFAULT_BOARD_POWER_LIMIT);
 
+	if (est_board_power_throttler) {
+		SetThrottlerLimit(
+			kThrottlerEstBoardPower,
+			tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.est_board_power_limit);
+		UpdateTelemetryEstBoardPowerLimit(throttler[kThrottlerEstBoardPower].limit);
+	}
+
 	InitKernelThrottling();
 
 	EnableArbMax(throttler[kThrottlerTDP].arb_max, !doppler);
 	EnableArbMax(throttler[kThrottlerFastTDC].arb_max, !doppler);
 	EnableArbMax(throttler[kThrottlerTDC].arb_max, !doppler);
 	EnableArbMax(throttler[kThrottlerBoardPower].arb_max, !doppler);
+	EnableArbMax(throttler[kThrottlerEstBoardPower].arb_max,
+		     !doppler && est_board_power_throttler);
 
 	EnableArbMax(throttler[kThrottlerThm].arb_max, thermal_throttling);
 	EnableArbMax(throttler[kThrottlerGDDRThm].arb_max, thermal_throttling);
@@ -400,7 +422,8 @@ static void UpdateDoppler(const TelemetryInternalData *telemetry)
  * The stop frequency comes from kernel_throttler_stop_nops_freq. When that
  * value is 0, FW falls back to the effective minimum arbiter frequency.
  */
-static void UpdateKernelThrottler(float current_power, float tdp_limit)
+static void UpdateKernelThrottler(float vcore_power, float tdp_limit, float est_board_power,
+				  float est_board_power_limit)
 {
 	telemetry_feature_flags_bits_0_t active_config = GetActiveFeatures();
 	bool start_nops = false;
@@ -408,7 +431,13 @@ static void UpdateKernelThrottler(float current_power, float tdp_limit)
 	enum aiclk_arb_min arb;
 
 	if (active_config.kernel_nops_at_aiclk_fmin) {
-		start_nops = GetAiclkTarg() == GetAiclkFmin() && current_power > tdp_limit;
+		bool over_est_limit =
+			est_board_power_throttler && est_board_power > est_board_power_limit;
+		bool under_est_limit =
+			!est_board_power_throttler || est_board_power < est_board_power_limit;
+
+		start_nops = GetAiclkTarg() == GetAiclkFmin() &&
+			     (vcore_power > tdp_limit || over_est_limit);
 
 		uint32_t stop_freq = kernel_throttler_stop_nops_freq;
 
@@ -416,7 +445,8 @@ static void UpdateKernelThrottler(float current_power, float tdp_limit)
 			stop_freq = get_aiclk_effective_arb_min(&arb);
 		}
 
-		stop_nops = GetAiclkTarg() >= stop_freq && current_power < tdp_limit;
+		stop_nops =
+			GetAiclkTarg() >= stop_freq && vcore_power < tdp_limit && under_est_limit;
 	}
 
 	bool new_kernel_nops_enabled = ((kernel_nops_enabled || start_nops) && !stop_nops);
@@ -440,11 +470,15 @@ void CalculateThrottlers(void)
 		UpdateThrottler(kThrottlerFastTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerTDC, telemetry_internal_data.vcore_current);
 		UpdateThrottler(kThrottlerBoardPower, GetInputPower());
+		if (est_board_power_throttler) {
+			UpdateThrottler(kThrottlerEstBoardPower,
+					telemetry_internal_data.est_board_power);
+		}
 
-		float current_power = telemetry_internal_data.vcore_power;
-		float tdp_limit = throttler[kThrottlerTDP].limit;
-
-		UpdateKernelThrottler(current_power, tdp_limit);
+		UpdateKernelThrottler(telemetry_internal_data.vcore_power,
+				      throttler[kThrottlerTDP].limit,
+				      telemetry_internal_data.est_board_power,
+				      throttler[kThrottlerEstBoardPower].limit);
 	}
 
 	UpdateThrottler(kThrottlerThm, telemetry_internal_data.asic_temperature);
@@ -520,6 +554,40 @@ int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size)
 
 	UpdateTelemetryBoardPowerLimit(power_limit);
 
+	return 0;
+}
+
+uint8_t ThrottlerSetEstBoardPowerLimit(uint32_t power_limit)
+{
+	float fw_default =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.est_board_power_limit;
+	float default_limit;
+	float new_limit;
+
+	if (!est_board_power_throttler) {
+		return 1;
+	}
+
+	/* Boards without a configured fw-table default cannot restore via 0 */
+	if (power_limit == 0 && fw_default == 0.0f) {
+		return 1;
+	}
+
+	default_limit = get_throttler_clamped_limit(kThrottlerEstBoardPower, fw_default);
+
+	if (power_limit == 0) {
+		new_limit = default_limit;
+	} else {
+		new_limit = (float)power_limit;
+	}
+
+	/* Reject if outside the valid range rather than silently clamping */
+	if (get_throttler_clamped_limit(kThrottlerEstBoardPower, new_limit) != new_limit) {
+		return 1;
+	}
+
+	SetThrottlerLimit(kThrottlerEstBoardPower, new_limit);
+	UpdateTelemetryEstBoardPowerLimit(throttler[kThrottlerEstBoardPower].limit);
 	return 0;
 }
 

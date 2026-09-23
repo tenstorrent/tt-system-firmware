@@ -824,6 +824,17 @@ struct char_telemetry_interval_submsg {
 	uint32_t interval_ms;
 };
 
+/** @brief Submessage for setting the estimated board power throttler limit
+ * @details Payload is a single uint32_t with two interpretations:
+ * - Value == 0: Restore the firmware-table default
+ * - Any other value: Set the limit to this value in watts, subject to the
+ *   range enforced by the handler
+ */
+struct char_est_board_power_limit_submsg {
+	/** @brief 0 to restore the default, or the power limit in watts */
+	uint32_t power_limit;
+};
+
 /** @brief Union of all possible characterization submessage payloads */
 union characterisation_submsg_data {
 	/** @brief Set host-requested minimum frequency floor */
@@ -836,6 +847,8 @@ union characterisation_submsg_data {
 	struct char_gddr_therm_trip_enabled_submsg gddr_therm_trip_enabled;
 	/** @brief Set the periodic telemetry update interval */
 	struct char_telemetry_interval_submsg telemetry_interval;
+	/** @brief Set the estimated board power throttler limit */
+	struct char_est_board_power_limit_submsg est_board_power_limit;
 	/* add to this union to define more sub-message payloads */
 	/** @brief Generic fallback for raw access */
 	uint8_t raw_data[4];

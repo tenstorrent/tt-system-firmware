@@ -12,7 +12,11 @@ target_include_directories(app PRIVATE ../../../../lib/tenstorrent/bh_arc)
 target_include_directories(app PRIVATE ../../../../soc/tenstorrent/tt_blackhole/include)
 
 # ───── Paths to inputs and tools ─────────────────────────────────────────
-set(TTSF_ROOT     "${ZEPHYR_BASE}/../tt-system-firmware")
+if(DEFINED ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR)
+    set(TTSF_ROOT "${ZEPHYR_TT_SYSTEM_FIRMWARE_MODULE_DIR}")
+else()
+    set(TTSF_ROOT "${ZEPHYR_BASE}/../tt-system-firmware")
+endif()
 set(PROTO_DIR     "${TTSF_ROOT}/drivers/misc/bh_fwtable/spirom_protobufs")
 set(TXT_DIR       "${TTSF_ROOT}/boards/tenstorrent/tt_blackhole/spirom_data_tables/P150B")
 set(ENC_SCRIPT    "${TTSF_ROOT}/scripts/encode_spirom_bins.py")
@@ -42,6 +46,7 @@ if(PROTOC_EXE)
         OUTPUT  ${PB_PY_FILES}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${PROTO_PY_DIR}"
         COMMAND ${PROTOC_EXE}
+                --experimental_allow_proto3_optional
                 --python_out=${PROTO_PY_DIR}
                 -I ${PROTO_DIR}
                 ${PROTO_DIR}/read_only.proto

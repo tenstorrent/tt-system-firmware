@@ -23,6 +23,9 @@
 #define P0V8_VCORE_ADDR             0x64
 #define P0V8_VCOREM_ADDR            0x65
 
+/* Fixed VCOREM rail voltage in mV; see set_vcorem() in voltage.c */
+#define VCOREM_RAIL_VOLTAGE_MV 850
+
 enum VoltageCmdSource {
 	VoutCommand = 0,
 	VoutMarginLow = 1,

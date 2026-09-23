@@ -548,6 +548,10 @@ static uint8_t characterisation_handler(const union request *request, struct res
 			request->characterisation_msg.submsg_data.telemetry_interval.interval_ms);
 #endif
 
+	case TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT:
+		return ThrottlerSetEstBoardPowerLimit(request->characterisation_msg.submsg_data
+							      .est_board_power_limit.power_limit);
+
 	default:
 		LOG_WRN("Unknown characterization submessage ID: 0x%02x",
 			request->characterisation_msg.submsg_ID);
