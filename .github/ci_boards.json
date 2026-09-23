@@ -4,6 +4,13 @@
       "board": "n150",
       "supports_smoke": true,
       "kmd_build": "2.11.0"
+    },
+    {
+      "board": "whgx",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-wh-6u:v0.78.0",
+      "metal-target": "wh_6u",
+      "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
+      "kmd_build": "2.11.0"
     }
   ],
   "bh": [
