@@ -150,6 +150,7 @@ ETH_RESET_ERR_INVALID_MASK = 1
 TT_SUB_MSG_SET_HOST_REQUESTED_FMIN = 0x1
 TT_SUB_MSG_SET_KERNEL_THROTTLER_ENABLED = 0x2
 TT_SUB_MSG_SET_KERNEL_THROTTLER_STOP_NOPS_FREQ = 0x3
+TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT = 0x6
 
 # Telemetry tags
 TAG_TDP = 7
@@ -162,6 +163,7 @@ TAG_ASIC_ID_HIGH = 61
 TAG_ASIC_ID_LOW = 62
 TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
+TAG_EST_BOARD_POWER_LIMIT = 82
 
 NUM_PD = 16
 NUM_VM = 8
@@ -570,8 +572,8 @@ def test_counter_msg(arc_chip_dut, asic_id):
     COUNTER_CMD_CLEAR = 1
     COUNTER_CMD_FREEZE = 2
     COUNTER_BANK_THROTTLERS = 0
-    COUNTER_THROTTLER_MASK_ALL = 0x3FF
-    THROTTLER_NUM_ARBITERS = 9
+    THROTTLER_NUM_ARBITERS = 11
+    COUNTER_THROTTLER_MASK_ALL = (1 << THROTTLER_NUM_ARBITERS) - 1
 
     arc_chip = pyluwen.detect_chips()[asic_id]
 
@@ -1924,6 +1926,74 @@ def test_characterisation_kernel_throttler(arc_chip_dut, asic_id):
     # Restore the baseline configuration.
     set_enabled(baseline & 1)
     set_stop_freq((baseline >> 16) & 0xFFFF)
+
+
+def test_characterisation_est_board_power_limit(arc_chip_dut, asic_id):
+    """
+    Validates the SET_EST_BOARD_POWER_LIMIT characterization message.
+
+    Limit range is [50, 600] W. Value 0 restores the firmware-table default.
+    The active limit is published in TAG_EST_BOARD_POWER_LIMIT.
+    Only boards with feature_enable.est_board_power_throttler_en accept the
+    message (currently Galaxy / Galaxy REVC / Galaxy BIN6).
+    """
+    arc_chip = pyluwen.detect_chips()[asic_id]
+
+    baseline = read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT)
+    logger.info(f"Baseline TAG_EST_BOARD_POWER_LIMIT: {baseline} W")
+    if baseline == 0:
+        pytest.skip("est board power throttler not enabled on this board")
+
+    def set_limit(value):
+        return arc_chip.as_bh().arc_msg_buf(
+            [
+                TT_SMC_MSG_CHARACTERISATION | TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT << 8,
+                value,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+            ]
+        )
+
+    # Set a valid limit within [50, 600].
+    NEW_LIMIT = 200
+    response = set_limit(NEW_LIMIT)
+    assert response[0] == 0, f"Failed to set est board power limit to {NEW_LIMIT} W"
+    time.sleep(0.2)
+    assert read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT) == NEW_LIMIT, (
+        f"TAG_EST_BOARD_POWER_LIMIT not set to {NEW_LIMIT} W"
+    )
+    logger.info(f"Successfully set est board power limit to {NEW_LIMIT} W")
+
+    # Range boundaries are inclusive.
+    assert set_limit(50)[0] == 0, "Minimum limit (50 W) should be accepted"
+    time.sleep(0.2)
+    assert read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT) == 50
+
+    assert set_limit(600)[0] == 0, "Maximum limit (600 W) should be accepted"
+    time.sleep(0.2)
+    assert read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT) == 600
+
+    # Out-of-range values are rejected.
+    assert set_limit(49)[0] != 0, "Expected error for limit below minimum"
+    assert set_limit(601)[0] != 0, "Expected error for limit above maximum"
+    assert read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT) == 600, (
+        "Rejected limit must not change the running limit"
+    )
+    logger.info("Correctly rejected out-of-range est board power limits")
+
+    # Value 0 restores the firmware-table default.
+    response = set_limit(0)
+    assert response[0] == 0, "Failed to restore default est board power limit"
+    time.sleep(0.2)
+    restored = read_telem(arc_chip, TAG_EST_BOARD_POWER_LIMIT)
+    assert restored == baseline, (
+        f"TAG_EST_BOARD_POWER_LIMIT ({restored}) did not restore to baseline ({baseline})"
+    )
+    logger.info(f"Successfully restored est board power limit to {restored} W")
 
 
 def test_bindesc(arc_chip_dut, asic_id):

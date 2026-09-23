@@ -23,6 +23,7 @@
 #include "cm2dm_msg.h"
 #include "noc_init.h"
 #include "aiclk_ppm.h"
+#include "throttler.h"
 
 #include "reg_mock.h"
 #include "telemetry.h"
@@ -1053,6 +1054,82 @@ ZTEST(msgqueue, test_msg_type_set_telemetry_interval_invalid)
 
 	/* Leave the default in place for any test that runs after this one. */
 	push_set_telem_interval(0);
+	push_msg_success();
+}
+
+/* Send TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT with the given payload. */
+static void push_set_est_board_power_limit(uint32_t power_limit)
+{
+	memset(&req, 0, sizeof(req));
+	memset(&rsp, 0, sizeof(rsp));
+	req.characterisation_msg.command_code = TT_SMC_MSG_CHARACTERISATION;
+	req.characterisation_msg.submsg_ID = TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT;
+	req.characterisation_msg.submsg_data.est_board_power_limit.power_limit = power_limit;
+}
+
+static uint32_t get_est_board_power_limit(void)
+{
+	return GetTelemetryTag(TAG_EST_BOARD_POWER_LIMIT);
+}
+
+/* P150B (used by this suite) leaves the feature off; enable it for these tests. */
+static uint32_t enable_est_board_power_throttler_for_test(uint32_t default_limit)
+{
+	struct _FwTable *fw =
+		(struct _FwTable *)tt_bh_fwtable_get_fw_table(DEVICE_DT_GET(DT_NODELABEL(fwtable)));
+
+	fw->feature_enable.est_board_power_throttler_en = true;
+	fw->chip_limits.est_board_power_limit = default_limit;
+	InitThrottlers();
+	return default_limit;
+}
+
+ZTEST(msgqueue, test_msg_type_set_est_board_power_limit)
+{
+	const uint32_t fwtable_default = enable_est_board_power_throttler_for_test(300);
+
+	/* A value inside the accepted range takes effect and is reported back. */
+	push_set_est_board_power_limit(200);
+	push_msg_success("Valid estimated board power limit should be accepted");
+	zassert_equal(get_est_board_power_limit(), 200,
+		      "TAG_EST_BOARD_POWER_LIMIT should report the new limit");
+
+	/* Range boundaries are inclusive. */
+	push_set_est_board_power_limit(50);
+	push_msg_success("Minimum limit should be accepted");
+	zassert_equal(get_est_board_power_limit(), 50);
+
+	push_set_est_board_power_limit(600);
+	push_msg_success("Maximum limit should be accepted");
+	zassert_equal(get_est_board_power_limit(), 600);
+
+	/* 0 restores the firmware-table default (clamped into range by the handler). */
+	push_set_est_board_power_limit(0);
+	push_msg_success("Restore default should be accepted");
+	zassert_equal(get_est_board_power_limit(), fwtable_default,
+		      "Limit should return to the fwtable default");
+}
+
+ZTEST(msgqueue, test_msg_type_set_est_board_power_limit_invalid)
+{
+	enable_est_board_power_throttler_for_test(300);
+
+	push_set_est_board_power_limit(200);
+	push_msg_success();
+	zassert_equal(get_est_board_power_limit(), 200);
+
+	push_set_est_board_power_limit(49);
+	push_msg_failure("Limit below the minimum should be rejected");
+	zassert_equal(get_est_board_power_limit(), 200,
+		      "A rejected limit must not change the running limit");
+
+	push_set_est_board_power_limit(601);
+	push_msg_failure("Limit above the maximum should be rejected");
+	zassert_equal(get_est_board_power_limit(), 200,
+		      "A rejected limit must not change the running limit");
+
+	/* Leave the fwtable default in place for any test that runs after this one. */
+	push_set_est_board_power_limit(0);
 	push_msg_success();
 }
 
