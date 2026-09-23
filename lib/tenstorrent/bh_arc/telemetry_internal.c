@@ -56,8 +56,14 @@ void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data)
 		AVSReadCurrent(AVS_VCORE_RAIL, &internal_data.vcore_current);
 		internal_data.vcore_power =
 			internal_data.vcore_current * internal_data.vcore_voltage * 0.001f;
+		AVSReadCurrent(AVS_VCOREM_RAIL, &internal_data.vcorem_current);
+		internal_data.vcorem_power =
+			internal_data.vcorem_current * VCOREM_RAIL_VOLTAGE_MV * 0.001f;
 		internal_data.gddr_io_power_west = GetGddrWestIoPower();
 		internal_data.gddr_io_power_east = GetGddrEastIoPower();
+		internal_data.est_board_power =
+			internal_data.vcore_power + internal_data.vcorem_power +
+			internal_data.gddr_io_power_west + internal_data.gddr_io_power_east;
 
 		(void)get_gddr_temps(&internal_data.gddr_temps);
 #endif

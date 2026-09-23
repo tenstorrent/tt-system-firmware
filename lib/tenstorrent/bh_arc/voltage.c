@@ -79,7 +79,7 @@ int InitVoltagePPM(void)
 
 	/* Change VCOREM to 0.85 V to enforce the rule VCOREM - 300 mV <= VCORE <= VCOREM + 100mV */
 	/* Thus allowing VCORE in the range of 0.55 V to 0.95 V */
-	set_vcorem(850);
+	set_vcorem(VCOREM_RAIL_VOLTAGE_MV);
 
 	return 0;
 }
