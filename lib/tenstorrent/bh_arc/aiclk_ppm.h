@@ -36,6 +36,7 @@ enum aiclk_arb_max {
 	aiclk_arb_max_doppler_slow,     /**< Doppler slow throttling limit */
 	aiclk_arb_max_doppler_critical, /**< Doppler critical throttling limit */
 	aiclk_arb_max_host_fmax,        /**< Host-adjustable fmax ceiling */
+	aiclk_arb_max_est_board_power,  /**< Estimated board power limit */
 	aiclk_arb_max_count,            /**< Number of max arbiters */
 };
 
