@@ -557,6 +557,40 @@ int32_t Dm2CmSetBoardPowerLimit(const uint8_t *data, uint8_t size)
 	return 0;
 }
 
+uint8_t ThrottlerSetEstBoardPowerLimit(uint32_t power_limit)
+{
+	float fw_default =
+		tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.est_board_power_limit;
+	float default_limit;
+	float new_limit;
+
+	if (!est_board_power_throttler) {
+		return 1;
+	}
+
+	/* Boards without a configured fw-table default cannot restore via 0 */
+	if (power_limit == 0 && fw_default == 0.0f) {
+		return 1;
+	}
+
+	default_limit = get_throttler_clamped_limit(kThrottlerEstBoardPower, fw_default);
+
+	if (power_limit == 0) {
+		new_limit = default_limit;
+	} else {
+		new_limit = (float)power_limit;
+	}
+
+	/* Reject if outside the valid range rather than silently clamping */
+	if (get_throttler_clamped_limit(kThrottlerEstBoardPower, new_limit) != new_limit) {
+		return 1;
+	}
+
+	SetThrottlerLimit(kThrottlerEstBoardPower, new_limit);
+	UpdateTelemetryEstBoardPowerLimit(throttler[kThrottlerEstBoardPower].limit);
+	return 0;
+}
+
 static uint8_t set_tdp_limit_handler(const union request *request, struct response *response)
 {
 	float default_tdp_limit = get_throttler_clamped_limit(

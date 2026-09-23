@@ -494,12 +494,27 @@ typedef union {
  */
 #define TAG_FLASH_JEDEC_ID 80
 
+/**
+ * @brief Estimated board power in watts.
+ *
+ * Sum of vcore power, vcorem power, and GDDR west/east IO rail power.
+ */
+#define TAG_EST_BOARD_POWER 81
+
+/**
+ * @brief Estimated board power throttler limit in watts.
+ *
+ * Reflects the firmware-table default, or the value last set by
+ * @ref TT_SMC_MSG_CHARACTERISATION / @ref TT_SUB_MSG_SET_EST_BOARD_POWER_LIMIT.
+ */
+#define TAG_EST_BOARD_POWER_LIMIT 82
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 81
+#define TAG_COUNT 83
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
@@ -534,6 +549,7 @@ void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version);
 void UpdateTelemetryNocTranslation(bool translation_enabled);
 void UpdateTelemetryBoardPowerLimit(uint32_t power_limit);
 void UpdateTelemetryTdpLimit(uint32_t tdp_limit);
+void UpdateTelemetryEstBoardPowerLimit(uint32_t power_limit);
 void UpdateTelemetryThermTripCount(uint16_t therm_trip_count);
 void UpdateTelemetryHostAiclkLimit(uint32_t fmax);
 void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq);
