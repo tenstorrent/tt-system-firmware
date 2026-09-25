@@ -58,7 +58,8 @@ ENV PATH=${PYTHON_VENV_PATH}/bin:$PATH
 RUN apt-get install -y libusb-1.0-0
 
 # Install python dependencies in the venv
-RUN pip install pyocd pyluwen pyyaml pykwalify protobuf imgtool && \
+RUN pip install pyocd pyluwen pyyaml pykwalify protobuf imgtool \
+        jsonschema intelhex pyusb && \
     pyocd pack install STM32G0B1CEUx
 
 # Clone the tt-system-firmware repo to get recovery scripts
