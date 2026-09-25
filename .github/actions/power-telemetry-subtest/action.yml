@@ -1,0 +1,272 @@
+name: Power telemetry subtest
+description: >-
+  Run one workload under telemetry collection. Starts read_telemetry.py (pyluwen chip
+  telemetry) and, on Galaxy, the in-band IPMI system-power poller in the background,
+  captures a short idle window, runs the supplied command with its output saved to
+  workload.log, then stops both collectors cleanly and uploads CSVs, logs, the
+  environment snapshot and a manifest as one artifact.
+  Each call writes to its own telemetry_output/<name> dir so sequential subtests in the
+  same job don't clobber each other.
+
+inputs:
+  name:
+    description: >-
+      Subtest name. Used for the per-subtest output dir (telemetry_output/<name>)
+      and the artifact name. Keep it filesystem-safe and stable (the Power CI
+      Dashboard maps it to a workload).
+    required: true
+  workload:
+    description: Workload label passed to read_telemetry.py --workload (stamped onto every CSV row).
+    required: true
+  run:
+    description: >-
+      Shell command that executes the subtest (e.g. the `docker run ... pytest ...`
+      line). Runs under `timeout` so a hung subtest can't wedge the job.
+    required: true
+  board:
+    description: Board label, appended to the artifact name so per-board runs stay distinct.
+    required: true
+  venv-dir:
+    description: Path to the pre-created Python venv containing pyluwen + pandas.
+    required: true
+  idle-seconds:
+    description: Seconds of idle telemetry to capture before the workload starts (0 to skip).
+    required: false
+    default: "30"
+  cooldown-seconds:
+    description: Seconds to keep collecting after the workload exits, so the ramp-down back to idle is in the capture (0 to skip).
+    required: false
+    default: "20"
+  system-power:
+    description: >-
+      System power collector: "none" or "ipmi" (in-band `ipmitool sdr list` through /dev/ipmi0,
+      run as root inside a small container; Galaxy only). Writes ipmi_power.csv next to the chip CSVs.
+    required: false
+    default: "none"
+  ipmi-image:
+    description: Container image used to run ipmitool (must be able to apt-get install it, or have it).
+    required: false
+    default: "ubuntu:24.04"
+  timeout-minutes:
+    description: Hard timeout for the subtest command (composite steps can't use timeout-minutes, so we wrap with `timeout`).
+    required: false
+    default: "65"
+  selector:
+    description: >-
+      pytest selector of the workload (file::test [-k "..."]). When given together with `image`, the action first
+      runs `pytest --collect-only` inside the container and skips the workload with a warning if nothing is
+      collected (test not in this tt-metal version, or a Galaxy-only parametrisation on a single card).
+    required: false
+    default: ""
+  image:
+    description: Container image used for the collect-only check.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: "[${{ inputs.name }}] Check the workload exists in this image"
+      id: check
+      shell: bash
+      env:
+        SELECTOR: ${{ inputs.selector }}   # via env: selectors carry double quotes (-k "all and duty-1") that must not be spliced into the script
+      run: |
+        set +e -uo pipefail
+        if [ -z "$SELECTOR" ] || [ -z "${{ inputs.image }}" ]; then echo "available=true" >> $GITHUB_OUTPUT; exit 0; fi
+        case "$SELECTOR" in exists:*)
+          P="${SELECTOR#exists:}"
+          if docker run --rm --entrypoint bash ${{ inputs.image }} -c "test -e '$P'"; then
+            echo "available=true" >> $GITHUB_OUTPUT; echo "${{ inputs.name }}: $P present in the image"
+          else
+            echo "available=false" >> $GITHUB_OUTPUT
+            echo "::warning::${{ inputs.name }} skipped: $P is not in ${{ inputs.image }}"
+          fi
+          exit 0 ;;
+        esac
+        # Same entrypoint and working directory as the real subtest (the image's defaults); devices mounted because
+        # tt-metal's conftest may touch them while collecting.
+        OUT=$(docker run --rm --entrypoint pytest --device /dev/tenstorrent -v /dev/hugepages-1G:/dev/hugepages-1G ${{ inputs.image }} \
+              --collect-only -q ${{ inputs.selector }} 2>&1 | tail -6 || true)
+        N=$(echo "$OUT" | grep -oE '[0-9]+ tests? collected|[0-9]+/[0-9]+ tests? collected' | grep -oE '^[0-9]+' | head -1 || true)
+        [ -n "$N" ] || N=$(echo "$OUT" | grep -oE 'collected [0-9]+ items?( / [0-9]+ deselected / [0-9]+ selected)?' | tail -1 | grep -oE '[0-9]+ selected|collected [0-9]+' | grep -oE '[0-9]+' | tail -1 || true)
+        echo "collect-only output: $OUT"
+        if [ -n "$N" ] && [ "$N" -gt 0 ]; then
+          echo "available=true" >> $GITHUB_OUTPUT; echo "${{ inputs.name }}: $N test(s) collected"
+        else
+          echo "available=false" >> $GITHUB_OUTPUT
+          echo "::warning::${{ inputs.name }} skipped: nothing collected in ${{ inputs.image }} for '${{ inputs.selector }}' ($OUT)"
+        fi
+
+    - name: "[${{ inputs.name }}] Start telemetry"
+      if: ${{ steps.check.outputs.available == 'true' }}
+      shell: bash
+      run: |
+        set -euxo pipefail
+        TELEM_DIR="${GITHUB_WORKSPACE}/telemetry_output/${{ inputs.name }}"
+        mkdir -p "$TELEM_DIR"
+        cd "$TELEM_DIR"
+        # System power (Galaxy): in-band IPMI needs root and /dev/ipmi0; the runner user has
+        # neither, so poll from a throwaway container. Same CSV layout as the team's IPMI logs.
+        case ",${{ inputs.system-power }}," in *,ipmi,*)
+          if [ -e /dev/ipmi0 ]; then
+            docker run -d --rm --name "powerci-ipmi-${{ inputs.name }}" --user root \
+              --device /dev/ipmi0 -v "$GITHUB_WORKSPACE:/w" -w "/w/telemetry_output/${{ inputs.name }}" \
+              ${{ inputs.ipmi-image }} bash -c \
+              'command -v ipmitool >/dev/null || (apt-get update -qq && apt-get install -y -qq ipmitool python3 >/dev/null); exec python3 /w/scripts/poll_ipmi_power.py --out ipmi_power.csv --interval 2' \
+              > ipmi_container.log 2>&1 || echo "::warning::could not start the IPMI poller container"
+            # wait (bounded) for the first IPMI row so system power covers the whole capture
+            for _ in $(seq 1 45); do [ -s ipmi_power.csv ] && [ "$(wc -l < ipmi_power.csv)" -ge 2 ] && break; sleep 1; done
+          else
+            echo "::warning::system-power=ipmi requested but /dev/ipmi0 is not present on this runner"
+          fi ;;
+        esac
+        # The runner user already has access to /dev/tenstorrent (same access other
+        # workflows use via pyluwen), so no sudo is required.
+        nohup "${{ inputs.venv-dir }}/bin/python3" \
+          "$GITHUB_WORKSPACE/scripts/read_telemetry.py" \
+          --csv telemetry \
+          --workload "${{ inputs.workload }}" \
+          > telemetry.log 2>&1 < /dev/null &
+        TELEM_PID=$!
+        echo "$TELEM_PID" > telemetry.pid
+        date -u +%Y-%m-%dT%H:%M:%SZ > telemetry_started_at
+
+        # Give the script a moment to detect chips and start logging.
+        sleep 5
+        if ! kill -0 "$TELEM_PID" 2>/dev/null; then
+          echo "Telemetry process failed to start. Log:"
+          cat telemetry.log || true
+          exit 1
+        fi
+        echo "Started telemetry collection for '${{ inputs.name }}' (PID $TELEM_PID)"
+
+        # Idle window: chips at rest under telemetry, so every artifact carries its own
+        # idle reference right before the workload.
+        IDLE="${{ inputs.idle-seconds }}"
+        if [ "${IDLE:-0}" -gt 0 ]; then
+          echo "Capturing ${IDLE}s of idle telemetry"
+          sleep "$IDLE"
+        fi
+
+    - name: "[${{ inputs.name }}] Run subtest"
+      id: run
+      if: ${{ steps.check.outputs.available == 'true' }}
+      shell: bash
+      run: |
+        set -uxo pipefail
+        TELEM_DIR="${GITHUB_WORKSPACE}/telemetry_output/${{ inputs.name }}"
+        # The command may contain quotes/newlines, so stage it to a file and run it
+        # under `timeout` (composite-action steps can't use `timeout-minutes`). Output is
+        # kept in workload.log for the artifact (pass/fail markers, perf numbers).
+        SUBTEST_SH="$(mktemp)"
+        cat > "$SUBTEST_SH" <<'POWER_TELEM_SUBTEST_EOF'
+        ${{ inputs.run }}
+        POWER_TELEM_SUBTEST_EOF
+        cp "$SUBTEST_SH" "$TELEM_DIR/command.sh"
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$TELEM_DIR/workload_started_at"
+        set +e
+        timeout --preserve-status "${{ inputs.timeout-minutes }}m" bash "$SUBTEST_SH" 2>&1 | tee "$TELEM_DIR/workload.log"
+        RC=${PIPESTATUS[0]}
+        set -e
+        date -u +%Y-%m-%dT%H:%M:%SZ > "$TELEM_DIR/workload_ended_at"
+        echo "$RC" > "$TELEM_DIR/workload_exit_code"
+        echo "exit_code=$RC" >> "$GITHUB_OUTPUT"
+        # A failed workload must not skip the remaining subtests: record it (manifest status=failed, ::error annotation)
+        # and let the job continue; the workflow's "Subtest summary" step fails the job at the end if anything failed.
+        if [ "$RC" -ne 0 ]; then echo "::error::${{ inputs.name }} failed with exit code $RC (see workload.log in the artifact)"; fi
+        exit 0
+
+    - name: "[${{ inputs.name }}] Stop telemetry and write manifest"
+      if: ${{ always() && steps.check.outputs.available == 'true' }}
+      shell: bash
+      run: |
+        set -uxo pipefail
+        TELEM_DIR="${GITHUB_WORKSPACE}/telemetry_output/${{ inputs.name }}"
+        # Keep collecting for the cooldown so the drop back to idle power/clock/temperature is in the data.
+        COOL="${{ inputs.cooldown-seconds }}"
+        if [ "${COOL:-0}" -gt 0 ] 2>/dev/null && [ -f "$TELEM_DIR/workload_ended_at" ]; then
+          echo "cooldown: collecting ${COOL}s more after the workload"; sleep "$COOL"
+        fi
+        PID=""
+        if [ -f "$TELEM_DIR/telemetry.pid" ]; then
+          PID="$(cat "$TELEM_DIR/telemetry.pid")"
+        fi
+        if [ -z "$PID" ]; then
+          PID="$(pgrep -f 'scripts/read_telemetry.py' | head -n 1 || true)"
+        fi
+
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+          echo "Sending SIGINT to telemetry process (PID $PID)"
+          kill -INT "$PID" || true
+          # Wait up to 30s for the script to flush CSVs and exit cleanly.
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "Telemetry process still alive after SIGINT; force-killing."
+            kill -KILL "$PID" || true
+          fi
+        else
+          echo "No running telemetry process found."
+        fi
+
+        # Stop the IPMI poller (SIGTERM → it flushes the CSV and exits; the container removes itself).
+        if docker ps -q -f "name=powerci-ipmi-${{ inputs.name }}" | grep -q .; then
+          docker stop -t 20 "powerci-ipmi-${{ inputs.name }}" >/dev/null || true
+          [ -f "$TELEM_DIR/ipmi_power.csv" ] && echo "IPMI rows: $(($(wc -l < "$TELEM_DIR/ipmi_power.csv") - 1))" || echo "::warning::no ipmi_power.csv produced"
+        fi
+
+        # Environment snapshot from the job (tt-smi.json, host.json) travels with every subtest.
+        cp "${GITHUB_WORKSPACE}"/telemetry_output/env/*.json "$TELEM_DIR"/ 2>/dev/null || true
+        cp "${GITHUB_WORKSPACE}"/telemetry_output/env/*.txt "$TELEM_DIR"/ 2>/dev/null || true
+
+        RC="$(cat "$TELEM_DIR/workload_exit_code" 2>/dev/null || echo 124)"
+        STATUS="failed"; [ "$RC" = "0" ] && STATUS="passed"
+        CMD_JSON="$(python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read().strip()))' "$TELEM_DIR/command.sh" 2>/dev/null || echo '""')"
+        cat > "$TELEM_DIR/manifest.json" <<MANIFEST
+        {
+          "schema": "power-ci-manifest/1",
+          "workload": "${{ inputs.name }}",
+          "workload_label": "${{ inputs.workload }}",
+          "board": "${{ inputs.board }}",
+          "host": "$(hostname)",
+          "status": "$STATUS",
+          "exit_code": $RC,
+          "idle_seconds": ${{ inputs.idle-seconds }},
+          "cooldown_seconds": ${{ inputs.cooldown-seconds }},
+          "system_power": "${{ inputs.system-power }}",
+          "telemetry_started_at": "$(cat "$TELEM_DIR/telemetry_started_at" 2>/dev/null)",
+          "workload_started_at": "$(cat "$TELEM_DIR/workload_started_at" 2>/dev/null)",
+          "workload_ended_at": "$(cat "$TELEM_DIR/workload_ended_at" 2>/dev/null)",
+          "command": $CMD_JSON,
+          "run_id": "${GITHUB_RUN_ID}",
+          "run_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+          "fw_repo_sha": "${GITHUB_SHA}"
+        }
+        MANIFEST
+        rm -f "$TELEM_DIR"/telemetry_started_at "$TELEM_DIR"/workload_started_at "$TELEM_DIR"/workload_ended_at "$TELEM_DIR"/workload_exit_code "$TELEM_DIR"/telemetry.pid
+
+        echo "--- Manifest (${{ inputs.name }}) ---"
+        cat "$TELEM_DIR/manifest.json"
+        echo "--- Telemetry log (${{ inputs.name }}) ---"
+        cat "$TELEM_DIR/telemetry.log" || true
+        echo "--- Generated files (${{ inputs.name }}) ---"
+        ls -la "$TELEM_DIR" || true
+
+    - name: "[${{ inputs.name }}] Upload telemetry artifact"
+      if: ${{ always() && steps.check.outputs.available == 'true' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: power_CI_telemetry-${{ inputs.name }}-${{ inputs.board }}
+        if-no-files-found: warn
+        retention-days: 90
+        path: |
+          telemetry_output/${{ inputs.name }}/*.csv
+          telemetry_output/${{ inputs.name }}/*.json
+          telemetry_output/${{ inputs.name }}/*.log
+          telemetry_output/${{ inputs.name }}/*.txt
+          telemetry_output/${{ inputs.name }}/command.sh

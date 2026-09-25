@@ -1,0 +1,17 @@
+{
+  "_comment": "Power CI run request. Committing a change to this file on a PR branch runs the Workload Telemetry workflow with these parameters (the Power CI Dashboard writes it). Same keys as the workflow_dispatch inputs.",
+  "boards": "p150a",
+  "workloads": "idle,mission_mode,ff1_matmul_with_gelu,ff1_matmul_no_gelu,resnet_conv,lm_head,bursty5",
+  "iterations": "50000",
+  "idle_seconds": "30",
+  "cooldown_seconds": "20",
+  "system_power": "auto",
+  "tag": "weekend 2026-09-25",
+  "max_util_fpu": "50",
+  "max_util_dram": "100",
+  "bursty_reps": "1000x",
+  "mm_throttle": "auto",
+  "idle_run_seconds": "240",
+  "requested_at": "2026-09-25T15:48:03+00:00",
+  "requested_by": "Ezra Rassaa"
+}
