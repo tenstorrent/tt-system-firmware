@@ -81,6 +81,10 @@
  * Fixed at compile time for a given CMFW build.
  */
 #define RUNTIME_TELEMETRY_SIZE_REG_ADDR      RESET_UNIT_SCRATCH_RAM_REG_ADDR(23)
+/** @brief CSM address of the PCIe LTSSM log (see pcie_ltssm_log.h), or 0 when disabled. */
+#define LTSSM_LOG_ADDR_REG_ADDR              RESET_UNIT_SCRATCH_RAM_REG_ADDR(24)
+/** @brief Size in bytes of the PCIe LTSSM log. */
+#define LTSSM_LOG_SIZE_REG_ADDR              RESET_UNIT_SCRATCH_RAM_REG_ADDR(25)
 
 #define STATUS_FW_VUART_REG_ADDR(n) RESET_UNIT_SCRATCH_RAM_REG_ADDR(40 + (n))
 /* SCRATCH_RAM_40 - SCRATCH_RAM_41 reserved for virtual uarts */

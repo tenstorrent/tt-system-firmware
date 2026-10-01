@@ -10,6 +10,7 @@
 #include "irqnum.h"
 #include "noc2axi.h"
 #include "pcie.h"
+#include "pcie_ltssm_log.h"
 #include "pciesd.h"
 #include "reg.h"
 #include "status_reg.h"
@@ -26,6 +27,7 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_arc_hs.h>
 #include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
@@ -35,6 +37,10 @@
 #define PCIE_SERDES1_CTRL_TLB      3
 #define PCIE_SII_REG_TLB           4
 #define PCIE_TLB_CONFIG_TLB        5
+/* Owned by the LTSSM recorder: eth, throttler and DMA reprogram the shared TLBs at runtime */
+#define PCIE_LTSSM_SII_TLB         6
+#define PCIE_LTSSM_PHY0_TLB        7 /* CDR option only, one per SerDes */
+#define PCIE_LTSSM_PHY1_TLB        8
 
 #define SERDES_INST_OFFSET         0x04000000
 #define PCIE_SERDES_SOC_REG_OFFSET 0x03000000
@@ -53,6 +59,12 @@
 #define PCIE_SII_A_NOC_TLB_DATA_0__REG_OFFSET  0x00000134
 #define PCIE_SII_A_APP_PCIE_CTL_REG_OFFSET     0x0000005C
 #define PCIE_SII_A_LTSSM_STATE_REG_OFFSET      0x00000128
+
+/* AlphaCore dig_soc_lane_stat_reg1; octl_rx_data_vld is the per-lane RX CDR lock */
+#define PHY_LANE_STAT_REG1_OFFSET 0x00013038
+#define PHY_LANE_STRIDE           0x00010000
+#define PHY_LANES_PER_SERDES      8
+#define PHY_OCTL_RX_DATA_VLD      BIT(1)
 
 LOG_MODULE_DECLARE(bh_arc);
 
@@ -445,6 +457,145 @@ static PCIeInitStatus PCIeInit(const struct CntlInitV2Param *param)
 	return status;
 }
 
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG
+/* TimerTimestamp() can tear on a carry between its halves; the smaller of two reads is good */
+static uint64_t LtssmTimestamp(void)
+{
+	uint64_t first = TimerTimestamp();
+	uint64_t second = TimerTimestamp();
+
+	return second < first ? second : first;
+}
+
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+static uint32_t ReadCdrLock(uint8_t lanes)
+{
+	uint32_t bitmap = 0;
+
+	for (uint8_t lane = 0; lane < lanes; lane++) {
+		uint8_t tlb =
+			lane < PHY_LANES_PER_SERDES ? PCIE_LTSSM_PHY0_TLB : PCIE_LTSSM_PHY1_TLB;
+		uint32_t offset =
+			PHY_LANE_STAT_REG1_OFFSET + (lane % PHY_LANES_PER_SERDES) * PHY_LANE_STRIDE;
+
+		if (NOC2AXIRead32(0, tlb, offset) & PHY_OCTL_RX_DATA_VLD) {
+			bitmap |= BIT(lane);
+		}
+	}
+
+	return bitmap | ((uint32_t)lanes << LTSSM_CDR_LANES_SHIFT);
+}
+
+/* S_DETECT_QUIET, S_DETECT_ACT, S_PRE_DETECT_QUIET and S_DETECT_WAIT */
+#define LTSSM_DETECT_STATES (BIT64(0x00) | BIT64(0x01) | BIT64(0x05) | BIT64(0x06))
+#endif /* CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR */
+
+/* Never returns: busy-polls because recovery transitions can be 600 ns apart */
+static void CaptureLtssmTraining(uint8_t inst_mask, const uint8_t *lanes)
+{
+	uint8_t last_state[2] = {LTSSM_STATE_NONE, LTSSM_STATE_NONE};
+	uint8_t last_link[2] = {0, 0};
+	uint32_t last_cdr[2] = {0, 0};
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+	uint32_t poll_div[2] = {0, 0};
+#else
+	ARG_UNUSED(lanes);
+#endif
+	int8_t tlb_inst = -1;
+
+	while (true) {
+		for (uint8_t inst = 0; inst < 2; inst++) {
+			if ((inst_mask & BIT(inst)) == 0) {
+				continue;
+			}
+
+			if (tlb_inst != (int8_t)inst) {
+				uint8_t x = inst == 0 ? PCIE_INST0_LOGICAL_X : PCIE_INST1_LOGICAL_X;
+
+				NOC2AXITlbSetup(0, PCIE_LTSSM_SII_TLB, x, PCIE_LOGICAL_Y,
+						PCIE_SII_A_REG_MAP_BASE_ADDR);
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+				NOC2AXITlbSetup(0, PCIE_LTSSM_PHY0_TLB, x, PCIE_LOGICAL_Y,
+						CMN_A_REG_MAP_BASE_ADDR);
+				NOC2AXITlbSetup(0, PCIE_LTSSM_PHY1_TLB, x, PCIE_LOGICAL_Y,
+						CMN_A_REG_MAP_BASE_ADDR + SERDES_INST_OFFSET);
+#endif
+				tlb_inst = inst;
+			}
+
+			PCIE_SII_LTSSM_STATE_reg_u ltssm_state;
+
+			ltssm_state.val = NOC2AXIRead32(0, PCIE_LTSSM_SII_TLB,
+							PCIE_SII_A_LTSSM_STATE_REG_OFFSET);
+
+			uint8_t state = ltssm_state.f.smlh_ltssm_state_sync;
+			/* rdlh_link_up can change while the LTSSM stays in L0 */
+			uint8_t link = ltssm_state.f.smlh_link_up_sync |
+				       (ltssm_state.f.rdlh_link_up_sync << 1);
+
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+			/* Nothing to lock to in Detect; else keep the last value between polls */
+			uint32_t cdr = last_cdr[inst];
+
+			if (LTSSM_DETECT_STATES & BIT64(state)) {
+				cdr = 0;
+			} else if (++poll_div[inst] >=
+				   CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG_CDR_POLL_DIV) {
+				poll_div[inst] = 0;
+				cdr = ReadCdrLock(lanes[inst]);
+			}
+#else
+			/* Lane count 0: the host shows CDR as not sampled. */
+			uint32_t cdr = 0;
+#endif
+
+			if (state == last_state[inst] && link == last_link[inst] &&
+			    cdr == last_cdr[inst]) {
+				continue;
+			}
+			last_state[inst] = state;
+			last_link[inst] = link;
+			last_cdr[inst] = cdr;
+
+			ltssm_log_record(inst, state, ltssm_state.f.smlh_link_up_sync,
+					 ltssm_state.f.rdlh_link_up_sync, cdr, LtssmTimestamp());
+		}
+	}
+}
+
+/* Generous: without HW stack protection an overflow would silently corrupt memory */
+#define LTSSM_LOG_STACK_SIZE 1024
+
+static K_THREAD_STACK_DEFINE(ltssm_log_stack, LTSSM_LOG_STACK_SIZE);
+static struct k_thread ltssm_log_thread;
+static uint8_t ltssm_log_inst_mask;
+static uint8_t ltssm_log_lanes[2];
+
+static void LtssmLogThread(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	CaptureLtssmTraining(ltssm_log_inst_mask, ltssm_log_lanes);
+}
+
+static void StartLtssmLogThread(uint8_t inst_mask, const uint8_t *lanes)
+{
+	ltssm_log_inst_mask = inst_mask;
+	ltssm_log_lanes[0] = MIN(lanes[0], LTSSM_CDR_MAX_LANES);
+	ltssm_log_lanes[1] = MIN(lanes[1], LTSSM_CDR_MAX_LANES);
+
+	/* Publish here, not in the thread, so scratch 24 is valid once pcie_init() returns */
+	ltssm_log_reset();
+
+	k_thread_create(&ltssm_log_thread, ltssm_log_stack, K_THREAD_STACK_SIZEOF(ltssm_log_stack),
+			LtssmLogThread, NULL, NULL, NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0,
+			K_NO_WAIT);
+	k_thread_name_set(&ltssm_log_thread, "ltssm_log");
+}
+#endif /* CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG */
+
 static int pcie_init(void)
 {
 	/* Initialize the serdes based on board type and asic location - data will be in fw_table */
@@ -481,6 +632,25 @@ static int pcie_init(void)
 	InitResetInterrupt(1);
 
 	WriteReg(PCIE_INIT_CPL_TIME_REG_ADDR, TimerTimestamp());
+
+#ifdef CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG
+	/* After the completion timestamp, so recording does not inflate PCIe init time */
+	uint8_t ltssm_inst_mask = 0;
+	uint8_t ltssm_lanes[2] = {0, 0};
+
+	if (pci0_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
+		ltssm_inst_mask |= BIT(0);
+		ltssm_lanes[0] = pci0_property_table.num_serdes * PHY_LANES_PER_SERDES;
+	}
+	if (pci1_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
+		ltssm_inst_mask |= BIT(1);
+		ltssm_lanes[1] = pci1_property_table.num_serdes * PHY_LANES_PER_SERDES;
+	}
+
+	if (ltssm_inst_mask != 0) {
+		StartLtssmLogThread(ltssm_inst_mask, ltssm_lanes);
+	}
+#endif
 
 	return 0;
 }
