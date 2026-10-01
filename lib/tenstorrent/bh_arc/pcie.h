@@ -17,16 +17,9 @@
 #define PCIE_BAR2_SIZE_DEFAULT_MB 1
 #define PCIE_BAR4_SIZE_DEFAULT_MB 32768
 
-typedef enum {
-	EndPoint = 0,
-	RootComplex = 1,
-} PCIeDeviceType;
-
-typedef enum {
-	PCIeInitOk = 0,
-	PCIeSerdesFWLoadTimeout = 1,
-	PCIeLinkTrainTimeout = 2,
-} PCIeInitStatus;
+/* EQ settings libpciesd hardcoded before SYS-2216; also the recovery-table defaults */
+#define PCIE_GEN3_EQ_PSET_REQ_VEC_DEFAULT 0x3E0 /* request presets 5-9 */
+#define PCIE_GEN3_EQ_FB_MODE_DEFAULT      1     /* figure of merit, not direction */
 
 #define PCIE_INST0_LOGICAL_X 2
 #define PCIE_INST1_LOGICAL_X 11
