@@ -59,6 +59,10 @@ void bh_chip_info_pci_property(uint8_t pcie_inst, struct bh_pci_property *out)
 		.pcie_bar0_size = t->pcie_bar0_size,
 		.pcie_bar2_size = t->pcie_bar2_size,
 		.pcie_bar4_size = t->pcie_bar4_size,
+		.gen3_eq_pset_req_vec = t->pcie_gen3_eq_pset_req_vec,
+		.gen3_eq_fb_mode = t->pcie_gen3_eq_fb_mode,
+		.gen4_eq_pset_req_vec = t->pcie_gen4_eq_pset_req_vec,
+		.gen5_eq_pset_req_vec = t->pcie_gen5_eq_pset_req_vec,
 	};
 }
 

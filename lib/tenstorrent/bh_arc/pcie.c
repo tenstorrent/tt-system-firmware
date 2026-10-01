@@ -189,9 +189,9 @@ static inline void SetupDbiAccess(void)
 	ReadSiiReg(PCIE_NOC_TLB_DATA_REG_OFFSET(DBI_PCIE_TLB_ID));
 }
 
-static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t vendor_id,
+static void CntlInitV3ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t vendor_id,
 				const struct bh_pci_property *pcitable,
-				struct CntlInitV2Param *param)
+				struct CntlInitV3Param *param)
 {
 	/* Start with 32-bit bar size in MiB. Round up as needed. Final value is bar mask in B */
 	uint64_t bar_sizes[] = {
@@ -242,17 +242,21 @@ static void CntlInitV2ParamInit(uint8_t pcie_inst, uint64_t board_id, uint32_t v
 		bar_sizes[2] -= 1;
 	}
 
-	*param = (struct CntlInitV2Param){
+	*param = (struct CntlInitV3Param){
 		.board_id = board_id,
 		.vendor_id = vendor_id,
-		.serdes_inst = pcitable->num_serdes,
+		.num_serdes_instance = pcitable->num_serdes,
 		.max_pcie_speed = pcitable->max_pcie_speed,
 		.pcie_inst = pcie_inst,
-		/* pcie_mode - 1 to match with definition in pcie.h for PCIeDeviceType */
+		/* pcie_mode - 1 to match with definition in pciesd.h for PCIeDeviceType */
 		.device_type = pcitable->pcie_mode - 1,
 		.region0_mask = bar_sizes[0],
 		.region2_mask = bar_sizes[1],
 		.region4_mask = bar_sizes[2],
+		.gen3_eq_pset_req_vec = pcitable->gen3_eq_pset_req_vec,
+		.gen3_eq_fb_mode = pcitable->gen3_eq_fb_mode,
+		.gen4_eq_pset_req_vec = pcitable->gen4_eq_pset_req_vec,
+		.gen5_eq_pset_req_vec = pcitable->gen5_eq_pset_req_vec,
 	};
 }
 
@@ -358,19 +362,19 @@ static void SetupSii(void)
 	WriteSiiReg(PCIE_SII_A_APP_PCIE_CTL_REG_OFFSET, app_pcie_ctl.val);
 }
 
-static PCIeInitStatus PCIeInitComm(const struct CntlInitV2Param *param)
+static PCIeInitStatus PCIeInitComm(const struct CntlInitV3Param *param)
 {
 	ConfigurePCIeTlbs(param->pcie_inst);
 
 	PCIeInitStatus status =
-		SerdesInit(param->pcie_inst, param->device_type, param->serdes_inst);
+		SerdesInit(param->pcie_inst, param->device_type, param->num_serdes_instance);
 
 	if (status != PCIeInitOk) {
 		return status;
 	}
 
 	SetupDbiAccess();
-	CntlInitV2(param);
+	CntlInitV3(param);
 
 	SetupSii();
 	SetupOutboundTlbs(); /* pcie_inst is implied by ConfigurePCIeTlbs */
@@ -417,7 +421,7 @@ static PCIeInitStatus PollForLinkUp(uint8_t pcie_inst)
 	return PCIeInitOk;
 }
 
-static PCIeInitStatus PCIeInit(const struct CntlInitV2Param *param)
+static PCIeInitStatus PCIeInit(const struct CntlInitV3Param *param)
 {
 	if ((PCIeDeviceType)param->device_type == RootComplex) {
 		TogglePerst();
@@ -462,18 +466,18 @@ static int pcie_init(void)
 	uint32_t vendor_id = bh_chip_info_vendor_id();
 	struct bh_pci_property pci0_property_table;
 	struct bh_pci_property pci1_property_table;
-	struct CntlInitV2Param param;
+	struct CntlInitV3Param param;
 
 	bh_chip_info_pci_property(0, &pci0_property_table);
 	bh_chip_info_pci_property(1, &pci1_property_table);
 
 	if (pci0_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
-		CntlInitV2ParamInit(0, board_id, vendor_id, &pci0_property_table, &param);
+		CntlInitV3ParamInit(0, board_id, vendor_id, &pci0_property_table, &param);
 		PCIeInit(&param);
 	}
 
 	if (pci1_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
-		CntlInitV2ParamInit(1, board_id, vendor_id, &pci1_property_table, &param);
+		CntlInitV3ParamInit(1, board_id, vendor_id, &pci1_property_table, &param);
 		PCIeInit(&param);
 	}
 
