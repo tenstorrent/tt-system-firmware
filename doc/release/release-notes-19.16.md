@@ -19,6 +19,11 @@ Major enhancements with this release include:
 
 - Added GDDR CA latch-and-retest functionality (SYS-5042) to improve GDDR initialization reliability on Blackhole.
 
+### PCIe
+
+- Request per-rate PCIe EQ presets from the firmware table.
+- Request different presets on Galaxy systems vs PCIe cards (SYS-5101).
+
 ## Boot & Firmware
 
 ### Boot Filesystem
