@@ -5,12 +5,16 @@ description: |
   Runtime-selected flash configuration multiplexer.
 
   Presents a single flash device backed by one of several candidate flash
-  devices. Typically the candidates describe the same physical flash chip
-  under different configurations - one jedec,mspi-nor node per supported
-  second-source part, distinguished by the jedec-id property, optionally
-  with a catch-all last entry that omits jedec-id. Every candidate probes
-  at its own init; the mux, initialized after them, selects the first
-  candidate that is ready and forwards all flash API calls to it.
+  devices. The candidates describe the same physical flash chip under
+  different configurations - one node per supported second-source part,
+  distinguished by the jedec-id property, plus exactly one catch-all
+  that omits jedec-id. They are the zephyr,deferred-init children of
+  candidate-bus.
+
+  At init the mux initializes the catch-all, reads the chip's JEDEC ID
+  through it, and initializes the candidate whose jedec-id matches,
+  falling back to the catch-all if none matches or its initialization
+  fails. All flash API calls are forwarded to the selected candidate.
 
   Candidates sharing a bus position are distinct devices to the bus
   controller, so give their bus the software-multiperipheral property:
@@ -22,9 +26,10 @@ compatible: "tenstorrent,flash-mux"
 include: base.yaml
 
 properties:
-  flash-devices:
-    type: phandles
+  candidate-bus:
+    type: phandle
     required: true
     description: |
-      Candidate flash devices in order of preference; the first one
-      ready when the mux initializes is selected.
+      Bus whose zephyr,deferred-init children are the candidates. They
+      are not referenced directly, as a non-deferred device cannot
+      depend on deferred ones.

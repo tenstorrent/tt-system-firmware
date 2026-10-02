@@ -15,7 +15,7 @@
 /delete-node/ &spi_flash;
 
 /* Properties common to every flash candidate below. All describe the same
- * physical chip on CS 0.
+ * physical chip on CS 0. Candidates are initialized by the mux, not at boot.
  *
  * Programming has experimentally been reliable up to 17 MHz, use 15 to be
  * safe. Reading can operate at higher frequencies: reliable up to 50 MHz,
@@ -25,6 +25,7 @@
 	compatible = "jedec,mspi-nor"; \
 	reg = <0>; \
 	status = "okay"; \
+	zephyr,deferred-init; \
 	size = <DT_SIZE_M(512)>; \
 	mspi-max-frequency = <DT_FREQ_M(15)>; \
 	read-frequency = <DT_FREQ_M(40)>; \
@@ -39,10 +40,9 @@
 	 */
 	software-multiperipheral;
 
-	/* One candidate configuration per supported flash chip. All probe
-	 * at boot; the driver's jedec-id check fails initialization for
-	 * every candidate but the one matching the fitted chip, and the
-	 * spi_flash mux then selects the first that succeeded.
+	/* One candidate configuration per supported flash chip. The
+	 * spi_flash mux reads the JEDEC ID through flash_single_io and
+	 * initializes only the candidate whose jedec-id matches.
 	 * flash_single_io omits jedec-id and so accepts any chip, as a slow
 	 * universal fallback that keeps an unrecognized chip readable and
 	 * reflashable.
@@ -125,14 +125,13 @@
 };
 
 / {
-	/* Selects the first candidate that accepted the chip. Consumers
-	 * access the flash through this node.
+	/* Selects the candidate matching the chip. Consumers access the
+	 * flash through this node.
 	 */
 	spi_flash: flash-mux {
 		compatible = "tenstorrent,flash-mux";
 		status = "okay";
-		flash-devices = <&flash_mt25q &flash_mx25u &flash_gd25lf
-				 &flash_w25q &flash_single_io>;
+		candidate-bus = <&spi0>;
 
 		#address-cells = <1>;
 		#size-cells = <1>;
