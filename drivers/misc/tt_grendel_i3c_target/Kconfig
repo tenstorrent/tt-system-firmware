@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GRENDEL_I3C_TARGET
+	bool "Tenstorrent Grendel inter-die command target over I3C"
+	default y
+	depends on DT_HAS_TENSTORRENT_GRENDEL_I3C_TARGET_ENABLED
+	depends on I3C_TARGET
+	select TT_D2D
+	help
+	  Register as an I3C target and execute commands issued by the
+	  controller die. Currently carries the D2D bring-up commands, which
+	  let both ends of a D2D link be loaded and started together.
+
+if TT_GRENDEL_I3C_TARGET
+
+config TT_GRENDEL_I3C_TARGET_INIT_PRIO
+	int
+	default 80
+	help
+	  Initialization priority of the Grendel I3C target driver. Must be
+	  higher than TT_D2D_INIT_PRIO (75) so the local D2D devices are ready,
+	  and higher than I3C_CONTROLLER_INIT_PRIORITY so the bus exists.
+
+module = TT_GRENDEL_I3C_TARGET
+module-str = tt_grendel_i3c_target
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GRENDEL_I3C_TARGET

@@ -6,6 +6,8 @@ add_subdirectory_ifdef(CONFIG_TT_BH_EFUSE bh_efuse)
 add_subdirectory_ifdef(CONFIG_TT_D2D tt_d2d)
 add_subdirectory_ifdef(CONFIG_TT_GRENDEL_FILTER tt_grendel_filter)
 add_subdirectory_ifdef(CONFIG_TT_GRENDEL_HSIO tt_grendel_hsio)
+add_subdirectory_ifdef(CONFIG_TT_GRENDEL_I3C_CONTROLLER tt_grendel_i3c_controller)
+add_subdirectory_ifdef(CONFIG_TT_GRENDEL_I3C_TARGET tt_grendel_i3c_target)
 add_subdirectory_ifdef(CONFIG_TT_MIMIR_REMOTE_BOOT tt_mimir_remote_boot)
 add_subdirectory_ifdef(CONFIG_TT_SMC_REMOTEPROC tt_smc_remoteproc)
 # zephyr-keep-sorted-stop

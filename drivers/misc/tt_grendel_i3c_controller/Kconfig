@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GRENDEL_I3C_CONTROLLER
+	bool "Tenstorrent Grendel inter-die command controller over I3C"
+	default y
+	depends on DT_HAS_TENSTORRENT_GRENDEL_I3C_CONTROLLER_ENABLED
+	select I3C
+	help
+	  Issue commands to a tenstorrent,grendel-i3c-target on the remote die
+	  and wait for them to complete. Currently carries the D2D bring-up
+	  commands, which let both ends of a D2D link be loaded and started
+	  together.
+
+if TT_GRENDEL_I3C_CONTROLLER
+
+config TT_GRENDEL_I3C_CONTROLLER_INIT_PRIO
+	int
+	default 76
+	help
+	  Initialization priority of the Grendel I3C controller driver. Must be
+	  higher than I3C_CONTROLLER_INIT_PRIORITY so the I3C bus is ready, and
+	  lower than TT_MIMIR_REMOTE_BOOT_INIT_PRIO (77) so it is usable from
+	  there.
+
+module = TT_GRENDEL_I3C_CONTROLLER
+module-str = tt_grendel_i3c_controller
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # TT_GRENDEL_I3C_CONTROLLER

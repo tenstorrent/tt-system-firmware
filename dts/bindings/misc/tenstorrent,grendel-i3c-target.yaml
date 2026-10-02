@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent Grendel inter-die command target over I3C.
+
+  Registers as an I3C target and executes commands issued by the controller
+  die. The command set currently covers D2D bring-up, so both ends of a D2D
+  link can be loaded and started together; the D2D firmware image and its
+  length header are expected to already be staged in local memory by the
+  controller die over OCCP.
+
+compatible: "tenstorrent,grendel-i3c-target"
+
+include: base.yaml
+
+properties:
+  i3c:
+    type: phandle
+    required: true
+    description: |
+      I3C controller device to register as a target on. Must be configured
+      for the target role.
+
+  d2d:
+    type: phandles
+    required: true
+    description: |
+      Local tenstorrent,grendel-d2d devices driven by the D2D commands.
