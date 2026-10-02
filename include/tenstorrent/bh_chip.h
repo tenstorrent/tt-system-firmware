@@ -49,6 +49,11 @@ struct bh_chip_data {
 	 */
 	bool arc_needs_init_msg;
 
+	/* TAG_QSFP_STATUS has not been accepted by this SMC yet. */
+	bool qsfp_status_pending;
+	/* SMC NACKed CMFW_SMBUS_QSFP_STATUS; do not retry on this flash. */
+	bool qsfp_status_unsupported;
+
 	unsigned int bus_cancel_flag;
 
 	/*
@@ -177,6 +182,7 @@ void bh_chip_cancel_bus_transfer_clear(struct bh_chip *chip);
 
 cm2dmMessageRet bh_chip_get_cm2dm_message(struct bh_chip *chip);
 int bh_chip_set_static_info(struct bh_chip *chip, dmStaticInfo *info);
+int bh_chip_set_qsfp_status(struct bh_chip *chip, uint32_t status);
 int bh_chip_set_input_power(struct bh_chip *chip, uint16_t power);
 int bh_chip_set_input_power_lim(struct bh_chip *chip, uint16_t max_power);
 int bh_chip_set_fan_rpm(struct bh_chip *chip, uint16_t rpm);
