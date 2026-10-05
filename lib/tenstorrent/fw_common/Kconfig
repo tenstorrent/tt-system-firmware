@@ -26,6 +26,18 @@ config TT_MSGQUEUE
 	  When a tenstorrent,msgqueue-mbox node is present, the mbox
 	  IRQ doorbell backend is used instead of Blackhole MSI.
 
+config TT_TELEMETRY
+	bool "Telemetry core"
+	default y if TT_BH_ARC || TT_GR_SMC
+	help
+	  Telemetry tag accessors and periodic update, shared across SoCs. Requires a
+	  per-SoC implementation of telemetry_platform.h.
+
+config TT_TELEMETRY_PERIODIC
+	bool "Periodic telemetry update"
+	depends on TT_TELEMETRY
+	default y if BH_FWTABLE || TT_GR_SMC
+
 config TT_MSGQUEUE_NUM_MSG_CODES
 	int "Number of message codes"
 	default 200
