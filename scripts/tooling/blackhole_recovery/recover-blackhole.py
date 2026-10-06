@@ -172,7 +172,10 @@ def main():
             asic = BOARD_ID_MAP[args.board][idx]
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
             session = pyocd_utils.get_session(
-                pyocd_config, args.adapter_id, args.no_prompt
+                pyocd_config,
+                args.adapter_id,
+                args.no_prompt,
+                asic.get("pyocd-target"),
             )
             session.open()
             # First, reset the DMC and see if we can reach the card
@@ -192,7 +195,10 @@ def main():
             asic = BOARD_ID_MAP[args.board][idx]
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
             session = pyocd_utils.get_session(
-                pyocd_config, args.adapter_id, args.no_prompt
+                pyocd_config,
+                args.adapter_id,
+                args.no_prompt,
+                asic.get("pyocd-target"),
             )
             session.open()
             # Reset and halt the DMC so its firmware is not running on (and
@@ -222,7 +228,10 @@ def main():
             )
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
             session = pyocd_utils.get_session(
-                pyocd_config, args.adapter_id, args.no_prompt
+                pyocd_config,
+                args.adapter_id,
+                args.no_prompt,
+                asic.get("pyocd-target"),
             )
             session.open()
             # Reset and halt the DMC before programming for the same reason as

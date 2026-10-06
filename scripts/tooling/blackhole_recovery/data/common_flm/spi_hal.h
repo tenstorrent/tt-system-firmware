@@ -31,8 +31,15 @@ typedef int (*spi_transfer_fn)(struct spi_buf *bufs, uint8_t cnt);
 #define spi_deinit   stm32_spi_deinit
 #define spi_transfer stm32_spi_transfer
 
+#elif defined(STM32U3xx)
+
+#include "stm32u3_spi_hal.h"
+#define spi_init     stm32_spi_init
+#define spi_deinit   stm32_spi_deinit
+#define spi_transfer stm32_spi_transfer
+
 #else
-#error "No SPI HAL implementation defined. Please define STM32G0xx or implement your own."
+#error "No SPI HAL implementation defined. Please define STM32G0xx or STM32U3xx."
 #endif
 
 #endif /* SPI_HAL_H */

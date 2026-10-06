@@ -40,7 +40,7 @@ TT_Z_P_ROOT = Path(__file__).parents[1]
 
 BOARD_ID_MAP = pyocd_utils.load_board_metadata()
 
-FlashOperation = namedtuple("FlashOperation", ["data", "pyocd_config"])
+FlashOperation = namedtuple("FlashOperation", ["data", "pyocd_config", "target"])
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +83,8 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
 
         # For flashing a hex/bin file, we only will write to the eeprom for one ASIC.
         # If we parse a firmware bundle, we will update all ASICs
-        pyocd_config = self.pyocd_path / Path(
-            BOARD_ID_MAP[self.board_name][asic_id]["pyocd-config"]
+        pyocd_config, pyocd_target = pyocd_utils.resolve_flm_config(
+            BOARD_ID_MAP[self.board_name][asic_id]
         )
 
         # We support flashing hex or binary files directly. Otherwise, we will
@@ -96,7 +96,9 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             # Load the hex file as data to write
             try:
                 self.flash_data = [
-                    FlashOperation(open(bootfs_hex, "rb").read(), pyocd_config)
+                    FlashOperation(
+                        open(bootfs_hex, "rb").read(), pyocd_config, pyocd_target
+                    )
                 ]
             except FileNotFoundError as e:
                 raise RuntimeError(f"Hex file {bootfs_hex} does not exist") from e
@@ -247,7 +249,7 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             f.write(bootfs.to_binary(True))
         operations = [
             FlashOperation(
-                bootfs.to_intel_hex(True), self.pyocd_path / Path(cfg["pyocd-config"])
+                bootfs.to_intel_hex(True), *pyocd_utils.resolve_flm_config(cfg)
             )
         ]
         return operations
@@ -337,9 +339,7 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
         operations = []
         for cfg in board_cfg:
             operations.append(
-                FlashOperation(
-                    cfg["bootfs"], self.pyocd_path / Path(cfg["pyocd-config"])
-                )
+                FlashOperation(cfg["bootfs"], *pyocd_utils.resolve_flm_config(cfg))
             )
         return operations
 
@@ -351,7 +351,10 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             raise ValueError(f"Unsupported command: {command}")
         for flash_op in self.flash_data:
             session = pyocd_utils.get_session(
-                flash_op.pyocd_config, self.adapter_id, self.no_prompt
+                flash_op.pyocd_config,
+                self.adapter_id,
+                self.no_prompt,
+                flash_op.target,
             )
             session.open()
             target = session.board.target

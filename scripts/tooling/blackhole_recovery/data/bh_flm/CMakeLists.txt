@@ -19,6 +19,12 @@ endif()
 list(APPEND CMAKE_MODULE_PATH ${ZEPHYR_BASE}/cmake/modules)
 find_package(Zephyr-sdk 1.0 MODULE REQUIRED)
 
+# Cross-compiling: avoid CMake's macOS defaults (e.g. "-arch arm64").
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR arm)
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+set(CMAKE_OSX_ARCHITECTURES "" CACHE STRING "" FORCE)
+
 # Set the target compiler
 set(CMAKE_C_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc)
 set(CMAKE_CXX_COMPILER ${ZEPHYR_SDK_INSTALL_DIR}/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-g++)

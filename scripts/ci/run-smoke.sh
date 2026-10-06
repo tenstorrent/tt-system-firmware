@@ -73,11 +73,12 @@ echo "Building tt-fw-terminal..."
 make -C "$TT_Z_P_ROOT"/scripts/tooling -j"$(nproc)"
 
 # Make sure we have STM32 target support
-pyocd pack install stm32g0b1ceux
+pyocd pack install stm32g0b1ceux stm32u375veix
 
 # Build the tt-bootstrap flash loading algorithms
 echo "Building tt-bootstrap flash loading algorithms..."
 "$TT_Z_P_ROOT"/scripts/tooling/blackhole_recovery/data/bh_flm/build-flm.sh
+"$TT_Z_P_ROOT"/scripts/tooling/blackhole_recovery/data/bh_flm_u3/build-flm.sh
 
 if [[ "$TEST_SET" == *"dmc"* ]]; then
 	# Run the DMC tests

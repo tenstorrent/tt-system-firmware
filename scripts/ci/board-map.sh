@@ -38,7 +38,7 @@ esac
 # order matches the ASIC order in the metadata, which is the order the rest of
 # the manufacturing test iterates over.
 _BOARD_MAP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-mapfile -t PYOCD_CONFIGS < <(
+_pyocd_configs_out=$(
 	python3 -c '
 import sys, yaml
 board, meta_path = sys.argv[1], sys.argv[2]
@@ -47,6 +47,10 @@ with open(meta_path) as f:
 if board not in meta:
     sys.exit(f"Unknown board {board!r} in {meta_path}")
 for asic in meta[board]:
+    if "pyocd-target" in asic:
+        sys.exit(f"Board {board!r} uses non-default pyocd target; manufacturing flow unsupported")
     print(asic["pyocd-config"])
 ' "$BOARD" "$_BOARD_MAP_DIR/../board_metadata.yaml"
-)
+) || return 1
+mapfile -t PYOCD_CONFIGS <<<"$_pyocd_configs_out"
+unset _pyocd_configs_out

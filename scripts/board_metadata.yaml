@@ -61,3 +61,10 @@ p300c:
     bootfs-name: "tt_boot_fs_right"
     protobuf-name: "P300C_R"
     pyocd-config: "pyocd_config_spi1.py"
+galaxy_2:
+  - upi: 0x00
+    name: "GALAXY_2-1"
+    bootfs-name: "tt_boot_fs"
+    protobuf-name: "GALAXY_2"
+    pyocd-config: "pyocd_config_spi1_u3.py"
+    pyocd-target: "stm32u375veix"

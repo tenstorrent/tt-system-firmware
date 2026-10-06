@@ -77,6 +77,12 @@ def generate_recovery_assets(boardname, board_data, outdir, signing_key):
         app_dir = TT_Z_P_ROOT / "app"
         dmc_build_dir = Path(temp_dir) / "dmc_build"
         bootfs_hex = Path(temp_dir) / "tt_boot_fs.hex"
+        # galaxy_2 uses a standalone DMC board rather than a tt_blackhole variant
+        dmc_board = (
+            "tt_blackhole_glx2_dmc"
+            if boardname == "galaxy_2"
+            else f"tt_blackhole@{boardname}/tt_blackhole/dmc"
+        )
         cmd = [
             "west",
             "build",
@@ -84,7 +90,7 @@ def generate_recovery_assets(boardname, board_data, outdir, signing_key):
             "-d",
             str(dmc_build_dir),
             "-b",
-            f"tt_blackhole@{boardname}/tt_blackhole/dmc",
+            dmc_board,
             "--sysbuild",
             str(app_dir / "dmc"),
         ]
@@ -177,6 +183,24 @@ def main():
         cmd = ["make", "-C", f"{temp_dir}/build-bh-flm", "-j", str(os.cpu_count())]
         print(f"Building flash algorithms: {' '.join(cmd)}")
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        cmd = [
+            "cmake",
+            f"-B{temp_dir}/build-bh-flm-u3",
+            "-S",
+            str(
+                TT_Z_P_ROOT
+                / "scripts"
+                / "tooling"
+                / "blackhole_recovery"
+                / "data"
+                / "bh_flm_u3"
+            ),
+        ]
+        print(f"Building flash algorithms: {' '.join(cmd)}")
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        cmd = ["make", "-C", f"{temp_dir}/build-bh-flm-u3", "-j", str(os.cpu_count())]
+        print(f"Building flash algorithms: {' '.join(cmd)}")
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         os.mkdir(Path(temp_dir) / "build")
         # Array of files to copy
         file_ops = [
@@ -187,6 +211,10 @@ def main():
             (
                 Path(temp_dir) / "build-bh-flm" / "spi_combo.flm",
                 Path(temp_dir) / "build" / "spi_combo.flm",
+            ),
+            (
+                Path(temp_dir) / "build-bh-flm-u3" / "spi1_u3.flm",
+                Path(temp_dir) / "build" / "spi1_u3.flm",
             ),
             (
                 TT_Z_P_ROOT
@@ -207,6 +235,16 @@ def main():
                 / "bh_flm"
                 / "pyocd_config_spi_combo.py",
                 Path(temp_dir) / "pyocd_config_spi_combo.py",
+            ),
+            (
+                TT_Z_P_ROOT
+                / "scripts"
+                / "tooling"
+                / "blackhole_recovery"
+                / "data"
+                / "bh_flm_u3"
+                / "pyocd_config_spi1.py",
+                Path(temp_dir) / "pyocd_config_spi1_u3.py",
             ),
             (
                 TT_Z_P_ROOT
