@@ -60,7 +60,7 @@ RUN apt-get install -y libusb-1.0-0
 # Install python dependencies in the venv
 RUN pip install pyocd pyluwen pyyaml pykwalify protobuf imgtool \
         jsonschema intelhex pyusb && \
-    pyocd pack install STM32G0B1CEUx
+    pyocd pack install STM32G0B1CEUx STM32U375VEIx
 
 # Clone the tt-system-firmware repo to get recovery scripts
 RUN apt-get install -y git && \

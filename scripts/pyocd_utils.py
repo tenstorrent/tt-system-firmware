@@ -34,7 +34,22 @@ logger = logging.getLogger(__name__)
 
 PYOCD_TARGET_BH = "STM32G0B1CEUx"
 PYOCD_FLM_PATH = Path(__file__).parent / "tooling/blackhole_recovery/data/bh_flm"
+PYOCD_FLM_U3_PATH = Path(__file__).parent / "tooling/blackhole_recovery/data/bh_flm_u3"
 BOARD_METADATA_PATH = Path(__file__).parent / "board_metadata.yaml"
+
+
+def resolve_flm_config(asic):
+    """Return ``(user_script_path, pyocd_target)`` for a board_metadata ASIC entry.
+
+    Entries with ``pyocd-target`` use the STM32U3 FLM. The recovery bundle names
+    its config ``pyocd_config_<spi>_u3.py``; in the source tree it is
+    ``bh_flm_u3/pyocd_config_<spi>.py``.
+    """
+    name = asic["pyocd-config"]
+    target = asic.get("pyocd-target")
+    if target is None:
+        return PYOCD_FLM_PATH / name, None
+    return PYOCD_FLM_U3_PATH / name.replace("_u3.py", ".py"), target
 
 
 def load_board_metadata(path=None):

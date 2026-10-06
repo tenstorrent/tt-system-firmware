@@ -47,4 +47,4 @@ RUN pip install west && \
     cd /tt-zephyr/tt-system-firmware && \
     west update && \
     west packages pip --install && \
-    pyocd pack install STM32G0B1CEUx
+    pyocd pack install STM32G0B1CEUx STM32U375VEIx
