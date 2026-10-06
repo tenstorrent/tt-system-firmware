@@ -40,6 +40,7 @@
       "metal-target": "blackhole_qb_ge",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
+      "metal-deploy-run-eth": true,
       "kmd_build": "2.11.0"
     },
     {
@@ -48,6 +49,7 @@
       "metal-target": "blackhole_loudbox",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
+      "metal-deploy-run-eth": true,
       "kmd_build": "2.11.0"
     },
 
