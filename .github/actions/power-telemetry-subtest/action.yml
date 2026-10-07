@@ -1,0 +1,122 @@
+name: Power telemetry subtest
+description: >-
+  Run one workload under telemetry collection. Starts read_telemetry.py in the
+  background (tagged with the given workload), runs the supplied command, then
+  stops telemetry cleanly and uploads the CSVs + log as an artifact. Each call
+  writes to its own telemetry_output/<name> dir so sequential subtests in the
+  same job don't clobber each other.
+
+inputs:
+  name:
+    description: >-
+      Subtest name. Used for the per-subtest output dir (telemetry_output/<name>)
+      and the artifact name. Keep it filesystem-safe (e.g. didt_resnet_conv).
+    required: true
+  workload:
+    description: Workload label passed to read_telemetry.py --workload (stamped onto every CSV row).
+    required: true
+  run:
+    description: >-
+      Shell command that executes the subtest (e.g. the `docker run ... pytest ...`
+      line). Runs under `timeout` so a hung subtest can't wedge the job.
+    required: true
+  board:
+    description: Board label, appended to the artifact name so per-board runs stay distinct.
+    required: true
+  venv-dir:
+    description: Path to the pre-created Python venv containing pyluwen + pandas.
+    required: true
+  timeout-minutes:
+    description: Hard timeout for the subtest command (composite steps can't use timeout-minutes, so we wrap with `timeout`).
+    required: false
+    default: "65"
+
+runs:
+  using: composite
+  steps:
+    - name: "[${{ inputs.name }}] Start telemetry"
+      shell: bash
+      run: |
+        set -euxo pipefail
+        TELEM_DIR="${GITHUB_WORKSPACE}/telemetry_output/${{ inputs.name }}"
+        mkdir -p "$TELEM_DIR"
+        cd "$TELEM_DIR"
+        # Launch the telemetry script in the background. The runner user already
+        # has access to /dev/tenstorrent (same access other workflows use via
+        # pyluwen), so no sudo is required.
+        nohup "${{ inputs.venv-dir }}/bin/python3" \
+          "$GITHUB_WORKSPACE/scripts/read_telemetry.py" \
+          --csv telemetry \
+          --workload "${{ inputs.workload }}" \
+          > telemetry.log 2>&1 < /dev/null &
+        TELEM_PID=$!
+        echo "$TELEM_PID" > telemetry.pid
+
+        # Give the script a moment to detect chips and start logging.
+        sleep 5
+
+        if ! kill -0 "$TELEM_PID" 2>/dev/null; then
+          echo "Telemetry process failed to start. Log:"
+          cat telemetry.log || true
+          exit 1
+        fi
+        echo "Started telemetry collection for '${{ inputs.name }}' (PID $TELEM_PID)"
+
+    - name: "[${{ inputs.name }}] Run subtest"
+      shell: bash
+      run: |
+        set -euxo pipefail
+        # The command may contain quotes/newlines, so stage it to a file and run
+        # it under `timeout` (composite-action steps can't use `timeout-minutes`).
+        SUBTEST_SH="$(mktemp)"
+        cat > "$SUBTEST_SH" <<'POWER_TELEM_SUBTEST_EOF'
+        ${{ inputs.run }}
+        POWER_TELEM_SUBTEST_EOF
+        timeout --preserve-status "${{ inputs.timeout-minutes }}m" bash "$SUBTEST_SH"
+
+    - name: "[${{ inputs.name }}] Stop telemetry"
+      if: ${{ always() }}
+      shell: bash
+      run: |
+        set -uxo pipefail
+        TELEM_DIR="${GITHUB_WORKSPACE}/telemetry_output/${{ inputs.name }}"
+        PID=""
+        if [ -f "$TELEM_DIR/telemetry.pid" ]; then
+          PID="$(cat "$TELEM_DIR/telemetry.pid")"
+        fi
+        if [ -z "$PID" ]; then
+          PID="$(pgrep -f 'scripts/read_telemetry.py' | head -n 1 || true)"
+        fi
+
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+          echo "Sending SIGINT to telemetry process (PID $PID)"
+          kill -INT "$PID" || true
+          # Wait up to 30s for the script to flush CSVs and exit cleanly.
+          for _ in $(seq 1 30); do
+            if ! kill -0 "$PID" 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          if kill -0 "$PID" 2>/dev/null; then
+            echo "Telemetry process still alive after SIGINT; force-killing."
+            kill -KILL "$PID" || true
+          fi
+        else
+          echo "No running telemetry process found."
+        fi
+
+        echo "--- Telemetry log (${{ inputs.name }}) ---"
+        cat "$TELEM_DIR/telemetry.log" || true
+        echo "--- Generated files (${{ inputs.name }}) ---"
+        ls -la "$TELEM_DIR" || true
+
+    - name: "[${{ inputs.name }}] Upload telemetry CSV"
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: power_CI_telemetry-${{ inputs.name }}-${{ inputs.board }}
+        if-no-files-found: warn
+        path: |
+          telemetry_output/${{ inputs.name }}/*.csv
+          telemetry_output/${{ inputs.name }}/telemetry.log
