@@ -1,0 +1,943 @@
+name: Power CI
+
+# Power CI: power and telemetry measurements for every Blackhole board type, imported by the
+# Power CI Dashboard (Systems Engineering / PPA, SYS-3895 / SYS-4936).
+#
+# Triggers
+#   * schedule: nightly on current main (built and flashed by this run), the agreed workload set.
+#   * workflow_dispatch: the same with inputs (firmware tag for RC runs, boards, workloads, knobs).
+#   * pull_request labelled `power-ci`: the set on that PR's firmware build.
+# Kill switch: repository variable POWER_CI_ENABLED=false skips everything.
+# Stages: build firmware -> flash + reset -> workloads under telemetry -> summary. A failed stage stops the next.
+#
+# Each board is one job on its `*-power-CI` runner; workloads run inside the tt-metal test image from
+# ci_boards.json while the readers (pyluwen chip telemetry, IPMI system power on Galaxy) run on the host.
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 20:00 Toronto (EDT); queues behind anything else on the runners
+  workflow_dispatch:
+    inputs:
+      firmware:
+        description: '"main" (build and flash this ref), a release tag such as v19.16.0-rc2 (flash its bundle), or "none" (measure what is on the board)'
+        type: string
+        default: main
+      boards:
+        description: Comma-separated boards from ci_boards.json (p150a, p300a, quietbox2, bh-galaxy-revc, p100a), or "all" (the four with a Power CI runner)
+        type: string
+        default: all
+      workloads:
+        description: '"nightly" (idle,mission_mode,resnet_conv,ff1_matmul_with_gelu,ff1_matmul_no_gelu,lm_head,bursty5,max_util,llama_8b_demo,deepseek_v3_mla_matmul,deepseek_v3_gate_matmul), "all", "validate" (collect-only), or a comma-separated list'
+        type: string
+        default: nightly
+      didt_iterations:
+        description: Iterations for resnet_conv, lm_head and the other dI/dt tests
+        type: string
+        default: "50000"
+      ff1_iterations:
+        description: Iterations for ff1_matmul with and without GELU
+        type: string
+        default: "100000"
+      bursty_iterations:
+        description: Iterations for the Bursty tests (x1000 repetitions each)
+        type: string
+        default: "200"
+      telem_interval_ms:
+        description: Firmware telemetry refresh interval in ms (0 = firmware default 100). DVFS dropped ticks are recorded per run.
+        type: string
+        default: "10"
+      mm_throttle:
+        description: TT_MM_THROTTLE_PERF for every workload, off or a level 1-5
+        type: string
+        default: "off"
+      metal_image_tag:
+        description: 'tt-metal test image tag for the whole run: blank = the Power CI default (v0.80.0-dev20261005, the first builds with Max Util), "release" = the tags in ci_boards.json, or any tag'
+
+        type: string
+        default: ""
+      tag:
+        description: Free text recorded on the session
+        type: string
+        default: ""
+  pull_request:
+    types: [labeled, synchronize]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  gen-config:
+    # Kill switch and label gate. On a PR only the `power-ci` label starts a run.
+    if: >-
+      vars.POWER_CI_ENABLED != 'false'
+      && (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'power-ci'))
+    runs-on: ubuntu-24.04
+    outputs:
+      run: "true"
+      matrix-config: ${{ steps.gen-config.outputs.matrix-config }}
+      firmware: ${{ steps.params.outputs.firmware }}
+      workloads: ${{ steps.params.outputs.workloads }}
+      didt_iterations: ${{ steps.params.outputs.didt_iterations }}
+      ff1_iterations: ${{ steps.params.outputs.ff1_iterations }}
+      bursty_iterations: ${{ steps.params.outputs.bursty_iterations }}
+      telem_interval_ms: ${{ steps.params.outputs.telem_interval_ms }}
+      mm_throttle: ${{ steps.params.outputs.mm_throttle }}
+      metal_image_tag: ${{ steps.params.outputs.metal_image_tag }}
+      subtest_timeout_min: ${{ steps.timeout.outputs.minutes }}
+      tag: ${{ steps.params.outputs.tag }}
+      requested_by: ${{ steps.params.outputs.requested_by }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: params
+        shell: bash
+        env:
+          IN_FIRMWARE: ${{ inputs.firmware }}
+          IN_BOARDS: ${{ inputs.boards }}
+          IN_WORKLOADS: ${{ inputs.workloads }}
+          IN_DIDT: ${{ inputs.didt_iterations }}
+          IN_FF1: ${{ inputs.ff1_iterations }}
+          IN_BURSTY: ${{ inputs.bursty_iterations }}
+          IN_TELEM: ${{ inputs.telem_interval_ms }}
+          IN_MM_THROTTLE: ${{ inputs.mm_throttle }}
+          IN_METAL_IMAGE_TAG: ${{ inputs.metal_image_tag }}
+          IN_TAG: ${{ inputs.tag }}
+        run: |
+          # workflow_dispatch supplies inputs; schedule and pull_request use the nightly defaults
+          get() { local v="${!1}"; echo "${v:-$2}"; }  # indirect expansion: inputs are never re-parsed as shell
+          FW="$(get IN_FIRMWARE main)"
+          WL="$(get IN_WORKLOADS nightly | tr -d '[:space:]')"   # "idle, resnet_conv" -> "idle,resnet_conv": the gates match whole names between commas
+          [ "$WL" = "nightly" ] && WL="idle,mission_mode,resnet_conv,ff1_matmul_with_gelu,ff1_matmul_no_gelu,lm_head,bursty5,max_util,llama_8b_demo,deepseek_v3_mla_matmul,deepseek_v3_gate_matmul"
+          [ "$WL" = "validate" ] && FW="none"   # collect-only: no build, no flash, no hardware checks
+          TAG="$(get IN_TAG '' | tr -d '\r' | head -1)"   # one line: $GITHUB_OUTPUT records are single-line
+          case "${{ github.event_name }}" in
+            schedule)     TAG="${TAG:-nightly}" ;;
+            pull_request) FW="main"; TAG="${TAG:-PR #${{ github.event.pull_request.number }}}" ;;
+          esac
+          # Inputs are spliced into docker/pytest command lines on the hardware runners: accept only what they can be.
+          KNOWN="idle mission_mode resnet_conv ff1_matmul_with_gelu ff1_matmul_no_gelu lm_head bursty1 bursty2 bursty3 bursty4 bursty5 bursty6 minimal_matmul sdpa_op binary_mul mla_sdpa deepseek_v3_mla_matmul deepseek_v3_gate_matmul max_util llama_8b_demo"
+          if [ "$WL" != "all" ] && [ "$WL" != "validate" ]; then
+            [ -n "$WL" ] || { echo "::error::workloads is empty"; exit 1; }
+            for w in $(echo "$WL" | tr ',' ' '); do
+              echo " $KNOWN " | grep -q " $w " || { echo "::error::unknown workload '$w' (known: $KNOWN)"; exit 1; }
+            done
+          fi
+          # every value must match as a whole (bash [[ =~ ]] anchors the complete string, so an embedded newline or
+          # carriage return can never smuggle a second "key=value" record into $GITHUB_OUTPUT)
+          for v in "$(get IN_DIDT 50000)" "$(get IN_FF1 100000)" "$(get IN_BURSTY 200)" "$(get IN_TELEM 10)"; do
+            [[ "$v" =~ ^[0-9]{1,9}$ ]] || { echo "::error::iteration / interval inputs must be decimal integers, got '$v'"; exit 1; }
+          done
+          [[ "$(get IN_MM_THROTTLE off)" =~ ^(off|[1-5])$ ]] || { echo "::error::mm_throttle must be off or 1-5"; exit 1; }
+          [[ "$(get IN_METAL_IMAGE_TAG '')" =~ ^[A-Za-z0-9_.-]{0,128}$ ]] || { echo "::error::metal_image_tag is not a docker tag"; exit 1; }
+          [[ "$FW" =~ ^(main|none|v[0-9][A-Za-z0-9_.-]{0,63})$ ]] || { echo "::error::firmware must be main, none or a release tag"; exit 1; }
+          [[ "$(get IN_TAG '')" =~ ^[^$'\n'$'\r']{0,200}$ ]] || { echo "::error::tag must be one line of at most 200 characters"; exit 1; }
+          [[ "$(get IN_BOARDS all)" =~ ^[a-z0-9_,\ -]{1,120}$ ]] || { echo "::error::boards must be a comma-separated list of board names"; exit 1; }
+          [[ "$WL" =~ ^[a-z0-9_,]{1,400}$ ]] || { echo "::error::workloads must be a comma-separated list of names"; exit 1; }
+          {
+            echo "firmware=$FW"
+            echo "boards=$(get IN_BOARDS all)"
+            echo "workloads=$WL"
+            echo "didt_iterations=$(get IN_DIDT 50000)"
+            echo "ff1_iterations=$(get IN_FF1 100000)"
+            echo "bursty_iterations=$(get IN_BURSTY 200)"
+            echo "telem_interval_ms=$(get IN_TELEM 10)"
+            echo "mm_throttle=$(get IN_MM_THROTTLE off)"
+            echo "metal_image_tag=$(get IN_METAL_IMAGE_TAG '')"
+            echo "tag=$TAG"
+            echo "requested_by=${{ github.actor }}"
+          } >> "$GITHUB_OUTPUT"
+      - id: timeout
+        name: Per-subtest timeout from the largest iteration count
+        env:
+          A: ${{ steps.params.outputs.didt_iterations }}
+          B: ${{ steps.params.outputs.ff1_iterations }}
+          C: ${{ steps.params.outputs.bursty_iterations }}
+        run: |
+          # per-subtest timeout from the slowest configured workload, with generous per-family rates measured on Galaxy:
+          # dI/dt 0.1 min per 100 iterations (DeepSeek MLA 50k = 50 min), FF1 0.03 min per 100 (100k = 20 min),
+          # bursty 0.13 min per iteration (200 = 26 min); plus 65 min of margin. Capped at 240 min so a hung test cannot
+          # eat the job: the nightly's longest step is 50 min, and a capped estimate only means "the cap applies".
+          m=$(( 65 + ${A:-50000} * 10 / 10000 ))
+          mf=$(( 65 + ${B:-100000} * 3 / 10000 )); [ "$mf" -gt "$m" ] && m=$mf
+          mb=$(( 65 + ${C:-200} * 13 / 100 )); [ "$mb" -gt "$m" ] && m=$mb
+          [ "$m" -le 240 ] || { echo "::warning::subtest timeout estimate ${m} min exceeds the 240 min cap; a workload that really needs longer will be cut (didt ${A}, ff1 ${B}, bursty ${C})"; m=240; }
+          echo "minutes=$m" >> "$GITHUB_OUTPUT"; echo "per-subtest timeout: ${m} min (didt ${A}, ff1 ${B}, bursty ${C})"
+      - id: gen-config
+        shell: bash
+        env:
+          POWER_CI_BOARDS: ${{ steps.params.outputs.boards }}
+          # The whole board job runs inside one tt-metal container (like metal.yml), so one image serves every workload.
+          # Max Util exists only in v0.80.0 dev builds until v0.80.0 ships: that tag is the default for every board; set
+          # it to "" to go back to the release tags in ci_boards.json. The metal_image_tag input still overrides it.
+          POWER_CI_METAL_IMAGE_TAG: ${{ steps.params.outputs.metal_image_tag }}
+        run: |
+          # One job per board that has a `power-ci-label` runner; `boards` narrows the list. "all" = the boards with a
+          # registered SysEng runner (p150a, p300a, quietbox2, bh-galaxy-revc): a board without one would queue for 24 h.
+          if [ -z "$POWER_CI_BOARDS" ] || [ "$POWER_CI_BOARDS" = "all" ]; then
+            FILTER='select(.board != "loudbox" and .board != "p100a")'
+          else
+            FILTER="select(.board as \$b | \"$POWER_CI_BOARDS\" | split(\",\") | map(gsub(\" \"; \"\")) | index(\$b))"
+          fi
+          MATRIX_CONFIG="$(jq -c "[.bh[] | select(has(\"power-ci-label\")) | $FILTER]" .github/ci_boards.json)"
+          # image tag for the whole job (one container per board job): "release" = the tags in ci_boards.json, blank = the
+          # Power CI default (the v0.80.0 dev build is the first with Max Util; set DEFAULT_TAG to "" once v0.80.0 ships)
+          DEFAULT_TAG="v0.80.0-dev20261005"
+          case "${POWER_CI_METAL_IMAGE_TAG:-}" in
+            release) IMG_TAG="" ;;
+            "")      IMG_TAG="$DEFAULT_TAG" ;;
+            *)       IMG_TAG="$POWER_CI_METAL_IMAGE_TAG" ;;
+          esac
+          if [ -n "$IMG_TAG" ]; then
+            MATRIX_CONFIG="$(echo "$MATRIX_CONFIG" | jq -c --arg t "$IMG_TAG" 'map(.["metal-image"] |= sub(":[^:/]*$"; ":" + $t))')"
+          fi
+          echo "image tag for this run: ${IMG_TAG:-ci_boards.json release tags}"
+          echo "matrix-config=$MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
+          if [ "$MATRIX_CONFIG" = "[]" ]; then echo "::error::no board matched '$POWER_CI_BOARDS'"; exit 1; fi
+
+  build-fw:
+    # Stage 1: firmware from the checked-out commit (main on schedule, the PR's merge commit on a labelled PR)
+    needs: gen-config
+    if: ${{ needs.gen-config.outputs.firmware == 'main' }}
+    uses: ./.github/workflows/build-fw.yml
+    secrets:
+      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
+
+  power_CI_telemetry:
+    name: Power CI on ${{ matrix.config.board }}
+    needs: [gen-config, build-fw]
+    # Stage 2+3 run only when the build succeeded, or when no build was requested
+    if: ${{ always() && needs.gen-config.result == 'success' && (needs.build-fw.result == 'success' || needs.build-fw.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
+    runs-on: ${{ matrix.config.power-ci-label }}
+    timeout-minutes: 2160
+    # The whole job runs inside the board's tt-metal image, as metal.yml does: one container per job, so the ttnn
+    # import, the device open and the kernel cache happen once instead of twice per workload (collect-only + run).
+    # The readers (pyluwen), tt-flash / tt-smi and the IPMI poller run in the same container; the device, hugepages
+    # and (Galaxy) /dev/ipmi0 come from ci_boards.json metal-options, which also make the container run as root.
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /dev/hugepages:/dev/hugepages
+        - /opt/tenstorrent/hf-models/:/opt/tenstorrent/hf-models/
+      options: ${{ matrix.config.metal-options }}
+    defaults:
+      run:
+        shell: bash   # container jobs default to sh, which rejects `set -o pipefail` and the [[ ]] tests used below
+    env:
+      LLAMA_INSTRUCT_DIR: /opt/tenstorrent/hf-models/meta-llama/Llama-3.1-8B-Instruct/
+      # VENV_DIR is set by the first step from $GITHUB_WORKSPACE: inside a container job that is /__w/<repo>/<repo>, while
+      # `${{ github.workspace }}` is the host path (GitHub rewrites it only for the job's own run steps, not for
+      # composite-action inputs), so no step below may use the expression for paths.
+      TT_METAL_DIR: /home/user/tt-metal   # the image's tt-metal checkout (metal.yml runs from the same path); verified in the setup step
+      POWER_CI_FIRMWARE: ${{ needs.gen-config.outputs.firmware }}
+      POWER_CI_WORKLOADS: ${{ needs.gen-config.outputs.workloads }}
+      POWER_CI_DIDT_ITERATIONS: ${{ needs.gen-config.outputs.didt_iterations }}
+      POWER_CI_FF1_ITERATIONS: ${{ needs.gen-config.outputs.ff1_iterations }}
+      POWER_CI_BURSTY_ITERATIONS: ${{ needs.gen-config.outputs.bursty_iterations }}
+      POWER_CI_IDLE_SECONDS: "30"
+      POWER_CI_COOLDOWN_SECONDS: "20"
+      POWER_CI_IDLE_RUN_SECONDS: "240"
+      POWER_CI_BURSTY_REPS: "1000x"
+      POWER_CI_MAX_UTIL_FPU: "50"
+      POWER_CI_MAX_UTIL_DRAM: "100"
+      POWER_CI_MAX_UTIL_ITERATIONS: "15000"
+      POWER_CI_MAX_UTIL_WL_LOOPS: "15000"
+      POWER_CI_METAL_IMAGE_TAG: ${{ needs.gen-config.outputs.metal_image_tag }}
+      POWER_CI_MM_THROTTLE: ${{ needs.gen-config.outputs.mm_throttle }}
+      POWER_CI_TELEM_INTERVAL_MS: ${{ needs.gen-config.outputs.telem_interval_ms }}
+      POWER_CI_SUBTEST_TIMEOUT_MIN: ${{ needs.gen-config.outputs.subtest_timeout_min }}
+      POWER_CI_MM_THROTTLE_ENV: ${{ contains('1 2 3 4 5', needs.gen-config.outputs.mm_throttle) && needs.gen-config.outputs.mm_throttle != '' && format('TT_MM_THROTTLE_PERF={0}', needs.gen-config.outputs.mm_throttle) || '' }}   # prefixed to each workload with `env`; empty = unset (an empty value crashes ttnn.matmul)
+      POWER_CI_SYSTEM_POWER: auto
+      POWER_CI_TAG: ${{ needs.gen-config.outputs.tag }}
+      POWER_CI_REQUESTED_BY: ${{ needs.gen-config.outputs.requested_by }}
+    steps:
+      - name: Clean workspace
+        # Shared runners: previous container jobs leave root-owned files; this job is root inside its container, so
+        # a plain rm does it. Also stop readers a killed job may have left running.
+        run: |
+          rm -rf "${GITHUB_WORKSPACE:?}"/* "${GITHUB_WORKSPACE:?}"/.[!.]* "${GITHUB_WORKSPACE:?}"/..?* 2>/dev/null || true
+          pkill -f scripts/read_telemetry.py 2>/dev/null || true
+          pkill -f scripts/poll_ipmi_power.py 2>/dev/null || true
+          echo "VENV_DIR=$GITHUB_WORKSPACE/.telem-env" >> "$GITHUB_ENV"
+          echo "workspace inside the container: $GITHUB_WORKSPACE"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install telemetry dependencies
+        run: |
+          set -euxo pipefail
+          # the image's tt-metal checkout: pytest selectors and ./build paths are relative to it
+          [ -d "$TT_METAL_DIR/tests/didt" ] || { d="${TT_METAL_HOME:-}"; [ -n "$d" ] && [ -d "$d/tests/didt" ] && echo "TT_METAL_DIR=$d" >> "$GITHUB_ENV" || { echo "::error::tt-metal checkout not found in the image ($TT_METAL_DIR, TT_METAL_HOME=${TT_METAL_HOME:-unset})"; exit 1; }; }
+          # the host's tt-kmd is what every workflow on this runner uses; say so when it is not the version ci_boards.json expects
+          KMD="$(cat /sys/module/tenstorrent/version 2>/dev/null || echo unknown)"
+          [ "$KMD" = "${{ matrix.config.kmd_build }}" ] || echo "::warning::host tt-kmd is $KMD, ci_boards.json expects ${{ matrix.config.kmd_build }}"
+          python3 -m venv "$VENV_DIR"
+          "$VENV_DIR/bin/pip" install --upgrade pip
+          # versions tested with this firmware (scripts/requirements.txt): tt-flash 3.11 understands the split descriptor
+          # tables, tt-smi 6.2 is the matching pyluwen 0.9 release. tt-smi is required: it resets the board after a flash.
+          "$VENV_DIR/bin/pip" install "pyluwen>=0.9" pandas "tt-flash==3.11.0rc1" "tt-smi==6.2.1"
+          "$VENV_DIR/bin/tt-smi" --version
+          "$VENV_DIR/bin/tt-flash" --version
+          # Galaxy: in-band IPMI (system power, BMC inventory) needs ipmitool; the container is root with /dev/ipmi0
+          if [ -e /dev/ipmi0 ]; then command -v ipmitool >/dev/null || (apt-get update -qq && apt-get install -y -qq ipmitool >/dev/null); fi
+          # metal.yml's workaround: the container network can drop after a period of inactivity; keep it busy
+          nohup bash -c 'while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com || true; sleep 10; done' >/dev/null 2>&1 < /dev/null &
+          echo $! > /tmp/network-keepalive.pid
+
+      - name: Download the firmware built by this run
+        if: ${{ env.POWER_CI_FIRMWARE == 'main' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ matrix.config.fw-board }}
+          path: fw-build
+
+      - name: Flash firmware and reset
+        if: ${{ env.POWER_CI_FIRMWARE != 'none' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Stage gating (Alex A): no flash unless the build succeeded; no workloads unless the flash and reset succeeded.
+          if [ "$POWER_CI_FIRMWARE" = "main" ]; then
+            BUNDLE="$(find "$GITHUB_WORKSPACE/fw-build" -name update.fwbundle | head -1)"
+          else
+            mkdir -p "$GITHUB_WORKSPACE/fw-release"
+            BUNDLE="$GITHUB_WORKSPACE/fw-release/${{ matrix.config.fw-board }}.fwbundle"
+            # release asset through the API (no gh CLI inside the image)
+            python3 - "$POWER_CI_FIRMWARE" "${{ matrix.config.fw-board }}.fwbundle" "$BUNDLE" <<'PY'
+          import json, os, sys, urllib.request
+          tag, asset, out = sys.argv[1:4]
+          hdr = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"}
+          rel = json.load(urllib.request.urlopen(urllib.request.Request(f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{tag}", headers=hdr)))
+          url = next((a["url"] for a in rel.get("assets", []) if a["name"] == asset), None)
+          if not url:
+              sys.exit(f"::error::release {tag} has no asset {asset}")
+          req = urllib.request.Request(url, headers={**hdr, "Accept": "application/octet-stream"})
+          with urllib.request.urlopen(req) as r, open(out, "wb") as f:
+              f.write(r.read())
+          PY
+          fi
+          [ -f "$BUNDLE" ] || { echo "::error::no firmware bundle for ${{ matrix.config.board }} (${{ matrix.config.fw-board }})"; exit 1; }
+          "$VENV_DIR/bin/tt-flash" --version
+          # the chips may still be initialising when this job starts right after another job's reset (run #12 on Galaxy:
+          # "ARC Status: 0 out of 1 initialized"): wait until tt-smi enumerates every chip, then flash with retries
+          ready() { "$VENV_DIR/bin/tt-smi" -f /tmp/before_flash.json >/dev/null 2>&1; }
+          for i in $(seq 1 6); do ready && break; echo "chips not ready for flashing yet (attempt $i)"; sleep 10; done
+          if ! ready; then
+            # a chip left with its ARC down (Galaxy, runs #12/#14: "ARC Status: 0 out of 1 initialized" for minutes) only
+            # comes back with a reset; do it once here, the way the team recovers by hand, then wait again
+            echo "::warning::chips still not initialised after 60 s; resetting before the flash"
+            case "${{ matrix.config.board }}" in
+              bh-galaxy*) "$VENV_DIR/bin/tt-smi" -glx_reset || true ;;
+              *)          "$VENV_DIR/bin/tt-smi" -r || true ;;
+            esac
+            for i in $(seq 1 18); do sleep 10; ready && break; done
+            ready || { echo "::error::chips on ${{ matrix.config.board }} did not initialise even after a reset; the board needs a hands-on look"; exit 1; }
+          fi
+          ok=0
+          for attempt in 1 2 3; do
+            if "$VENV_DIR/bin/tt-flash" flash --force "$BUNDLE"; then ok=1; break; fi
+            echo "::warning::tt-flash attempt $attempt failed; retrying in 60 s"; sleep 60
+          done
+          [ "$ok" = 1 ] || { echo "::error::tt-flash failed three times on ${{ matrix.config.board }}"; exit 1; }
+          case "${{ matrix.config.board }}" in
+            bh-galaxy*) "$VENV_DIR/bin/tt-smi" -glx_reset ;;
+            *)          "$VENV_DIR/bin/tt-smi" -r ;;
+          esac
+          # wait until every chip answers again
+          for i in $(seq 1 18); do
+            sleep 10
+            "$VENV_DIR/bin/tt-smi" -f /tmp/after_flash.json >/dev/null 2>&1 && break
+            [ "$i" = 18 ] && { echo "::error::chips did not come back after the reset"; exit 1; }
+          done
+          python3 -c "import json; d=json.load(open('/tmp/after_flash.json')); print('fw after flash:', sorted({str(x.get('firmwares',{}).get('fw_bundle_version')) for x in d.get('device_info',[])}))" || true
+
+      - name: Record environment (tt-smi snapshot, host info)
+        # One snapshot per board job: firmware bundle, component firmware, KMD, tt-smi
+        # version, board serials. Uploaded with every subtest so each artifact is self-contained.
+        run: |
+          set -uxo pipefail
+          ENV_DIR="$GITHUB_WORKSPACE/telemetry_output/env"
+          mkdir -p "$ENV_DIR"
+          # tt-smi: `-f FILE` writes the snapshot to FILE; `-s` dumps it to stdout instead (and wins if
+          # both are given), so use -f alone and fall back to capturing -s output.
+          if [ -x "$VENV_DIR/bin/tt-smi" ]; then
+            "$VENV_DIR/bin/tt-smi" -f "$ENV_DIR/tt-smi.json" > /dev/null 2> "$ENV_DIR/tt-smi.err" || true
+            if [ ! -s "$ENV_DIR/tt-smi.json" ]; then
+              "$VENV_DIR/bin/tt-smi" -s --snapshot_no_tty > "$ENV_DIR/tt-smi.stdout" 2>> "$ENV_DIR/tt-smi.err" || true
+              python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); json.dump(d, open(sys.argv[2],"w"), indent=1)' \
+                "$ENV_DIR/tt-smi.stdout" "$ENV_DIR/tt-smi.json" 2>/dev/null || echo "::warning::tt-smi snapshot failed: $(tail -c 300 "$ENV_DIR/tt-smi.err")"
+              rm -f "$ENV_DIR/tt-smi.stdout"
+            fi
+            rm -f "$ENV_DIR/tt-smi.err"
+            [ -s "$ENV_DIR/tt-smi.json" ] && echo "tt-smi snapshot: $(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("host_info",{}).get("Driver"), d.get("host_sw_vers",{}).get("tt_smi"))' "$ENV_DIR/tt-smi.json")"
+          fi
+          TT_FLASH_VERSION="$("$VENV_DIR/bin/tt-flash" --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true)"
+          # tt-metal commit and version from inside the test container (the image is a checkout at a fixed sha)
+          # the image carries no git checkout: the commit comes from the ttnn version string (…+g<sha>) when git has nothing
+          METAL_INFO="$(v=$(python3 -c "from importlib.metadata import version; print(version('ttnn'))" 2>/dev/null); c=$(git -C "$TT_METAL_DIR" rev-parse HEAD 2>/dev/null); [ -n "$c" ] || c=$(echo "$v" | grep -oE '\+g[0-9a-f]{7,40}' | cut -c3-); echo "${c:-} ${v:-}")"
+          TT_METAL_COMMIT="${METAL_INFO%% *}"; TT_METAL_VERSION="${METAL_INFO#* }"
+          # Galaxy: BMC version, inlet temperature and fan RPMs in-band over IPMI (root inside a throwaway container)
+          BMC_VERSION=""; BMC_IP=""; INLET_C=""; FAN_RPMS=""; CPLD_JSON=""
+          if [ "${{ matrix.config.system-power || 'none' }}" = "ipmi" ] && [ -e /dev/ipmi0 ]; then
+            # CPLD versions of MB / PDB / UBB1-4 (S7T register 0x04 via IPMI master write-read; same read the
+            # Quanta diagnostics script does in-band). 4 bytes " 00 15 02 a4" -> V2.15.00 (a4).
+            IPMI_OUT="$(bash -c \
+              'ipmitool mc info; echo ===LAN===; ipmitool lan print 2>/dev/null; echo ===SDR===; ipmitool sdr elist; echo ===CPLD===;
+               for e in "MB 0x17 0x62" "PDB 0x09 0x62" "UBB1 0x0D 0x80" "UBB2 0x0F 0x80" "UBB3 0x11 0x80" "UBB4 0x13 0x80"; do set -- $e; echo "$1:$(ipmitool raw 0x06 0x52 $2 $3 0x04 0x00 2>/dev/null)"; done' 2>/dev/null || true)"
+            printf '%s\n' "$IPMI_OUT" > "$ENV_DIR/ipmi-inventory.txt"   # raw mc info / sdr elist / CPLD reads, kept read-only
+            CPLD_JSON="$(printf '%s\n' "$IPMI_OUT" | awk 'f && /^[A-Z0-9]+:/ {split($0,a,":"); v=a[2]; gsub(/^ +| +$/,"",v); n=split(v,b," "); if (n==4) s=s (c++?",":"") "\"" a[1] "\":\"V" substr(b[3],2,1) "." b[2] "." b[1] " (" b[4] ")\""} /===CPLD===/ {f=1} END {if (c) print "{" s "}"}')"
+            # BMC version per SysEng convention: minor of "Firmware Revision" . decimal of the first "Aux Firmware Rev Info" byte (0.05 + 0x13 -> 5.19)
+            # BMC version as the team reads it (Confluence "Updating BMC (CLI)", tt-ansible tt_bmc_fw_upgrade): major = minor
+            # digit of "Firmware Revision" (0.05 -> 5), minor = the first "Aux Firmware Rev Info" byte, printed on the next
+            # line, taken as literal digits (0x19 -> 19, NOT hex-decoded to 25). 0.05 + 0x19 -> 5.19.
+            FW_MAJOR="$(printf '%s\n' "$IPMI_OUT" | awk -F: '/Firmware Revision/ {split($2,a,"."); print a[2]+0; exit}')"
+            AUX_HEX="$(printf '%s\n' "$IPMI_OUT" | awk '/Aux Firmware Rev Info/ {getline; print $1; exit}' | tr -d '[:space:]')"
+            case "$AUX_HEX" in 0x*|0X*) [ -n "$FW_MAJOR" ] && BMC_VERSION="${FW_MAJOR}.${AUX_HEX#0[xX]}" ;; esac
+            # BMC IP the same way the team does by hand (Confluence "Galaxy FW Stack Commands": sudo ipmitool lan print)
+            BMC_IP="$(printf '%s\n' "$IPMI_OUT" | awk '/===SDR===/ {exit} /^IP Address  *:/ {sub(/^IP Address  *: */,""); print; exit}' | tr -d '[:space:]')"
+            INLET_C="$(printf '%s\n' "$IPMI_OUT" | awk -F'|' '/TEMP_INLET/ {gsub(/ degrees C/,"",$5); gsub(/ /,"",$5); print $5; exit}')"
+            FAN_RPMS="$(printf '%s\n' "$IPMI_OUT" | awk -F'|' '/RPM/ {gsub(/ RPM/,"",$5); gsub(/ /,"",$5); if ($5 ~ /^[0-9]+$/) printf "%s%s", (n++?",":""), $5}')"
+          fi
+          # QSFP cabling (Galaxy only). The team defines cabling by which tt-metal cabling descriptor the cluster matches, so
+          # run tt-metal's validator against XY+Z, XY and no-QSFP (mesh) and parse the missing / extra cable counts it prints.
+          # --hard-fail is REQUIRED: without it the tool enters its link-retrain loop, which never returns on this Galaxy
+          # (a 28 h hang on 2026-09-27). With it the tool aborts right after discovery, so the chips are left busy: the
+          # go-idle step below puts them back. Containers are named and force-removed so a hang cannot outlive its timeout.
+          QSFP=""
+          if [[ "${{ matrix.config.board }}" == bh-galaxy* ]]; then
+            best=""; best_score=999999
+            for topo in "xy_torus_z_ports:XY+Z:28" "xy_torus:XY:12" "mesh:none:0"; do
+              d="${topo%%:*}"; rest="${topo#*:}"; label="${rest%%:*}"; total="${rest##*:}"
+              log="$ENV_DIR/cabling_check_${d}.txt"
+              # `timeout -k` kills the validator if it hangs (the retrain loop without --hard-fail never returned)
+              timeout -k 15 --preserve-status 240s bash -c "cd '$TT_METAL_DIR' && ./build/tools/scaleout/run_cluster_validation --cabling-descriptor-path tools/tests/scaleout/cabling_descriptors/bh_galaxy_${d}.textproto --hard-fail" \
+                > "$log" 2>&1 || true
+              grep -q "Physical Discovery Complete" "$log" || { echo "::warning::cabling check ${d}: discovery did not complete (see $(basename "$log"))"; continue; }
+              missing=$(grep -oE 'found [0-9]+ missing port/cable connections' "$log" | grep -oE '[0-9]+' | head -1 || true); missing=${missing:-0}
+              extra=$(grep -oE 'found [0-9]+ extra port/cable connections' "$log" | grep -oE '[0-9]+' | head -1 || true); extra=${extra:-0}   # no 'extra' line = 0; without || true a missing line aborts the step under set -e
+              score=$(( missing + extra ))
+              echo "cabling check ${d}: ${missing} missing, ${extra} extra of ${total} cables"
+              if [ "$score" -eq 0 ]; then QSFP="$label"; break; fi
+              if [ "$score" -lt "$best_score" ]; then
+                best_score=$score
+                best="$label ($(( total - missing ))/${total} cables$([ "$extra" -gt 0 ] && echo ", ${extra} unexpected"))"
+              fi
+            done
+            [ -n "$QSFP" ] || QSFP="${best:-unknown}"
+            echo "QSFP cabling: $QSFP"
+            # The aborted validator leaves every chip at Fmax. Ask the firmware for long idle (what tt-metal sends on
+            # device close: TT_SMC_MSG_AICLK_GO_LONG_IDLE = 0x54) and confirm AICLK is back at the floor.
+            "$VENV_DIR/bin/python" - <<'PY3' || echo "::warning::could not send go-idle after the cabling check"
+          import time, pyluwen
+          chips = [d for d in pyluwen.detect_chips_fallible() if d.have_comms()]
+          sent = 0
+          for d in chips:
+              try:
+                  d.force_upgrade().arc_msg(0x54, wait_for_done=True, use_second_mailbox=False, arg0=0, arg1=0, timeout=2.0); sent += 1
+              except Exception as exc:
+                  print(f"go-idle failed on one chip: {exc}")
+          time.sleep(3)
+          clocks = []
+          for d in chips:
+              try:
+                  clocks.append(d.force_upgrade().as_bh().get_telemetry().aiclk & 0xFFFF)
+              except Exception:
+                  pass
+          print(f"go-idle sent to {sent}/{len(chips)} chips; AICLK now {sorted(set(clocks))} MHz")
+          if clocks and max(clocks) > 900:
+              print("::warning::chips still above the idle floor after go-idle")
+          PY3
+          fi
+          # model weights present on this runner (what the model workloads can use without a download)
+          MODELS_JSON="$(python3 - <<'PY2'
+          import json, os
+          roots = ["/opt/tenstorrent/hf-models", "/opt/tenstorrent/models", "/localdev", "/mnt/MLPerf", os.path.expanduser("~/.cache/huggingface/hub")]
+          found = {}
+          for root in roots:
+              if not os.path.isdir(root):
+                  continue
+              for dirpath, dirs, files in os.walk(root):
+                  depth = dirpath[len(root):].count(os.sep)
+                  if depth > 3:
+                      dirs[:] = []
+                      continue
+                  if any(f.endswith((".safetensors", ".bin", ".pth", ".gguf")) or f == "config.json" for f in files):
+                      size = 0
+                      for f in files:
+                          try:
+                              size += os.path.getsize(os.path.join(dirpath, f))
+                          except OSError:
+                              pass
+                      found[dirpath] = round(size / 1e9, 1)
+                      dirs[:] = []
+          print(json.dumps(found))
+          PY2
+          )"
+          python3 - "$ENV_DIR/host.json" <<PY
+          import json, os, sys
+          models = json.loads('''$MODELS_JSON''') if '''$MODELS_JSON'''.strip().startswith("{") else {}
+          fans = [int(x) for x in "$FAN_RPMS".split(",") if x.strip().isdigit()]
+          try:
+              inlet = float("$INLET_C") if "$INLET_C" else None   # ipmitool prints "na" / "disabled" for an unavailable sensor
+          except ValueError:
+              inlet = None
+          try:
+              cpld = json.loads('''$CPLD_JSON''') or None
+          except Exception as e:  # never fail the run over a formatting slip
+              cpld = {"error": str(e), "raw": '''$CPLD_JSON'''[:200]}
+          json.dump({
+            "host": os.environ.get("RUNNER_NAME") or os.uname().nodename, "board": "${{ matrix.config.board }}", "runner": "${{ runner.name }}",  # the container's own hostname is random
+            "kmd_version": open("/sys/module/tenstorrent/version").read().strip() if os.path.exists("/sys/module/tenstorrent/version") else "unknown",
+            "kernel": os.uname().release, "container_image": "${{ matrix.config.metal-image }}",
+            "tt_flash_version": "$TT_FLASH_VERSION" or None, "tt_metal_commit": "$TT_METAL_COMMIT" or None, "tt_metal_version": "$TT_METAL_VERSION" or None,
+            "bmc_version": "$BMC_VERSION" or None, "bmc_ip": "$BMC_IP" or None, "inlet_temp_c": inlet,
+            "fan_rpm": fans or None, "fan_rpm_mean": (sum(fans) / len(fans)) if fans else None,
+            "cpld_versions": cpld,
+            "models": models,  # {dir: GB} of weight directories found on the runner
+            "qsfp_config": "$QSFP" or None,  # Galaxy: XY+Z / XY / none, or e.g. "XY (9/12 cables)", from tt-metal's cabling validator
+            "fw_repo": "${{ github.repository }}", "fw_repo_sha": "${{ github.sha }}", "fw_repo_ref": "${{ github.ref_name }}",
+            "run_id": "${{ github.run_id }}", "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+            "event": "${{ github.event_name }}", "pr_number": "${{ github.event.pull_request.number }}",
+            "tag": os.environ.get("POWER_CI_TAG") or None,  # free text: read from the environment, never interpolated into source
+            "requested_by": os.environ.get("POWER_CI_REQUESTED_BY") or None,
+          }, open(sys.argv[1], "w"), indent=2)
+          PY
+          cat "$ENV_DIR/host.json"
+
+      # `workloads = validate`: no hardware run. Collects every subtest's pytest selector inside the
+      # container of this board and fails if one collects nothing (renamed test, wrong -k id, image
+      # without the test). Cheap check that the image and the workload list still match.
+      - name: validate subtests (collect-only)
+        if: ${{ env.POWER_CI_WORKLOADS == 'validate' }}
+        run: |
+          set +e -uo pipefail
+          rc=0
+          while IFS='|' read -r name selector; do
+            name="${name#"${name%%[![:space:]]*}"}"; [ -z "$name" ] && continue
+            case "$selector" in
+              exists:*) p="${selector#exists:}"
+                if test -e "$TT_METAL_DIR/$p"; then echo "OK   $name: $p present"; else echo "::warning::$name: $p not in the image (pending)"; fi
+                continue ;;
+            esac
+            eval "set -- $selector"   # the selector carries its own quoting (-k "all and duty-1"); eval splits it like the subtest step does
+            out=$(cd "$TT_METAL_DIR" && pytest --collect-only -q "$@" 2>&1 | grep -E "collected|error|Error" | tail -4)
+            n=$(echo "$out" | grep -oE '^[0-9]+ tests? collected|[0-9]+/[0-9]+ tests? collected' | grep -oE '^[0-9]+' | head -1)
+            [ -n "$n" ] || n=$(echo "$out" | grep -oE 'collected [0-9]+ items?( / [0-9]+ deselected / [0-9]+ selected)?' | tail -1 | grep -oE '[0-9]+ selected|collected [0-9]+' | grep -oE '[0-9]+' | tail -1)
+            if [ -n "$n" ] && [ "$n" -gt 0 ]; then echo "OK   $name: $n test(s) collected"
+            elif echo " max_util " | grep -q " $name "; then echo "::warning::$name: not in this image yet (pending)"
+            else echo "::error::$name collects nothing: $out"; rc=1; fi
+          done <<'SELECTORS'
+          resnet_conv|tests/didt/test_resnet_conv.py::test_resnet_conv -k "all"
+          ff1_matmul_with_gelu|tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "with_gelu and all"
+          ff1_matmul_no_gelu|tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "all and not with_gelu"
+          lm_head|tests/didt/test_lm_head_matmul.py::test_lm_head_matmul -k "all"
+          bursty1|tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-1000x and duty-1"
+          bursty6|tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-1000x and duty-6"
+          minimal_matmul|tests/didt/test_minimal_matmul.py::test_minimal_matmul -k "all and bf16_HiFi2"
+          sdpa_op|tests/didt/test_sdpa_op.py::test_sdpa_op -k "all and bf16_HiFi2"
+          binary_mul|tests/didt/test_binary_mul.py::test_binary_mul -k "all and with_gelu"
+          mla_sdpa|tests/didt/test_mla_sdpa.py::test_mla_sdpa -k "all"
+          deepseek_v3_mla_matmul|tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_mla_matmul -k "${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}"
+          deepseek_v3_gate_matmul|tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_gate_matmul -k "${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}"
+          llama_8b_demo|exists:models/tt_transformers/demo/simple_text_demo.py
+          max_util|exists:build/test/didt/unit_tests_didt_max_util
+          SELECTORS
+          exit $rc
+
+      - name: idle subtest  # nothing running: telemetry only for idle_run_seconds (default 240 s)
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',idle,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: idle
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: 0
+          cooldown-seconds: 0
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: "30"
+          run: |
+            echo "idle capture for ${POWER_CI_IDLE_RUN_SECONDS}s (no workload)"
+            sleep "${POWER_CI_IDLE_RUN_SECONDS}"
+
+      - name: mission_mode subtest  # tt-smi open on the host for idle_run_seconds: chips idle, management path polled continuously
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',mission_mode,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: mission_mode
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: "30"
+          run: |
+            DUR="${POWER_CI_IDLE_RUN_SECONDS}"
+            export TERM=xterm-256color COLUMNS=200 LINES=60
+            start=$(date +%s)
+            # the tt-smi TUI needs a pseudo-terminal; `script` provides one. It polls every chip continuously while open.
+            if command -v script >/dev/null 2>&1; then timeout --preserve-status "${DUR}s" script -qfec "$VENV_DIR/bin/tt-smi" /dev/null > /dev/null 2>&1 || true; fi
+            el=$(( $(date +%s) - start ))
+            if [ "$el" -lt $(( DUR - 5 )) ]; then
+              echo "::warning::tt-smi TUI exited after ${el}s; polling snapshots for the rest of the window"
+              end=$(( start + DUR ))
+              while [ "$(date +%s)" -lt "$end" ]; do "$VENV_DIR/bin/tt-smi" -f /tmp/mission_mode_snapshot.json >/dev/null 2>&1 || true; sleep 1; done
+            fi
+            echo "mission mode held for $(( $(date +%s) - start ))s"
+            exit 0
+
+      - name: resnet_conv subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',resnet_conv,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: resnet_conv
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_resnet_conv.py::test_resnet_conv -k \"all\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_resnet_conv.py::test_resnet_conv -k "all" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: ff1_matmul with_gelu subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',ff1_matmul_with_gelu,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: ff1_matmul_with_gelu
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "with_gelu and all" \
+              --didt-workload-iterations ${{ env.POWER_CI_FF1_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: lm_head subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',lm_head,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: lm_head
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_lm_head_matmul.py::test_lm_head_matmul -k \"all\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_lm_head_matmul.py::test_lm_head_matmul -k "all" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: ff1_matmul_no_gelu subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',ff1_matmul_no_gelu,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: ff1_matmul_no_gelu
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_ff1_matmul.py::test_ff1_matmul -k \"all and not with_gelu\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "all and not with_gelu" \
+              --didt-workload-iterations ${{ env.POWER_CI_FF1_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty1 subtest  # Bursty1 = duty-1 of test_duty_cycle (LLK 'Bursty' page); TT_MM_THROTTLE_PERF=5 on Galaxy (unthrottled Bursty can trip a Galaxy)
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty1,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty1
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-1\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-1" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty2 subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty2,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty2
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-2\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-2" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty3 subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty3,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty3
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-3\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-3" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty4 subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty4,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty4
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-4\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-4" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty5 subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty5,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty5
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-5\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-5" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: bursty6 subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',bursty6,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: bursty6
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_duty_cycle.py::test_duty_cycle -k \"all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-6\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-${{ env.POWER_CI_BURSTY_REPS }} and duty-6" \
+              --didt-workload-iterations ${{ env.POWER_CI_BURSTY_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: minimal_matmul subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',minimal_matmul,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: minimal_matmul
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_minimal_matmul.py::test_minimal_matmul -k \"all and bf16_HiFi2\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_minimal_matmul.py::test_minimal_matmul -k "all and bf16_HiFi2" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: sdpa_op subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',sdpa_op,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: sdpa_op
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_sdpa_op.py::test_sdpa_op -k \"all and bf16_HiFi2\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_sdpa_op.py::test_sdpa_op -k "all and bf16_HiFi2" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: binary_mul subtest
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',binary_mul,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: binary_mul
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_binary_mul.py::test_binary_mul -k \"all and with_gelu\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_binary_mul.py::test_binary_mul -k "all and with_gelu" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: mla_sdpa subtest  # Blackhole only
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',mla_sdpa,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: mla_sdpa
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_mla_sdpa.py::test_mla_sdpa -k \"all\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_mla_sdpa.py::test_mla_sdpa -k "all" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: deepseek_v3_mla_matmul subtest  # Galaxy mesh (8x4) or the 1chips case on a single card (small: ~5 min, near-idle power)
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',deepseek_v3_mla_matmul,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: deepseek_v3_mla_matmul
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_mla_matmul -k \"${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_mla_matmul -k "${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: deepseek_v3_gate_matmul subtest  # Galaxy mesh (8x4) or the 1chips case on a single card
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',deepseek_v3_gate_matmul,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: deepseek_v3_gate_matmul
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_gate_matmul -k \"${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}\""
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: ${{ env.POWER_CI_SUBTEST_TIMEOUT_MIN }}
+          run: |
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_gate_matmul -k "${{ startsWith(matrix.config.board, 'bh-galaxy') && 'galaxy' || '1chips' }}" \
+              --didt-workload-iterations ${{ env.POWER_CI_DIDT_ITERATIONS }} --determinism-check-interval 0 --timeout 0
+      - name: max_util subtest  # tt-metal main since 2026-09-29 (PR 57956); needs the v0.80 dev image (gen-config default) until v0.80.0 ships. Command per Mithu: 15000 iterations / 15000 loops, fpu 50, dram 100, *All*
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',max_util,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: max_util
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "exists:build/test/didt/unit_tests_didt_max_util"
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: "90"
+          run: |
+            cd "$TT_METAL_DIR" && env MAX_UTIL_NUM_ITERATIONS="$POWER_CI_MAX_UTIL_ITERATIONS" MAX_UTIL_NUM_WL_LOOPS="$POWER_CI_MAX_UTIL_WL_LOOPS" \
+              MAX_UTIL_FPU_UTILIZATION_PCT="$POWER_CI_MAX_UTIL_FPU" MAX_UTIL_DRAM_UTILIZATION_PCT="$POWER_CI_MAX_UTIL_DRAM" \
+              MAX_UTIL_DUTY_CYCLE=100 MAX_UTIL_SUPER_SYNC=0 $POWER_CI_MM_THROTTLE_ENV bash \
+              -c './build/test/didt/unit_tests_didt_max_util --gtest_filter="*All*"'
+      - name: llama_8b_demo subtest  # tt_transformers simple_text_demo with the Llama 3.1 8B Instruct weights on the runner; batch-1 on PCIe cards, data-parallel 32 on Galaxy (the upstream image's own demo suite)
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',llama_8b_demo,') }}
+        uses: ./.github/actions/power-telemetry-subtest
+        with:
+          name: llama_8b_demo
+          workload: power_measurement_CI
+          board: ${{ matrix.config.board }}
+          venv-dir: ${{ env.VENV_DIR }}
+          idle-seconds: ${{ env.POWER_CI_IDLE_SECONDS }}
+          cooldown-seconds: ${{ env.POWER_CI_COOLDOWN_SECONDS }}
+          system-power: ${{ (env.POWER_CI_SYSTEM_POWER != 'auto' && env.POWER_CI_SYSTEM_POWER) || matrix.config.system-power || 'none' }}
+          selector: "exists:models/tt_transformers/demo/simple_text_demo.py"
+          image: ${{ matrix.config.metal-image }}
+          timeout-minutes: "45"
+          run: |
+            if [ ! -d "$LLAMA_INSTRUCT_DIR" ]; then echo "::error::Llama weights not found at $LLAMA_INSTRUCT_DIR on this runner"; exit 3; fi
+            cd "$TT_METAL_DIR" && env HF_MODEL="$LLAMA_INSTRUCT_DIR" TT_CACHE_PATH="$LLAMA_INSTRUCT_DIR" $POWER_CI_MM_THROTTLE_ENV pytest \
+              models/tt_transformers/demo/simple_text_demo.py -k "${{ startsWith(matrix.config.board, 'bh-galaxy') && 'performance and ci-32' || 'performance and batch-1' }}" ${{ startsWith(matrix.config.board, 'bh-galaxy') && '--data_parallel 32' || '' }} --timeout 1200
+      - name: Subtest summary
+        if: ${{ always() }}
+        run: |
+          rc=0
+          for m in "$GITHUB_WORKSPACE"/telemetry_output/*/manifest.json; do
+            [ -f "$m" ] || continue
+            st=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('status',''))" "$m")
+            printf '%-26s %s\n' "$(basename "$(dirname "$m")")" "$st"
+            [ "$st" = "failed" ] && rc=1
+          done
+          exit $rc
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: |
+          # a killed job must not leave the runner's firmware at a short telemetry interval
+          if [ "${POWER_CI_TELEM_INTERVAL_MS:-0}" -gt 0 ] 2>/dev/null && [ -x "$VENV_DIR/bin/python3" ]; then
+            "$VENV_DIR/bin/python3" "$GITHUB_WORKSPACE/scripts/telem_interval.py" restore >/dev/null 2>&1 || true
+          fi
+          rm -rf "$GITHUB_WORKSPACE/telemetry_output" "$VENV_DIR" || true
+          pkill -f scripts/read_telemetry.py 2>/dev/null || true
+          pkill -f scripts/poll_ipmi_power.py 2>/dev/null || true
+          [ -f /tmp/network-keepalive.pid ] && kill "$(cat /tmp/network-keepalive.pid)" 2>/dev/null || true
