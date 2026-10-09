@@ -168,6 +168,9 @@ enum tt_smc_msg {
 
 	/** @brief @ref tt_pcie_log_rqst "FW logging setup/release request" */
 	TT_SMC_MSG_TT_PCIE_LOG = 0xC7,
+
+	/** @brief Runtime QSFP-DD cage management request */
+	TT_SMC_MSG_QSFP_MGMT = 0xC8,
 };
 
 /** @brief Enumeration of characterization submessage IDs */

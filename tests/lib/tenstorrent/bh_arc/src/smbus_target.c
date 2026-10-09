@@ -7,9 +7,10 @@
 #include <zephyr/ztest.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/fff.h>
-#include <tenstorrent/tt_smbus_regs.h>
-#include <zephyr/drivers/i2c.h>
+#include <tenstorrent/bh_arc.h>
+#include <tenstorrent/qsfp_mgmt.h>
 #include <tenstorrent/smbus_target.h>
+#include <tenstorrent/tt_smbus_regs.h>
 #include "reg_mock.h"
 #include "asic_state.h"
 #include "telemetry.h"
@@ -25,6 +26,45 @@ static uint32_t get_smbus_error_count(void)
 {
 	return smbus_target_get_error_count(smbus_target_dev);
 }
+
+ZTEST(smbus_target, test_qsfp_mgmt_response_validation)
+{
+	struct qsfp_mgmt_response response = {
+		.token = 0x5a,
+		.operation = QSFP_MGMT_OP_STATUS,
+		.cage = 0,
+		.status = QSFP_MGMT_OK,
+	};
+	uint8_t page_arg = QSFP_MGMT_PAGE_ARG(QSFP_MGMT_PAGE_11, 6);
+	uint32_t request = QSFP_MGMT_REQUEST(QSFP_MGMT_OP_READ_PAGE, 3, page_arg, 0xa5);
+
+	zassert_equal(sizeof(response), 28);
+	zassert_equal(sizeof(dmStaticInfo), 24);
+	zassert_equal(sizeof(struct qsfp_status_payload), 5);
+	zassert_equal(QSFP_MGMT_REQUEST_OP(request), QSFP_MGMT_OP_READ_PAGE);
+	zassert_equal(QSFP_MGMT_REQUEST_CAGE(request), 3);
+	zassert_equal(QSFP_MGMT_PAGE_ARG_INDEX(QSFP_MGMT_REQUEST_ARG(request)), QSFP_MGMT_PAGE_11);
+	zassert_equal(QSFP_MGMT_PAGE_ARG_BLOCK(QSFP_MGMT_REQUEST_ARG(request)), 6);
+	zassert_equal(QSFP_MGMT_REQUEST_TOKEN(request), 0xa5);
+	zassert_equal(QSFP_TELEM_CAGE(0x98980201U, 0), QSFP_TELEM_NO_MODULE);
+	zassert_equal(QSFP_TELEM_CAGE(0x98980201U, 1), QSFP_TELEM_CMIS_READ_FAILED);
+	zassert_equal(QSFP_TELEM_CAGE(0x98980201U, 2), QSFP_TELEM_PRESENT_ID(0x18));
+	zassert_equal(Dm2CmQsfpMgmtResponseHandler((uint8_t *)&response, sizeof(response) - 1), -1);
+	response.length = QSFP_MGMT_PAYLOAD_SIZE + 1;
+	zassert_equal(Dm2CmQsfpMgmtResponseHandler((uint8_t *)&response, sizeof(response)), -1);
+	response.length = 0;
+	/* An unsolicited/stale token is ignored rather than waking a waiter. */
+	zassert_equal(Dm2CmQsfpMgmtResponseHandler((uint8_t *)&response, sizeof(response)), 0);
+}
+
+ZTEST(smbus_target, test_qsfp_status_size)
+{
+	uint32_t status = 0x03020100U;
+
+	zassert_equal(Dm2CmQsfpStatusHandler((uint8_t *)&status, sizeof(status) - 1), -1);
+	zassert_equal(Dm2CmQsfpStatusHandler((uint8_t *)&status, sizeof(status)), 0);
+}
+
 static void tear_down_tc(void *fixture)
 {
 	(void)fixture;
