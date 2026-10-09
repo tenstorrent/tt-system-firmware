@@ -41,6 +41,8 @@
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
       "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "4",
+      "num-devices": "4",
       "kmd_build": "2.11.0"
     },
     {
@@ -50,6 +52,8 @@
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
       "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "8",
+      "num-devices": "8",
       "kmd_build": "2.11.0"
     },
 
@@ -60,6 +64,8 @@
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
       "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "10",
+      "num-devices": "32",
       "kmd_build": "2.11.0"
     }
   ]
