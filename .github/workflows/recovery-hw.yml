@@ -1,0 +1,401 @@
+name: Recovery HW
+
+# Tier 3 recovery test: actually recover a real card, nightly.
+#
+# This is DESTRUCTIVE. --force skips the health checks and goes straight to a
+# chip erase, so between the erase and a successful reprogram the card is
+# bricked. That is the point: it is the only way to prove recovery works.
+#
+# Structure is deliberately staged so a red job names the culprit rather than
+# just saying "recovery failed":
+#
+#   preflight  -> lab/runner problem, not our code
+#   bundle     -> prepare-recovery-bundle.py or the release is broken
+#   recover    -> the recovery tool or the recovery firmware
+#   verify     -> recovery ran but did not take
+#   restore    -> board left in a bad state, needs a human
+#
+# The board is left running RECOVERY firmware until the restore step reflashes
+# production firmware. Restore is `if: always()` for that reason.
+
+on:
+  pull_request:
+    types:
+      - labeled
+  # Nightly schedule stays off until this has been run by hand against a
+  # board. Enable once proven; 03:00 is ahead of HW Soak (05:00) so a
+  # bricked board is known before the long tests queue onto it.
+  # schedule:
+  #   - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      board:
+        description: "Single board to test (blank = all enabled boards)"
+        required: false
+        type: choice
+        options: ["", "p300a"]
+        default: ""
+      dry_run:
+        description: "Run preflight + bundle checks only, do not touch flash"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # Destructive runs cannot stop half way through
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  # Single source of truth for whether the destructive test runs. On a PR it
+  # is opt-in via the 'recovery-test' label, same pattern as HW Soak.
+  should-run:
+    if: >
+      github.event_name == 'schedule'
+      || github.event_name == 'workflow_dispatch'
+      || github.event.label.name == 'recovery-test'
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo "Recovery HW test will run."
+
+  gen-config:
+    needs: should-run
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix-config: ${{ steps.gen.outputs.matrix-config }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gen
+        run: |
+          # Emit whole ci_boards.json entries, not bare names, so the matrix
+          # carries kmd_build for prepare-container.
+          # Standalone PCIe cards only. Galaxy and quietbox are excluded.
+          # p300a first; p100a and p150a to follow once this is proven.
+          ENABLED='["p300a"]'
+          PICK="${{ inputs.board }}"
+          if [ -n "$PICK" ]; then
+            ENABLED="$(jq -cn --arg b "$PICK" '[$b]')"
+          fi
+          CONFIG="$(jq -c --argjson en "$ENABLED" \
+            '[.bh[] | select(.board as $b | $en | index($b))]' .github/ci_boards.json)"
+          test "$(jq 'length' <<<"$CONFIG")" -gt 0 || {
+            echo "no ci_boards.json entry matched $ENABLED"; exit 1; }
+          echo "matrix-config=$CONFIG" | tee -a "$GITHUB_OUTPUT"
+
+  # Produce production firmware, to restore boards after recovery
+  build-fw-artifact:
+    needs: should-run
+    uses: ./.github/workflows/build-fw.yml
+    secrets:
+      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
+
+  # Build the recovery bundle from the tree under test, not from a release.
+  # The whole point of a nightly is to catch a bundle that is broken now.
+  build-bundle:
+    needs: gen-config
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      - name: Stage the signing key
+        shell: bash
+        run: |
+          SIGNATURE_KEY_FILE="$(mktemp)"
+          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
+          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
+          if [ $SZ -gt 42 ]; then
+            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build recovery bundle
+        run: |
+          python3 tt-system-firmware/scripts/tooling/blackhole_recovery/prepare-recovery-bundle.py \
+            --board ${{ matrix.config.board }} \
+            --signing-key "$SIGNATURE_KEY_FILE" \
+            recovery-${{ matrix.config.board }}.tar.gz
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovery-bundle-${{ matrix.config.board }}
+          path: recovery-${{ matrix.config.board }}.tar.gz
+
+  recover:
+    name: Recover ${{ matrix.config.board }}
+    needs: [gen-config, build-bundle, build-fw-artifact]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
+    runs-on: ${{ matrix.config.board }}
+    container:
+      image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
+        # Bind the whole of /dev so the container sees hotplug. Docker
+        # otherwise gives a private /dev populated once at startup, and the
+        # card re-enumerating mid-recovery would never reappear as
+        # /dev/tenstorrent/<n>. recover-blackhole.sh does the same thing.
+        - /dev:/dev
+      options: '--device /dev/tenstorrent --device /dev/bus/usb --privileged'
+    steps:
+      - name: Cleanup state
+        if: ${{ always() }}
+        run: rm -rf ./* || true
+
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+
+      - uses: ./tt-system-firmware/.github/workflows/prepare-container
+        with:
+          app-path: tt-system-firmware
+          kmd-version: ${{ matrix.config.kmd_build }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: recovery-bundle-${{ matrix.config.board }}
+
+      # ---- STAGE A: preflight -------------------------------------------
+      # Red here means the lab, not the code. Without this a board left wedged
+      # by an earlier job gets blamed on recovery.
+
+      - name: 'A1: ST-Link probe is visible'
+        run: |
+          pyocd list | tee /tmp/probes.txt
+          # Assert the absence of pyocd's "none found" line. Do not invert a
+          # grep here: `grep -qv` would pass on any header line and give a
+          # false green when no probe is attached.
+          if grep -q 'No available debug probes' /tmp/probes.txt; then
+            echo "No ST-Link attached to this runner; recovery cannot run."
+            exit 1
+          fi
+
+      - name: 'A2: every expected ASIC is on the bus before we start'
+        run: |
+          ls -l /dev/tenstorrent/ | tee /tmp/pre-devices.txt
+          # Count comes from the repo metadata that also generated the bundle.
+          # p300a has two ASICs; checking only index 0 would let a half-dead
+          # board through to the erase.
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+          meta = pathlib.Path("tt-system-firmware/scripts/board_metadata.yaml")
+          cfg = yaml.safe_load(meta.read_text())["${{ matrix.config.board }}"]
+          missing = [i for i in range(len(cfg))
+                     if not pathlib.Path(f"/dev/tenstorrent/{i}").exists()]
+          if missing:
+              sys.exit(f"missing device nodes for ASIC(s): {missing}")
+          print(f"all {len(cfg)} ASIC(s) present")
+          PY
+
+      - name: 'A3: confirm board identity, then record baseline'
+        run: |
+          # The next stage erases with --force, so prove this really is the
+          # board we built the bundle for. A non-empty telemetry dump is not
+          # enough: the wrong card would pass and then be flashed with it.
+          python3 - <<'PY' | tee /tmp/baseline.txt
+          import pathlib, sys, yaml, pyluwen
+          board = "${{ matrix.config.board }}"
+          meta = pathlib.Path("tt-system-firmware/scripts/board_metadata.yaml")
+          cfg = yaml.safe_load(meta.read_text())[board]
+          chips = pyluwen.detect_chips()
+          if len(chips) != len(cfg):
+              sys.exit(f"{board} expects {len(cfg)} ASIC(s), found {len(chips)}")
+          for i, want in enumerate(cfg):
+              t = chips[i].get_telemetry()
+              upi = t.board_id >> 36
+              if upi != want["upi"]:
+                  sys.exit(f"ASIC {i} UPI 0x{upi:x} != expected 0x{want['upi']:x} "
+                           f"for {board}; refusing to erase")
+              print(f"asic={i} board_id=0x{t.board_id:x} fw={t.smc_fw_version}")
+          PY
+          test -s /tmp/baseline.txt
+
+      # ---- STAGE B: bundle ----------------------------------------------
+      # Cheap, and it runs while the card is still alive. Catches a bad bundle
+      # in seconds instead of after a chip erase.
+
+      - name: 'B1: bundle contains this board and its firmware'
+        run: |
+          mkdir -p /tmp/bundle
+          tar xzf recovery-${{ matrix.config.board }}.tar.gz -C /tmp/bundle
+          python3 - <<'PY'
+          import sys, yaml, pathlib
+          root = pathlib.Path("/tmp/bundle")
+          board = "${{ matrix.config.board }}"
+          meta = root / "board_metadata.yaml"
+          assert meta.is_file(), "board_metadata.yaml missing from bundle"
+          data = yaml.safe_load(meta.read_text())
+          assert board in data, f"board {board} missing from board_metadata.yaml"
+          for asic in data[board]:
+              hexf = root / board / f"{asic['bootfs-name']}_recovery.hex"
+              assert hexf.is_file(), f"missing {hexf.relative_to(root)}"
+              assert hexf.stat().st_size > 0, f"empty {hexf.relative_to(root)}"
+              cfg = root / asic["pyocd-config"]
+              assert cfg.is_file(), f"missing pyocd config {asic['pyocd-config']}"
+          print(f"bundle OK: {board}, {len(data[board])} ASIC(s)")
+          PY
+
+      - name: 'B2: flash algorithms were built into the bundle'
+        run: |
+          # prepare-recovery-bundle.py compiles these; a silent build failure
+          # would otherwise only show up when pyocd tries to write flash.
+          for f in build/spi1.flm build/spi_combo.flm; do
+            test -s "/tmp/bundle/$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          ls -l /tmp/bundle/build/
+
+      # ---- STAGE C: the destructive run ---------------------------------
+
+      - name: 'C1: run recovery with --force'
+        id: recovery
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -o pipefail
+          # --no-prompt is mandatory: without it the tool blocks forever
+          # waiting for an interactive probe choice.
+          python3 tt-system-firmware/scripts/tooling/blackhole_recovery/recover-blackhole.py \
+            recovery-${{ matrix.config.board }}.tar.gz ${{ matrix.config.board }} \
+            --force --no-prompt -vv 2>&1 | tee /tmp/recovery.log
+
+      - name: 'C2: recovery reported success'
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # Belt and braces. The exit code is now trustworthy, but assert on
+          # the success line too so a future early-return cannot pass silently.
+          grep -q 'Card recovered successfully' /tmp/recovery.log
+
+      # Runs even when C1 failed: C1 red + C3 green means the flash worked and
+      # only re-enumeration did not, which is a host problem, not a tool one.
+      - name: 'C3: erase and program ran for every ASIC'
+        if: ${{ !cancelled() && steps.recovery.conclusion != 'skipped' }}
+        run: |
+          # C2 only proves a card came back. This proves --force actually took
+          # the destructive path on each and every ASIC
+          python3 - <<'PY'
+          import pathlib, re, sys, yaml
+          log = pathlib.Path("/tmp/recovery.log").read_text()
+          data = yaml.safe_load(
+              pathlib.Path("/tmp/bundle/board_metadata.yaml").read_text())
+          n = len(data["${{ matrix.config.board }}"])
+          missing = []
+          for i in range(n):
+              # Anchored so "ASIC 1" cannot match "ASIC 10".
+              if not re.search(rf"^Erasing flash on ASIC {i}\.\.\.$", log, re.M):
+                  missing.append(f"no erase logged for ASIC {i}")
+              if not re.search(rf"^Flashing .* to ASIC {i}\.\.\.$", log, re.M):
+                  missing.append(f"no program logged for ASIC {i}")
+          if missing:
+              sys.exit("\n".join(missing))
+          print(f"erase + program logged for all {n} ASIC(s)")
+          PY
+
+      # ---- STAGE D: verify ----------------------------------------------
+      # The tool's own success check only proves *a* card came back. These
+      # prove the *new* firmware is what is running.
+
+      - name: 'D1: every ASIC re-enumerated'
+        if: ${{ !inputs.dry_run }}
+        run: |
+          ls -l /dev/tenstorrent/ | tee /tmp/post-devices.txt
+          python3 - <<'PY'
+          import yaml, pathlib
+          data = yaml.safe_load(pathlib.Path("/tmp/bundle/board_metadata.yaml").read_text())
+          for i in range(len(data["${{ matrix.config.board }}"])):
+              p = pathlib.Path(f"/dev/tenstorrent/{i}")
+              assert p.exists(), f"{p} missing after recovery"
+          print("all ASICs present")
+          PY
+
+      - name: 'D2: ARC and DMC respond, UPI matches'
+        if: ${{ !inputs.dry_run }}
+        run: |
+          python3 - <<'PY'
+          import os, sys, yaml, pathlib
+          sys.path.insert(0, os.path.join(os.environ["GITHUB_WORKSPACE"],
+                                          "tt-system-firmware", "scripts"))
+          import pyluwen, pcie_utils
+          data = yaml.safe_load(pathlib.Path("/tmp/bundle/board_metadata.yaml").read_text())
+          cfg = data["${{ matrix.config.board }}"]
+          chips = pyluwen.detect_chips()
+          for i, want in enumerate(cfg):
+              c = chips[i]
+              assert pcie_utils.ping_arc(c, i), f"ARC did not respond on ASIC {i}"
+              assert pcie_utils.ping_dmc(c, i), f"DMC did not respond on ASIC {i}"
+              upi = c.get_telemetry().board_id >> 36
+              assert upi == want["upi"], f"ASIC {i} UPI 0x{upi:x} != 0x{want['upi']:x}"
+          print("ARC/DMC responsive, UPI correct")
+          PY
+
+      - name: 'D3: recovery actually rewrote the board ID'
+        if: ${{ !inputs.dry_run }}
+        run: |
+          # --board-id auto makes recover-blackhole.py write a deterministic
+          # synthetic serial: upi << 36 | 1 << 32. Asserting that exact value
+          # proves the new image is running. A diff that is merely allowed to
+          # fail would pass even if the flash had silently no-opped.
+          python3 - <<'PY' | tee /tmp/post.txt
+          import pathlib, sys, yaml, pyluwen
+          meta = pathlib.Path("tt-system-firmware/scripts/board_metadata.yaml")
+          cfg = yaml.safe_load(meta.read_text())["${{ matrix.config.board }}"]
+          chips = pyluwen.detect_chips()
+          bad = []
+          for i, want in enumerate(cfg):
+              t = chips[i].get_telemetry()
+              expect = (want["upi"] << 36) | (0x1 << 32)
+              print(f"asic={i} board_id=0x{t.board_id:x} fw={t.smc_fw_version}")
+              if t.board_id != expect:
+                  bad.append(f"ASIC {i}: board_id 0x{t.board_id:x} != "
+                             f"0x{expect:x} written by recovery")
+          if bad:
+              sys.exit("\n".join(bad))
+          print("board ID matches the value recovery writes")
+          PY
+          echo "--- baseline vs post ---"
+          diff /tmp/baseline.txt /tmp/post.txt || true
+
+      # ---- STAGE E: restore ---------------------------------------------
+      # Must run even when the stages above fail, or the board is left on
+      # recovery firmware and every later job on this runner misbehaves.
+
+      - name: 'E1: download production firmware'
+        if: ${{ always() && !inputs.dry_run }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-fw-artifact.outputs.combined-fwbundle-artifact }}
+
+      - name: 'E2: reflash production firmware'
+        if: ${{ always() && !inputs.dry_run }}
+        run: |
+          tt-flash *.fwbundle --force
+          tt-smi -r || true
+
+      # ---- diagnostics ---------------------------------------------------
+
+      - name: Collect diagnostics
+        if: ${{ always() }}
+        run: |
+          mkdir -p /tmp/diag && cd /tmp/diag
+          cp /tmp/recovery.log /tmp/baseline.txt /tmp/post.txt \
+             /tmp/pre-devices.txt /tmp/post-devices.txt /tmp/probes.txt . 2>/dev/null || true
+          dmesg | tail -200 > dmesg.txt 2>&1 || true
+          lspci -vvv > lspci.txt 2>&1 || true
+          tt-smi -s > tt-smi.txt 2>&1 || true
+          python3 "$GITHUB_WORKSPACE/tt-system-firmware/scripts/dump_smc_state.py" \
+            > smc-state.txt 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: recovery-diagnostics-${{ matrix.config.board }}
+          path: /tmp/diag

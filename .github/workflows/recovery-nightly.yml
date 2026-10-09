@@ -1,0 +1,101 @@
+name: Recovery Smoke
+
+# Tier 1 recovery checks: prove the recovery tooling still *starts*.
+#
+# These run no firmware and need no card. They exist because the recovery
+# image's runtime stage installs its Python dependencies from a hand-written
+# list that is independent of the build stage's "west packages pip --install".
+# An import added to scripts/ that nobody adds to that list builds green and
+# only fails on a user's machine (see v19.15.0 / jsonschema).
+
+on:
+  schedule:
+    # An hour ahead of the HW Soak cron so failures land before it starts.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  # Catches a missing dependency BEFORE it is released: installs exactly what
+  # the runtime stage installs, against the scripts in the tree right now.
+  # Also catches upstream rot, since that pip list pins no versions.
+  deps-smoke:
+    name: Recovery deps vs. current scripts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract the runtime stage's pip list from the Dockerfile
+        id: deps
+        run: |
+          python3 - <<'PY' | tee -a "$GITHUB_OUTPUT"
+          import re, pathlib
+          df = pathlib.Path("scripts/tooling/blackhole_recovery/Dockerfile")
+          text = df.read_text().replace("\\\n", " ")
+          # Only the final stage ships in the published image; earlier stages
+          # are thrown away, so their dependencies prove nothing.
+          runtime = text[[m.start() for m in re.finditer(r"^FROM ", text, re.M)][-1]:]
+          m = re.search(r"^RUN\s+pip install\s+(.*?)(?:&&|$)", runtime, re.M)
+          assert m, f"no 'RUN pip install' found in the final stage of {df}"
+          pkgs = " ".join(m.group(1).split())
+          assert pkgs, f"empty pip list parsed from {df}"
+          print(f"pkgs={pkgs}")
+          PY
+
+      - name: Install them into a clean venv
+        run: |
+          python3 -m venv /tmp/recovery-venv
+          /tmp/recovery-venv/bin/pip install --quiet ${{ steps.deps.outputs.pkgs }}
+
+      - name: Recovery tool must start
+        run: |
+          # --help runs every top-level import, then prints usage and exits 0.
+          # A missing module is either a traceback (exit 1) or the scripts' own
+          # "Required modules not found" guard (exit 69). Both fail this step.
+          /tmp/recovery-venv/bin/python3 \
+            scripts/tooling/blackhole_recovery/recover-blackhole.py --help | tee /tmp/help.txt
+          grep -q '^usage:' /tmp/help.txt
+
+      - name: Record resolved versions
+        if: always()
+        run: /tmp/recovery-venv/bin/pip freeze > /tmp/pip-freeze.txt
+
+      # Diff this against a previous run to see which upstream package moved.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-pip-freeze
+          path: /tmp/pip-freeze.txt
+
+  # Catches an already-released image being broken, which is what actually
+  # happened with v19.15.0. Tests the real published artifact, not a rebuild.
+  published-smoke:
+    name: Last released recovery image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find the newest stable release tag
+        id: tag
+        run: |
+          # Sort by date, not by version. The repo still carries an abandoned
+          # v80.x series from 2025 that outranks the current v19.x line on a
+          # version sort, and predates the tt-zephyr-platforms rename.
+          TAG="$(git tag -l 'v*' --sort=-creatordate | grep -v -- '-rc' | head -n1)"
+          test -n "$TAG" || { echo "no stable v* tag found"; exit 1; }
+          echo "tag=$TAG" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Recovery tool must start inside the published image
+        run: |
+          # Scripts live under /tt-system-firmware for v19.6.0 and later. Older
+          # tags used /tt-zephyr-platforms; we never test back that far.
+          IMAGE="ghcr.io/${{ github.repository }}/recovery-image:${{ steps.tag.outputs.tag }}"
+          docker run --rm "$IMAGE" python3 \
+            /tt-system-firmware/scripts/tooling/blackhole_recovery/recover-blackhole.py --help \
+            | tee /tmp/help.txt
+          grep -q '^usage:' /tmp/help.txt
