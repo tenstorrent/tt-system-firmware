@@ -5,20 +5,18 @@
  */
 
 /*
- * Telemetry table plus the small accessors that the always-compiled message
- * handlers use (e.g. cm2dm_msg reads tags, noc_init records the NOC-translation
- * state) are built unconditionally so they are available to SMC recovery.
+ * Blackhole telemetry table (tag N lives at offset N) and slot lookup are built
+ * unconditionally so the common accessors work in SMC recovery.
  *
- * The periodic collection of dynamic telemetry (clocks, GDDR, ETH, power, fan,
- * ...) and one-time population of the static values depend on the SPI firmware
- * tables and many mission-only subsystems, so that code is compiled only when
+ * The collection of dynamic telemetry (clocks, GDDR, ETH, power, fan, ...) and
+ * one-time population of the static values depend on the SPI firmware tables and
+ * many mission-only subsystems, so that code is compiled only when
  * CONFIG_BH_FWTABLE is set (mission firmware, not recovery).
  */
 
 #include "telemetry.h"
+#include "telemetry_platform.h"
 
-#include <float.h> /* for FLT_MAX */
-#include <math.h>  /* for floor */
 #include <stdint.h>
 
 #include <zephyr/logging/log.h>
@@ -42,21 +40,18 @@
 
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/smbus_target.h>
-#include <tenstorrent/sys_init_defines.h>
 #include <zephyr/drivers/misc/bh_fwtable.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control/clock_control_tt_bh.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/init.h>
-#if defined(HAS_APP_VERSION)
-#include <zephyr/app_version.h>
-#else
-#define APPVERSION 0x00000000
-#endif
 #endif
 
-LOG_MODULE_REGISTER(telemetry, CONFIG_TT_APP_LOG_LEVEL);
+LOG_MODULE_DECLARE(telemetry, CONFIG_TT_APP_LOG_LEVEL);
+
+/* Telemetry tags are at offset `tag` in the telemetry buffer */
+#define TELEM_OFFSET(tag) (tag)
 
 /**
  * @defgroup telemetry_table Telemetry Table
@@ -195,122 +190,14 @@ static struct telemetry_table telemetry_table = {
  */
 static uint32_t *telemetry = &telemetry_table.telemetry[0];
 
-uint32_t ConvertFloatToTelemetry(float value)
+int telemetry_platform_slot(uint16_t tag)
 {
-	/* Convert float to signed int 16.16 format */
-
-	/* Handle error condition */
-	if (value == FLT_MAX || value == -FLT_MAX) {
-		return 0x80000000;
-	}
-
-	float abs_value = fabsf(value);
-	uint16_t int_part = floorf(abs_value);
-	uint16_t frac_part = (abs_value - int_part) * 65536;
-	uint32_t ret_value = (int_part << 16) | frac_part;
-	/* Return the 2's complement if the original value was negative */
-	if (value < 0) {
-		ret_value = -ret_value;
-	}
-	return ret_value;
+	return tag < TAG_COUNT ? (int)TELEM_OFFSET(tag) : -1;
 }
 
-float ConvertTelemetryToFloat(int32_t value)
+uint32_t *telemetry_platform_data(void)
 {
-	/* Convert signed int 16.16 format to float */
-	if (value == INT32_MIN) {
-		return FLT_MAX;
-	} else {
-		return value / 65536.0;
-	}
-}
-
-void UpdateDmFwVersion(uint32_t bl_version, uint32_t app_version)
-{
-	telemetry[TAG_DM_BL_FW_VERSION] = bl_version;
-	telemetry[TAG_DM_APP_FW_VERSION] = app_version;
-}
-
-void UpdateTelemetryNocTranslation(bool translation_enabled)
-{
-	/* Note that this may be called before init_telemetry. */
-	telemetry[TAG_NOC_TRANSLATION] = translation_enabled;
-}
-
-void UpdateTelemetryBoardPowerLimit(uint32_t power_limit)
-{
-	telemetry[TAG_BOARD_POWER_LIMIT] = power_limit;
-}
-
-void UpdateTelemetryTdpLimit(uint32_t tdp_limit)
-{
-	telemetry[TAG_TDP_LIMIT_MAX] = tdp_limit;
-}
-
-void UpdateTelemetryThermTripCount(uint16_t therm_trip_count)
-{
-	telemetry[TAG_THERM_TRIP_COUNT] = therm_trip_count;
-}
-
-void UpdateTelemetryHostAiclkLimit(uint32_t fmax)
-{
-	telemetry[TAG_HOST_AICLK_LIMIT] = fmax;
-}
-
-void UpdateTelemetryKernelThrottler(bool enabled, uint32_t stop_nops_freq)
-{
-	telemetry_feature_flags_0_t active_config = {
-		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
-	};
-
-	active_config.bits.kernel_nops_at_aiclk_fmin = enabled ? 1U : 0U;
-	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
-	telemetry[TAG_KERNEL_THROTTLER] = (enabled ? 1U : 0U) | ((stop_nops_freq & 0xFFFFU) << 16U);
-}
-
-void UpdateTelemetryFlashJedecId(uint32_t jedec_id)
-{
-	/* Note that this is called before init_telemetry;
-	 * write_static_telemetry must not clear it.
-	 */
-	telemetry[TAG_FLASH_JEDEC_ID] = jedec_id;
-}
-
-uint32_t GetTelemetryFlashJedecId(void)
-{
-	return telemetry[TAG_FLASH_JEDEC_ID];
-}
-
-void UpdateTelemetryGddrThermTrip(bool enabled)
-{
-	telemetry_feature_flags_0_t active_config = {
-		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
-	};
-
-	active_config.bits.gddr_therm_trip = enabled ? 1U : 0U;
-	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
-}
-
-telemetry_feature_flags_bits_0_t GetActiveFeatures(void)
-{
-	telemetry_feature_flags_0_t active_config = {
-		.u32_all = telemetry[TAG_FW_ACTIVE_CONFIG_0],
-	};
-
-	return active_config.bits;
-}
-
-bool GetTelemetryTagValid(uint16_t tag)
-{
-	return tag < TAG_COUNT;
-}
-
-uint32_t GetTelemetryTag(uint16_t tag)
-{
-	if (tag >= TAG_COUNT) {
-		return -1;
-	}
-	return telemetry[tag];
+	return telemetry;
 }
 
 #ifdef CONFIG_BH_FWTABLE
@@ -320,14 +207,6 @@ static const struct device *const pll_dev_1 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL
 static const struct device *const pll_dev_4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
 static const struct device *const smbus_target_dev =
 	DEVICE_DT_GET_OR_NULL(DT_NODELABEL(smbus_target0));
-
-static struct k_timer telem_update_timer;
-static struct k_work telem_update_worker;
-static int telem_update_interval = TELEM_UPDATE_INTERVAL_DEFAULT_MS;
-/* Set once StartTelemetryTimer() has run. Guards against a host interval change arriving
- * between init_telemetry() and StartTelemetryTimer() and starting the timer early.
- */
-static bool telem_timer_started;
 
 static void UpdateEthTelemetry(void)
 {
@@ -435,7 +314,7 @@ static uint32_t get_gddr_mrisc_endpoints(void)
 	return packed;
 }
 
-static void write_static_telemetry(uint32_t app_version)
+void telemetry_platform_write_static(uint32_t app_version)
 {
 	telemetry_feature_flags_0_t fw_capabilities = {0};
 	telemetry_feature_flags_0_t active_config = {0};
@@ -464,9 +343,9 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_ASIC_ID_HIGH] = READ_FUNCTIONAL_EFUSE(ASIC_ID_HIGH);
 	telemetry[TAG_ASIC_ID_LOW] = READ_FUNCTIONAL_EFUSE(ASIC_ID_LOW);
 	telemetry[TAG_HARVESTING_STATE] = 0x00000000;
-	telemetry[TAG_UPDATE_TELEM_SPEED] = telem_update_interval; /* Expected speed of
-								    * update in ms
-								    */
+	telemetry[TAG_UPDATE_TELEM_SPEED] = telemetry_update_interval_ms(); /* Expected speed of
+									     * update in ms
+									     */
 
 	/* Gather FW versions from FW themselves */
 	telemetry[TAG_ETH_FW_VERSION] = GetEthFwVersion(0);
@@ -519,12 +398,12 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 }
 
-static void update_telemetry(void)
+void telemetry_platform_update(void)
 {
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_START);
 	TelemetryInternalData telemetry_internal_data;
 
-	ReadTelemetryInternal(telem_update_interval, &telemetry_internal_data);
+	ReadTelemetryInternal(telemetry_update_interval_ms(), &telemetry_internal_data);
 
 	/* Get all dynamically updated values */
 	telemetry[TAG_VCORE] =
@@ -611,87 +490,15 @@ static void update_telemetry(void)
 	/* reported in W, truncated to uint32_t */
 	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
 	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
-	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telem_update_interval);
+	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telemetry_update_interval_ms());
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
 	SetPostCode(POST_CODE_SRC_CMFW, POST_CODE_TELEMETRY_END);
 }
 
-/* Handler functions for zephyr timer and worker objects */
-static void telemetry_work_handler(struct k_work *work)
+void telemetry_platform_publish(void)
 {
-	/* Repeat fetching of dynamic telemetry values */
-	update_telemetry();
-}
-static void telemetry_timer_handler(struct k_timer *timer)
-{
-	k_work_submit(&telem_update_worker);
-}
-
-/* Zephyr timer object submits a work item to the system work queue whose thread performs the task
- * on a periodic basis.
- */
-/* See:
- * https://docs.zephyrproject.org/latest/kernel/services/timing/timers.html#using-a-timer-expiry-function
- */
-static K_WORK_DEFINE(telem_update_worker, telemetry_work_handler);
-static K_TIMER_DEFINE(telem_update_timer, telemetry_timer_handler, NULL);
-
-int init_telemetry(void)
-{
-	write_static_telemetry(APPVERSION);
-	/* fill the dynamic values once before starting timed updates */
-	update_telemetry();
-
 	/* Publish the telemetry data pointer for readers in Scratch RAM */
 	WriteReg(TELEMETRY_DATA_REG_ADDR, (uint32_t)&telemetry[0]);
 	WriteReg(TELEMETRY_TABLE_REG_ADDR, (uint32_t)&telemetry_table);
-
-	return 0;
 }
-SYS_INIT_APP(init_telemetry);
-
-int StartTelemetryTimer(void)
-{
-	/* Start the timer to update the dynamic telemetry values
-	 * Duration (time interval before the timer expires for the first time) and
-	 * Period (time interval between all timer expirations after the first one)
-	 * are both set to telem_update_interval.
-	 *
-	 * Split from init_telemetry because the work task has I2C conflicts with
-	 * other init functions. Zephyr's driver model would solve this.
-	 */
-	k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
-		      K_MSEC(telem_update_interval));
-	telem_timer_started = true;
-	return 0;
-}
-
-uint8_t TelemetrySetUpdateInterval(uint32_t interval_ms)
-{
-	if (interval_ms == 0) {
-		interval_ms = TELEM_UPDATE_INTERVAL_DEFAULT_MS;
-	} else if (interval_ms < TELEM_UPDATE_INTERVAL_MIN_MS) {
-		LOG_WRN("telemetry update interval %u ms rejected, must be 0 (restore default of "
-			"%d ms) or at least %d ms",
-			interval_ms, TELEM_UPDATE_INTERVAL_DEFAULT_MS,
-			TELEM_UPDATE_INTERVAL_MIN_MS);
-		return 1;
-	}
-
-	telem_update_interval = interval_ms;
-	/* Report the new rate to readers of the telemetry table. */
-	telemetry[TAG_UPDATE_TELEM_SPEED] = telem_update_interval;
-
-	/* Restart the timer so the new period takes effect immediately. Before
-	 * StartTelemetryTimer() runs it will pick the value up on its own.
-	 */
-	if (telem_timer_started) {
-		k_timer_start(&telem_update_timer, K_MSEC(telem_update_interval),
-			      K_MSEC(telem_update_interval));
-	}
-
-	LOG_INF("telemetry update interval set to %d ms", telem_update_interval);
-	return 0;
-}
-SYS_INIT_APP(StartTelemetryTimer);
 #endif /* CONFIG_BH_FWTABLE */
