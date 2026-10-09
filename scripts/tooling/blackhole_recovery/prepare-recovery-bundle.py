@@ -173,10 +173,13 @@ def main():
             ),
         ]
         print(f"Building flash algorithms: {' '.join(cmd)}")
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        # check=True: a silent FLM build failure otherwise surfaces much later
+        # as a bare FileNotFoundError on spi1.flm, with the compiler output
+        # already discarded.
+        subprocess.run(cmd, check=True)
         cmd = ["make", "-C", f"{temp_dir}/build-bh-flm", "-j", str(os.cpu_count())]
         print(f"Building flash algorithms: {' '.join(cmd)}")
-        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+        subprocess.run(cmd, check=True)
         os.mkdir(Path(temp_dir) / "build")
         # Array of files to copy
         file_ops = [

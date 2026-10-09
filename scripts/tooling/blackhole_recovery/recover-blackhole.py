@@ -60,7 +60,7 @@ def parse_args():
         action="store_true",
         help="Forcibly recover the card, even if sanity checks pass",
     )
-    pyocd_utils.add_common_args(parser, verbose=False)
+    pyocd_utils.add_common_args(parser)
     return parser.parse_args()
 
 
@@ -145,6 +145,7 @@ def check_card_status(board_config):
 
 def main():
     args = parse_args()
+    pyocd_utils.setup_logging(args.verbose)
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         tarfile.open(args.bundle, "r:gz") as tar,
@@ -156,11 +157,11 @@ def main():
             )
         except FileNotFoundError:
             print("Error: board_metadata.yaml not found in recovery bundle")
-            return
+            sys.exit(1)
 
         if args.board not in BOARD_ID_MAP:
             print(f"Error: board {args.board} not found in recovery bundle")
-            return
+            sys.exit(1)
 
         sys.path.append(str(Path(temp_dir) / args.board / "python_proto_files"))
 
@@ -212,7 +213,7 @@ def main():
             )
             if not recovery_hex.exists():
                 print(f"Error: recovery hex file {recovery_hex} not found in bundle")
-                return
+                sys.exit(1)
             if args.board_id == "auto":
                 board_id = asic["upi"] << 36 | (0x1 << 32)
             else:
