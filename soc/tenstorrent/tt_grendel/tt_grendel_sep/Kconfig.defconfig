@@ -1,0 +1,31 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+if TT_GRENDEL_SEP
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 800000
+
+config MP_MAX_NUM_CPUS
+	default 1
+
+config SYS_CLOCK_EXISTS
+	default n
+
+config NUM_IRQS
+	default 32
+
+# BL1 executes from ICCM SRAM with its data in DCCM.
+config HARVARD
+	default y
+
+config RGF_NUM_BANKS
+	default 1
+
+config ARC_FIRQ
+	default n
+
+config CACHE_MANAGEMENT
+	default n
+
+endif # TT_GRENDEL_SEP

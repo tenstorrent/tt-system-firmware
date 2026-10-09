@@ -4,6 +4,7 @@ family:
       - name: tt_keraunos
         cpuclusters:
           - name: smc
+          - name: sep
       - name: tt_mimir
         cpuclusters:
           - name: smc

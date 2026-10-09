@@ -1,0 +1,12 @@
+identifier: tt_mmk/tt_keraunos/sep
+name: Tenstorrent MMK Keraunos SEP
+type: mcu
+arch: arc
+toolchain:
+  - zephyr
+ram: 64
+testing:
+  ignore_tags:
+    - net
+    - bluetooth
+vendor: tenstorrent
