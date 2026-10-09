@@ -11,6 +11,8 @@ rsource "bh_fwtable/Kconfig"
 rsource "tt_d2d/Kconfig"
 rsource "tt_grendel_filter/Kconfig"
 rsource "tt_grendel_hsio/Kconfig"
+rsource "tt_grendel_i3c_controller/Kconfig"
+rsource "tt_grendel_i3c_target/Kconfig"
 rsource "tt_mimir_remote_boot/Kconfig"
 rsource "tt_smc_remoteproc/Kconfig"
 # zephyr-keep-sorted-stop

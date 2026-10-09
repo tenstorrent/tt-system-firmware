@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent Grendel inter-die command controller over I3C.
+
+  Issues commands to a tenstorrent,grendel-i3c-target on the remote die and
+  waits for them to complete. The controller binds directly to the I3C target
+  node that also represents the remote SMC.
+
+compatible: "tenstorrent,grendel-i3c-controller"
+
+include: base.yaml
+
+properties:
+  i3c-device:
+    type: phandle
+    required: true
+    description: |
+      I3C target device for the remote die this device sends commands to.
