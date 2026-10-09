@@ -19,6 +19,7 @@
 	status = "okay";
 	target-mode;
 	mipi-instance = <0x8>;
+	dcr = <0xcc>;
 };
 
 / {
