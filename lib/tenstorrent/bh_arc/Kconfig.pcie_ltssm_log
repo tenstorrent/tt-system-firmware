@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_BH_ARC_PCIE_LTSSM_LOG
+	bool "PCIe LTSSM training log"
+	depends on !TT_SMC_RECOVERY
+	help
+	  Debug only: log PCIe LTSSM transitions from a low-priority thread into
+	  a CSM ring published in scratch registers 24/25 for the host to read.
+
+if TT_BH_ARC_PCIE_LTSSM_LOG
+
+config TT_BH_ARC_PCIE_LTSSM_LOG_ENTRIES
+	int "LTSSM log capacity in entries"
+	default 4096
+	range 8 8192
+	help
+	  Ring capacity shared by both PCIe instances, 24 bytes of CSM per entry.
+	  8192 is the most CSM-APP can hold.
+
+config TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+	bool "Also log per-lane CDR lock"
+	help
+	  Also log per-lane CDR lock once past Detect. Costs a NOC read per lane
+	  per pass, which lowers LTSSM edge resolution; uses NOC2AXI TLBs 7 and 8.
+
+config TT_BH_ARC_PCIE_LTSSM_LOG_CDR_POLL_DIV
+	int "Sample the PHY's CDR lock once every N passes"
+	depends on TT_BH_ARC_PCIE_LTSSM_LOG_CDR
+	default 1
+	range 1 4096
+	help
+	  Raise to trade CDR timing resolution for LTSSM edge resolution.
+
+endif # TT_BH_ARC_PCIE_LTSSM_LOG
