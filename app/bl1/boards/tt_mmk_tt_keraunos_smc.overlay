@@ -15,11 +15,25 @@
 / {
 	mimir_boot: mimir-remote-boot {
 		compatible = "tenstorrent,mimir-remote-boot";
-		smc-remoteproc = <&remoteproc>;
+		smc-remoteproc = <&remoteproc_m1>;
 		fw-toc-index = <1>;
 		d2d-fw-toc-index = <2>;
 		gddr-params-toc-index = <3>;
 	};
+
+	grendel_i3c_controller_m0: grendel-i3c-controller-m0 {
+		compatible = "tenstorrent,grendel-i3c-controller";
+		i3c-device = <&remoteproc_m0>;
+	};
+
+	grendel_i3c_controller_m1: grendel-i3c-controller-m1 {
+		compatible = "tenstorrent,grendel-i3c-controller";
+		i3c-device = <&remoteproc_m1>;
+	};
+};
+
+&remoteproc_m1 {
+	status = "okay";
 };
 
 &{/soc} {
@@ -35,6 +49,13 @@
 		compatible = "tenstorrent,scratch-reg";
 		reg = <0x0 0xc0010150 0x0 0x4>;
 		status = "okay";
+	};
+
+	m0_mbox: mbox@1300018000 {
+		compatible = "tenstorrent,grendel-mbox";
+		reg = <0x13 0x00018000 0x0 0x20000>;
+		channel-pairs = <32>;
+		#mbox-cells = <1>;
 	};
 
 	m1_mbox: mbox@1308018000 {

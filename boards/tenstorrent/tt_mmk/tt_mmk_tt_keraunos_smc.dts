@@ -45,10 +45,18 @@
 	i3c-scl-hz = <1000000>;
 	i2c-scl-hz = <400000>;
 
-	remoteproc: remoteproc@0a7c0013f001 {
+	remoteproc_m0: remoteproc@0a7c0013f000 {
+		compatible = "tenstorrent,smc-remoteproc";
+		/* No static address, PID of 0x0a7c0013f000 */
+		reg = <0x0 0x0a7c 0x0013f000>;
+		status = "disabled";
+	};
+
+	remoteproc_m1: remoteproc@0a7c0013f001 {
 		compatible = "tenstorrent,smc-remoteproc";
 		/* No static address, PID of 0x0a7c0013f001 */
 		reg = <0x0 0x0a7c 0x0013f001>;
+		status = "disabled";
 	};
 };
 

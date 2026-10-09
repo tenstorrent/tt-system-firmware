@@ -12,7 +12,3 @@
 &i3c1 {
 	status = "disabled";
 };
-
-&remoteproc {
-	status = "disabled";
-};

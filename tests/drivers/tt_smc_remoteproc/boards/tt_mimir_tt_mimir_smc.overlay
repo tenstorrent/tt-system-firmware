@@ -1,6 +1,12 @@
 #include <freq.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 
+/ {
+	aliases {
+		remoteproc = &remoteproc;
+	};
+};
+
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;

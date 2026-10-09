@@ -14,11 +14,7 @@
 	init-metadata;
 };
 
-/* Not used by BUN2/BL0P5; disables the remoteproc driver and the I3C bus it depends on */
-&remoteproc {
-	status = "disabled";
-};
-
+/* Not used by BUN2/BL0P5; disables the I3C bus the remoteproc driver depends on */
 &i3c1 {
 	status = "disabled";
 };
