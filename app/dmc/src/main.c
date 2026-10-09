@@ -309,6 +309,12 @@ uint16_t detect_max_power(void)
 	static const struct gpio_dt_spec psu_sense1 =
 		GPIO_DT_SPEC_GET_OR(DT_PATH(psu_sense1), gpios, {0});
 
+	if (psu_sense0.port == NULL || psu_sense1.port == NULL ||
+	    !device_is_ready(psu_sense0.port) || !device_is_ready(psu_sense1.port)) {
+		/* Boards without PSU sense inputs use the maximum supported limit. */
+		return 600;
+	}
+
 	gpio_pin_configure_dt(&psu_sense0, GPIO_INPUT);
 	gpio_pin_configure_dt(&psu_sense1, GPIO_INPUT);
 
