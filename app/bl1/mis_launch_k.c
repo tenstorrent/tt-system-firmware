@@ -5,7 +5,9 @@
 
 #include "mis_launch.h"
 #include <string.h>
+#include <tenstorrent/gr_smc.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/misc/tt_bundle_loader.h>
 #include <zephyr/kernel.h>
@@ -152,22 +154,7 @@ void launch_mis(void)
 	/* We don't have to copy the image. BUN3 is placed so that we can immediately jump to the
 	 * right location
 	 */
-	__asm__ volatile("fence\nfence.i" ::: "memory");
-
-	LOG_INF("Jumping to K-SMC-MIS at load_addr 0x%llx", k_mis_entry->load_addr);
-
 	/* G) Jump to SMC MIS. Does not return; MIS owns the core from here on. */
-	/* mret gives MIS a clean entry: M-mode, MIE=0, no BL1 mtvec leaking through */
 	sys_write64(k_mis_entry->entry_point, SMC_RESET_VECTOR0_ADDR);
-	__asm__ volatile("csrw mepc, %0\n"
-			 "li   t0, 0x1800\n" /* MPP=M-mode, MIE=0, MPIE=0 */
-			 "csrw mstatus, t0\n"
-			 "mret\n"
-			 :
-			 : "r"((uintptr_t)k_mis_entry->entry_point)
-			 : "t0");
-
-	while (1) {
-		k_msleep(100);
-	}
+	gr_smc_jump_to(k_mis_entry->entry_point);
 }

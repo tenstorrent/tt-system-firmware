@@ -4,11 +4,13 @@
  */
 
 #include "mis_launch.h"
+#include <tenstorrent/gr_smc.h>
 #include <zephyr/drivers/misc/tt_bundle_loader.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 
 LOG_MODULE_REGISTER(mis_launch_m, CONFIG_LOG_DEFAULT_LEVEL);
 
@@ -77,22 +79,6 @@ void launch_mis(void)
 	k_sem_take(&ready_sem, K_FOREVER);
 	LOG_INF("M-SMC-MIS signalled ready");
 
-	__asm__ volatile("fence\nfence.i" ::: "memory");
-
-	LOG_INF("Jumping to M-SMC-MIS at %p", (void *)(uintptr_t)MIS_ENTRY_POINT);
-
 	/* Jump to M-SMC-MIS. Does not return; M-SMC-MIS owns the core from here on. */
-	__asm__ volatile("csrw mepc, %0\n"
-			 "li   t0, 0x1800\n" /* MPP=M-mode, MIE=0, MPIE=0 */
-			 "csrw mstatus, t0\n"
-			 "mret\n"
-			 :
-			 : "r"((uintptr_t)MIS_ENTRY_POINT)
-			 : "t0");
-
-	/* Unreachable unless M-SMC-MIS returns, which means the handoff failed and the
-	 * core's state (stack, vector table, PMP, ...) can no longer be trusted.
-	 */
-	LOG_ERR("M-SMC-MIS unexpectedly returned");
-	k_panic();
+	gr_smc_jump_to(MIS_ENTRY_POINT);
 }

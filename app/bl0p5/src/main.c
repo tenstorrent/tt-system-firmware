@@ -12,6 +12,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/sys_io.h>
+#include <tenstorrent/gr_smc.h>
 
 LOG_MODULE_REGISTER(main, CONFIG_TT_APP_LOG_LEVEL);
 
@@ -74,20 +75,10 @@ static int bl1_launcher_init(void)
 			      bl1_entry->offset),
 	       bl1_entry->length);
 
-	__asm__ volatile("fence\nfence.i" ::: "memory");
-
-	LOG_INF("Jumping to SMC BL1 at load_addr %p", (void *)(uintptr_t)bl1_entry->load_addr);
+	sys_write64(bl1_entry->entry_point, SMC_RESET_VECTOR0_ADDR);
 
 	/* G) Jump to SMC BL1. Does not return; BL1 owns the core from here on. */
-	/* mret gives BL1 a clean entry: M-mode, MIE=0, no BL0P5 mtvec leaking through */
-	sys_write64(bl1_entry->entry_point, SMC_RESET_VECTOR0_ADDR);
-	__asm__ volatile("csrw mepc, %0\n"
-			 "li   t0, 0x1800\n" /* MPP=M-mode, MIE=0, MPIE=0 */
-			 "csrw mstatus, t0\n"
-			 "mret\n"
-			 :
-			 : "r"((uintptr_t)bl1_entry->entry_point)
-			 : "t0");
+	gr_smc_jump_to((uintptr_t)bl1_entry->entry_point);
 
 	return 0;
 }
