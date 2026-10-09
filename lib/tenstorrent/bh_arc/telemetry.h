@@ -79,8 +79,16 @@ typedef struct {
 	 */
 	uint32_t gddr_therm_trip: 1;
 
+	/** @brief ECC feature: NOC header ECC, Tensix L1 ECC scrubber, and the
+	 * NOC / L1 ECC error counters in telemetry.
+	 *
+	 * Seeded from @c feature_enable.ecc_en in the firmware table (overridable
+	 * via CCFGOVR).
+	 */
+	uint32_t ecc: 1;
+
 	/** @brief Reserved for future use. */
-	uint32_t reserved: 30;
+	uint32_t reserved: 29;
 } telemetry_feature_flags_bits_0_t;
 
 /** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
@@ -494,12 +502,53 @@ typedef union {
  */
 #define TAG_FLASH_JEDEC_ID 80
 
+/**
+ * @brief Tensix NOC 0 NIU memory-parity error count since boot.
+ *
+ * Sum over every enabled Tensix tile's NIU @c NUM_MEM_PARITY_ERR counter, accumulated
+ * in firmware: each tile's hardware counter is read and zeroed when its ECC error
+ * interrupt is serviced, so this is a lifetime total that saturates at UINT32_MAX.
+ * Harvested columns are omitted. ETH, GDDR, PCIE and ARC NIUs are not included.
+ */
+#define TAG_NOC_ECC_MEM_PARITY 81
+
+/**
+ * @brief Tensix NOC 0 NIU header single-bit error count since boot.
+ *
+ * Sum of @c NUM_HEADER_1B_ERR counters, collected as @ref TAG_NOC_ECC_MEM_PARITY.
+ */
+#define TAG_NOC_ECC_HDR_SBE 82
+
+/**
+ * @brief Tensix NOC 0 NIU header double-bit error count since boot.
+ *
+ * Sum of @c NUM_HEADER_2B_ERR counters, collected as @ref TAG_NOC_ECC_MEM_PARITY.
+ */
+#define TAG_NOC_ECC_HDR_DBE 83
+
+/**
+ * @brief Tensix L1 single-bit error count since boot.
+ *
+ * Sum of L1 SBE counters (@c ECC_STATUS sel=2) over every enabled Tensix tile,
+ * accumulated in firmware when the tile's ECC error interrupt is serviced and the
+ * counter is zeroed. Harvested columns are omitted; a tile whose clock is gated holds
+ * its interrupt until it is ungated, and is counted then.
+ */
+#define TAG_TENSIX_L1_SBE 84
+
+/**
+ * @brief Tensix L1 double-bit error count since boot.
+ *
+ * Sum of L1 DBE counters, collected as @ref TAG_TENSIX_L1_SBE.
+ */
+#define TAG_TENSIX_L1_DBE 85
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 81
+#define TAG_COUNT 86
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)

@@ -38,10 +38,41 @@
 #define DDR_COORD_TRANSLATE_TABLE(n) ((n) + 0x16)
 
 /* NIU_CFG_0 fields */
+#define NIU_CFG_0_ECC_MEM_PARITY_INT_EN 9
+#define NIU_CFG_0_ECC_HEADER_SBE_INT_EN 10
+#define NIU_CFG_0_ECC_HEADER_DBE_INT_EN 11
 #define NIU_CFG_0_TILE_CLK_OFF          12
 #define NIU_CFG_0_TILE_HEADER_STORE_OFF 13 /* NOC2AXI only */
 #define NIU_CFG_0_NOC_ID_TRANSLATE_EN   14
 #define NIU_CFG_0_AXI_SLAVE_ENABLE      15
+
+/*
+ * NIU_CFG_0[11:9] let the NIU raise its ECC error level (int-enable AND counter != 0) into
+ * the tile's ECC manager, which is what the Tensix error interrupt edge-detects. All three
+ * sources, matching TENSIX_ECC_CTRL_IRQ_ARMED.
+ */
+#define NIU_CFG_0_ECC_IRQ_EN                                                                       \
+	(BIT(NIU_CFG_0_ECC_MEM_PARITY_INT_EN) | BIT(NIU_CFG_0_ECC_HEADER_SBE_INT_EN) |             \
+	 BIT(NIU_CFG_0_ECC_HEADER_DBE_INT_EN))
+
+/*
+ * ROUTER_CFG_0 ECC bits:
+ *   [16] mem parity error reporting on router VC buffers
+ *   [17] header chkbits encode on outbound flits
+ *   [18] header SECDED check on inbound flits
+ *
+ * Encode must be on chip-wide before check, or in-flight headers without
+ * checkbits look like ECC errors.
+ */
+#define ROUTER_CFG_0_MEM_PARITY_EN     16
+#define ROUTER_CFG_0_HEADER_CHKBITS_EN 17
+#define ROUTER_CFG_0_HEADER_SECDED_EN  18
+#define ROUTER_CFG_0_ECC_ENCODE        BIT(ROUTER_CFG_0_HEADER_CHKBITS_EN)
+#define ROUTER_CFG_0_ECC_CHECK                                                                     \
+	(BIT(ROUTER_CFG_0_MEM_PARITY_EN) | BIT(ROUTER_CFG_0_HEADER_SECDED_EN))
+
+/* Time for pre-encode packets to drain. BH is 17x12; 10 us is thousands of NOC cycles. */
+#define NOC_ECC_DRAIN_WAIT_US 10
 
 #define NOC_TRANSLATE_ID_WIDTH      5
 #define NOC_TRANSLATE_TABLE_XY_SIZE (32 / NOC_TRANSLATE_ID_WIDTH)
@@ -59,6 +90,24 @@ static const uint8_t kTlbIndex;
 static const uint32_t kFirstCfgRegIndex = 0x100 / sizeof(uint32_t);
 
 static bool noc_translation_enabled;
+static bool noc_ecc_enabled;
+
+/* Set while Tensix encode is down. Remote ECC reads in that window can wedge ARC.
+ * Publish and sample it under noc_ecc_state_lock so a scan cannot pass the check
+ * and then race a reset.
+ */
+static bool tensix_routers_down;
+static K_MUTEX_DEFINE(noc_ecc_state_lock);
+
+void NocEccStateLock(void)
+{
+	k_mutex_lock(&noc_ecc_state_lock, K_FOREVER);
+}
+
+void NocEccStateUnlock(void)
+{
+	k_mutex_unlock(&noc_ecc_state_lock);
+}
 
 static volatile void *SetupNiuTlbPhys(uint8_t tlb_index, uint8_t px, uint8_t py, uint8_t noc_id)
 {
@@ -90,6 +139,19 @@ static void WriteNocCfgReg(volatile void *regs, uint32_t cfg_reg_index, uint32_t
 	uint32_t address = (uint32_t)regs + sizeof(uint32_t) * (kFirstCfgRegIndex + cfg_reg_index);
 
 	WriteReg(address, value);
+}
+
+/* Guards NOC_ECC_TLB. Lives here rather than noc_ecc.c so the recovery image links. */
+static K_MUTEX_DEFINE(noc_ecc_tlb_lock);
+
+void NocEccTlbLock(void)
+{
+	k_mutex_lock(&noc_ecc_tlb_lock, K_FOREVER);
+}
+
+void NocEccTlbUnlock(void)
+{
+	k_mutex_unlock(&noc_ecc_tlb_lock);
 }
 
 static void EnableOverlayCg(uint8_t tlb_index, uint8_t px, uint8_t py)
@@ -157,6 +219,114 @@ static void ProgramBroadcastExclusion(uint16_t disabled_tensix_columns)
 	}
 }
 
+/* Chip-wide ROUTER_CFG_0 read-modify-write. */
+static void UpdateCfgRegAllNodes(uint32_t reg_index, uint32_t set, uint32_t clear)
+{
+	NocEccTlbLock();
+
+	for (uint32_t py = 0; py < NOC_Y_SIZE; py++) {
+		for (uint32_t px = 0; px < NOC_X_SIZE; px++) {
+			for (uint32_t noc_id = 0; noc_id < NUM_NOCS; noc_id++) {
+				volatile uint32_t *noc_regs =
+					SetupNiuTlbPhys(NOC_ECC_TLB, px, py, noc_id);
+				uint32_t value = ReadNocCfgReg(noc_regs, reg_index);
+
+				value = (value & ~clear) | set;
+				WriteNocCfgReg(noc_regs, reg_index, value);
+			}
+		}
+	}
+
+	NocEccTlbUnlock();
+}
+
+static void UpdateRouterCfg0AllNodes(uint32_t set, uint32_t clear)
+{
+	UpdateCfgRegAllNodes(ROUTER_CFG(0), set, clear);
+}
+
+static void OrRouterCfg0AllNodes(uint32_t mask)
+{
+	UpdateRouterCfg0AllNodes(mask, 0);
+}
+
+/*
+ * Encode on every router, including harvested and clock-gated tiles: packets
+ * still route through those NIUs. Check stays off until the fabric has drained.
+ */
+static void EnableNocEccEncode(void)
+{
+	OrRouterCfg0AllNodes(ROUTER_CFG_0_ECC_ENCODE);
+}
+
+static void EnableNocEccCheck(uint32_t drain_us)
+{
+	k_busy_wait(drain_us);
+	OrRouterCfg0AllNodes(ROUTER_CFG_0_ECC_CHECK);
+	/* Let each NIU report into its tile's error interrupt once checking is live. */
+	UpdateCfgRegAllNodes(NIU_CFG_0, NIU_CFG_0_ECC_IRQ_EN, 0);
+}
+
+bool NocEccEnabled(void)
+{
+	return noc_ecc_enabled;
+}
+
+bool NocEccQuiesceCheck(void)
+{
+	/* Physical walk. Leave ARC translation off for the caller's NOC accesses. */
+	NocEccStateLock();
+	if (!noc_ecc_enabled || tensix_routers_down) {
+		NocEccStateUnlock();
+		return false;
+	}
+
+	/* Tile reset clears encode. Scans that acquire the lock after this skip the mesh. */
+	tensix_routers_down = true;
+	NocEccStateUnlock();
+
+	DisableArcNocTranslation();
+	UpdateRouterCfg0AllNodes(0, ROUTER_CFG_0_ECC_CHECK);
+
+	return true;
+}
+
+void NocEccRestoreCheck(void)
+{
+	NocEccStateLock();
+	if (!noc_ecc_enabled) {
+		NocEccStateUnlock();
+		return;
+	}
+	NocEccStateUnlock();
+
+	OrRouterCfg0AllNodes(ROUTER_CFG_0_ECC_CHECK);
+
+	RestoreArcNocTranslation();
+
+	NocEccStateLock();
+	tensix_routers_down = false;
+	NocEccStateUnlock();
+}
+
+void NocPrepareForTensixReset(void)
+{
+	bool quiesced = NocEccQuiesceCheck();
+
+	NocEccStateLock();
+	tensix_routers_down = true;
+	NocEccStateUnlock();
+
+	if (quiesced) {
+		RestoreArcNocTranslation();
+	}
+}
+
+bool NocTensixRoutersUp(void)
+{
+	return !tensix_routers_down;
+}
+
 static bool GetTileClkDisable(uint8_t px, uint8_t py)
 {
 	/* Tile clock disable for disabled Tensix columns */
@@ -193,12 +363,22 @@ ZBUS_CHAN_DEFINE(tensix_state_chan,
 );
 /* clang-format on */
 
+/*
+ * Tile clock gating is excluded from ECC scans. The L1 ECC walk checks the gate
+ * bit and then reads behind the tile clock; a gate landing between the two
+ * hangs the ARC on the NOC read. The two writers below hold the ECC state lock
+ * for the write, so the walk (which holds it throughout) sees a stable gate.
+ * The third writer, NocInitSingleTile, is instead covered by tensix_routers_down:
+ * both of its callers run with that flag set, which keeps the walk out.
+ */
 int32_t set_tensix_enable(bool enable)
 {
 	const uint8_t noc_ring = 0;
 	const uint8_t noc_tlb = 0;
 	uint8_t x;
 	uint8_t y;
+
+	NocEccStateLock();
 
 	GetEnabledTensix(&x, &y);
 
@@ -214,6 +394,8 @@ int32_t set_tensix_enable(bool enable)
 
 	noc_regs = SetupNiuTlb(kTlbIndex, x, y, 0);
 
+	NocEccStateUnlock();
+
 	struct tensix_state_msg tensix_state = {enable};
 
 	zbus_chan_pub(&tensix_state_chan, &tensix_state, K_NO_WAIT);
@@ -223,12 +405,16 @@ int32_t set_tensix_enable(bool enable)
 
 void SetSingleTileClockGate(uint8_t noc0_x, uint8_t noc0_y, bool gate)
 {
+	NocEccStateLock();
+
 	volatile uint32_t *noc_regs = SetupNiuTlb(kTlbIndex, noc0_x, noc0_y, 0);
 
 	uint32_t niu_cfg_0 = ReadNocCfgReg(noc_regs, NIU_CFG_0);
 
 	WRITE_BIT(niu_cfg_0, NIU_CFG_0_TILE_CLK_OFF, gate);
 	WriteNocCfgReg(noc_regs, NIU_CFG_0, niu_cfg_0);
+
+	NocEccStateUnlock();
 }
 
 int NocInit(void)
@@ -236,6 +422,13 @@ int NocInit(void)
 	if (IS_ENABLED(CONFIG_TT_SMC_RECOVERY) || !IS_ENABLED(CONFIG_ARC)) {
 		return 0;
 	}
+
+	NocEccStateLock();
+	noc_ecc_enabled = false;
+	tensix_routers_down = true;
+	NocEccStateUnlock();
+
+	UpdateRouterCfg0AllNodes(0, ROUTER_CFG_0_ECC_CHECK);
 
 	for (uint32_t py = 0; py < NOC_Y_SIZE; py++) {
 		for (uint32_t px = 0; px < NOC_X_SIZE; px++) {
@@ -249,6 +442,19 @@ int NocInit(void)
 
 		ProgramBroadcastExclusion(bad_tensix_cols);
 	}
+
+	bool ecc_en = bh_chip_info_feature_ecc_en();
+
+	if (ecc_en) {
+		EnableNocEccEncode();
+		/* Pre-encode packets from this walk drain, then every router checks. */
+		EnableNocEccCheck(NOC_ECC_DRAIN_WAIT_US);
+	}
+
+	NocEccStateLock();
+	noc_ecc_enabled = ecc_en;
+	tensix_routers_down = false;
+	NocEccStateUnlock();
 
 	return 0;
 }
@@ -271,6 +477,11 @@ void NocInitSingleTile(uint8_t noc0_x, uint8_t noc0_y)
 	if (cg_en) {
 		niu_cfg_0_updates |= BIT(0);
 		router_cfg_0_updates |= BIT(0);
+	}
+
+	if (noc_ecc_enabled) {
+		router_cfg_0_updates |= ROUTER_CFG_0_ECC_ENCODE;
+		niu_cfg_0_updates |= NIU_CFG_0_ECC_IRQ_EN;
 	}
 
 	bool tile_clk_off;
@@ -578,10 +789,16 @@ static struct NocTranslation ComputeNocTranslation(unsigned int pcie_instance,
 
 /* This function assumes that NOC translation is disabled (or identity on 17x12) for the ARC node
  * when called.
+ *
+ * Held under the ECC state lock: an ECC scan samples IsNocTranslationEnabled once and
+ * then addresses tiles in that coordinate system for the whole walk. Reprogramming the
+ * fabric underneath it would route reads to the wrong or a harvested tile.
  */
 void InitNocTranslation(unsigned int pcie_instance, uint16_t bad_tensix_cols, uint8_t bad_gddr,
 			uint16_t skip_eth)
 {
+	NocEccStateLock();
+
 	translation[0] = ComputeNocTranslation(pcie_instance, bad_tensix_cols, bad_gddr, skip_eth);
 	CopyNoc0ToNoc1(&translation[0], &translation[1]);
 
@@ -590,6 +807,8 @@ void InitNocTranslation(unsigned int pcie_instance, uint16_t bad_tensix_cols, ui
 	UpdateTelemetryNocTranslation(true);
 
 	noc_translation_enabled = true;
+
+	NocEccStateUnlock();
 }
 
 int InitNocTranslationFromHarvesting(void)
@@ -722,8 +941,11 @@ void RestoreArcNocTranslation(void)
 	}
 }
 
+/* Same ECC state lock as InitNocTranslation, for the same reason. */
 void ClearNocTranslation(void)
 {
+	NocEccStateLock();
+
 	DisableArcNocTranslation();
 
 	struct NocTranslation all_zeroes = {
@@ -744,6 +966,8 @@ void ClearNocTranslation(void)
 	UpdateTelemetryNocTranslation(false);
 
 	noc_translation_enabled = false;
+
+	NocEccStateUnlock();
 }
 
 /**
@@ -817,6 +1041,23 @@ void GetEnabledTensix(uint8_t *x, uint8_t *y)
 bool IsNocTranslationEnabled(void)
 {
 	return noc_translation_enabled;
+}
+
+void NocPhysicalToLogical(uint8_t phys_x, uint8_t phys_y, uint8_t *logical_x, uint8_t *logical_y)
+{
+	const struct NocTranslation *nt = &translation[0];
+
+	if (!nt->translate_en || phys_x >= NOC_X_SIZE || phys_y >= NOC_Y_SIZE) {
+		*logical_x = phys_x;
+		*logical_y = phys_y;
+		return;
+	}
+
+	/* Same packing as SetLogicalCoord / the NOC_ID_LOGICAL register. */
+	uint16_t packed = nt->logical_coords[phys_x][phys_y];
+
+	*logical_x = packed & 0x3F;
+	*logical_y = (packed >> 6) & 0x3F;
 }
 
 void NocLogicalToPhysical(uint8_t logical_x, uint8_t logical_y, uint8_t *phys_x, uint8_t *phys_y)

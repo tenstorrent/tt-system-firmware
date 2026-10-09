@@ -17,6 +17,8 @@
 #include "reg.h"
 #include "status_reg.h"
 #include "tensix.h"
+#include "ecc_monitor.h"
+#include "tensix_ecc.h"
 #include "tensix_init.h"
 #include "aiclk_ppm.h"
 #include "bh_reset.h"
@@ -210,6 +212,13 @@ static __maybe_unused uint8_t ToggleTensixReset(const union request *req, struct
 	ARG_UNUSED(req);
 	ARG_UNUSED(rsp);
 
+	/*
+	 * Check bits off before Tensix routers lose header encode. Encode is
+	 * gone until REINIT_TENSIX runs NocInit, so check stays off across this
+	 * handler. Restoring it here would check unencoded headers.
+	 */
+	NocPrepareForTensixReset();
+
 	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
 		(void)reset_tt_bh_lines_assert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
 					       UINT32_MAX);
@@ -255,6 +264,12 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 
 	SetAiclkResetSafe(true);
 
+	/* Tile reset clears encode. Drop check first so the tile's completion is accepted.
+	 * false means there was nothing to drop (ECC off, or routers already down from a
+	 * chip-wide reset awaiting REINIT_TENSIX); do not restore check in that case.
+	 */
+	bool ecc_quiesced = NocEccQuiesceCheck();
+
 	/* RISC reset assert */
 	(void)reset_tt_bh_lines_assert(tensix_risc_reset_dev, bank_offset, BIT(bit_index));
 
@@ -276,6 +291,9 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 	NOC2AXITlbSetup(kNocRing, kNocTlb, phys_x, phys_y, kSoftReset0Addr);
 	NOC2AXIWrite32(kNocRing, kNocTlb, kSoftReset0Addr, kAllRiscSoftReset);
 
+	if (ecc_quiesced) {
+		NocEccRestoreCheck();
+	}
 	RestoreArcNocTranslation();
 
 	/* RISC reset deassert */
@@ -284,6 +302,12 @@ static __maybe_unused uint8_t ToggleSingleTensixReset(const union request *req,
 	SetAiclkResetSafe(false);
 
 	tensix_inject_instruction(TENSIX_INSTRUCTION_UNPACR, 0, false, noc_x, noc_y);
+
+	TensixEccEnableScrubber(false, noc_x, noc_y);
+
+	/* Tile reset zeroed ECC_CTRL, which also dropped any pending error interrupt. */
+	TensixEccArmIrq(false, noc_x, noc_y);
+	EccMonitorTensixChanged();
 
 	/* NocInitSingleTile un-gates the tile clock.
 	 * If tensix was in low power, clock gate this tile.

@@ -73,12 +73,14 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
     clock_wave.c
     counter.c
     dvfs.c
+    ecc_monitor.c
     eth.c
     fan_ctrl.c
     functional_efuse.c
     gddr.c
     gddr_cal.c
     i2c_messages.c
+    noc_ecc.c
     pcie_dma.c
     pvt.c
     regulator.c
@@ -86,6 +88,7 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
     serdes_eth.c
     telemetry_internal.c
     tensix.c
+    tensix_ecc.c
     tensix_init.c
     throttler.c
     vf_curve.c

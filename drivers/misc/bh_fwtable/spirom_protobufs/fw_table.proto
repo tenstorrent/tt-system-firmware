@@ -54,6 +54,7 @@ message FwTable {
     bool doppler_en = 9;
     bool kernel_throttler_at_floor_en = 10;
     bool gddr_therm_trip_en = 11;
+    bool ecc_en = 12;
   }
 
   message FanTable{

@@ -10,6 +10,8 @@
 #include "noc_init.h"
 #include "harvesting.h"
 #include "tensix.h"
+#include "ecc_monitor.h"
+#include "tensix_ecc.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -343,6 +345,15 @@ void TensixInit(void)
 	 * Inject dummy UNPACR instruction first to workaround issue.
 	 */
 	tensix_inject_instruction(TENSIX_INSTRUCTION_UNPACR, 0, true, 0, 0);
+
+	/* After the dummy UNPACR so the injection is not the corrupted first instruction. On
+	 * boot, tensix_init() wipes L1 first so the scrubber never walks uninitialised ECC.
+	 */
+	TensixEccEnableScrubber(true, 0, 0);
+
+	/* Tile reset zeroed ECC_CTRL; put the error-interrupt enables back. */
+	TensixEccArmIrq(true, 0, 0);
+	EccMonitorTensixChanged();
 }
 
 static int tensix_init(void)
@@ -360,9 +371,12 @@ static int tensix_init(void)
 		return 0;
 	}
 
+	/* L1 before TensixInit: TensixInit turns on the L1 ECC scrubber, which must only ever
+	 * see L1 that already carries valid ECC.
+	 */
+	wipe_l1();
 	TensixInit();
 
-	wipe_l1();
 	int rc_wipe_dest = wipe_dest();
 
 	if (rc_wipe_dest < 0) {

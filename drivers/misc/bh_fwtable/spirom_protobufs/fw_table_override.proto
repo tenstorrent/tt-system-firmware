@@ -42,6 +42,7 @@ message FwTableOverride {
 
     optional bool kernel_throttler_at_floor_en = 10;
     optional bool gddr_therm_trip_en = 11;
+    optional bool ecc_en = 12;
   }
 
   message DramTable {
