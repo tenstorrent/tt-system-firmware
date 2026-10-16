@@ -8,3 +8,13 @@
 &i3c1 {
 	i3c-scl-hz = <DT_FREQ_M(12)>;  /* 12 MHz I3C SCL frequency */
 };
+
+&remoteproc_m1 {
+	status = "okay";
+};
+
+/ {
+	aliases {
+		remoteproc = &remoteproc_m1;
+	};
+};

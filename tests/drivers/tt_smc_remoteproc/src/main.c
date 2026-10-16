@@ -16,7 +16,7 @@
 
 #define SMC_SRAM_OCCP_BASE 0xc0066400 /* Start of SMC RAM scratch region */
 
-const struct device *smc_dev = DEVICE_DT_GET(DT_NODELABEL(remoteproc));
+const struct device *smc_dev = DEVICE_DT_GET(DT_ALIAS(remoteproc));
 
 uint8_t remote_smc_bin[] = {
 #include CONFIG_REMOTE_SMC_BINARY_HEADER
