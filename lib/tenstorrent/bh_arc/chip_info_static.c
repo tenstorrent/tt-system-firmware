@@ -81,3 +81,9 @@ bool bh_chip_info_feature_noc_translation_en(void)
 {
 	return false;
 }
+
+bool bh_chip_info_feature_bypass_cable_fault_detection(void)
+{
+	/* Recovery has no table to ask; keep the protective default. */
+	return false;
+}

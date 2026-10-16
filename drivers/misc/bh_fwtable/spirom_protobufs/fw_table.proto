@@ -54,6 +54,12 @@ message FwTable {
     bool doppler_en = 9;
     bool kernel_throttler_at_floor_en = 10;
     bool gddr_therm_trip_en = 11;
+    /*
+     * Skip the boot-time cable fault check, which reads the 12V-2x6 power
+     * limit the DMC leaves in SCRATCH_1 and puts the chip into low-power
+     * cable fault mode when it is 0 W. For bring-up and debug only.
+     */
+    bool bypass_cable_fault_detection = 12;
   }
 
   message FanTable{

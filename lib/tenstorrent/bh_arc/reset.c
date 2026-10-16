@@ -340,12 +340,16 @@ static int DeassertTileResets(void)
 	}
 
 	/* Read cable power limit with magic marker check for backward compatibility.
+	 * - If the fw table bypasses detection: skip the check, a 0 W limit is ignored
 	 * - If magic marker present: new DMC, check power limit (0 = cable fault)
 	 * - If magic marker absent: legacy DMC, skip cable fault detection
 	 */
 	uint32_t raw_value = ReadReg(DMC_CABLE_POWER_LIMIT_REG_ADDR);
 
-	if (bh_chip_info_is_ubb()) {
+	if (bh_chip_info_feature_bypass_cable_fault_detection()) {
+		LOG_WRN("Cable fault detection bypassed by fw table "
+			"(feature_enable.bypass_cable_fault_detection)");
+	} else if (bh_chip_info_is_ubb()) {
 		/* Galaxy boards have no DMC; CPLD never sets cable power limit */
 		LOG_INF("Galaxy board detected, no cable fault check needed");
 	} else if ((raw_value & CABLE_POWER_LIMIT_MAGIC_MASK) == CABLE_POWER_LIMIT_MAGIC) {
