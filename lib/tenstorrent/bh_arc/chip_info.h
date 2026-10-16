@@ -58,5 +58,7 @@ void bh_chip_info_pci_property(uint8_t pcie_inst, struct bh_pci_property *out);
 /* Feature-enable bits. */
 bool bh_chip_info_feature_cg_en(void);
 bool bh_chip_info_feature_noc_translation_en(void);
+/* True to skip the boot-time DMC cable fault check. Recovery never bypasses it. */
+bool bh_chip_info_feature_bypass_cable_fault_detection(void);
 
 #endif /* TT_BH_ARC_CHIP_INFO_H */

@@ -410,6 +410,14 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 				ovr.feature_enable.gddr_therm_trip_en;
 		}
 
+		if (ovr.has_feature_enable && ovr.feature_enable.has_bypass_cable_fault_detection) {
+			LOG_INF("CCFGOVR override: feature_enable.bypass_cable_fault_detection = "
+				"%u",
+				ovr.feature_enable.bypass_cable_fault_detection);
+			data->fw_table.feature_enable.bypass_cable_fault_detection =
+				ovr.feature_enable.bypass_cable_fault_detection;
+		}
+
 		if (ovr.has_eth_property_table && ovr.eth_property_table.has_eth_speed_override) {
 			LOG_INF("CCFGOVR override: eth_property_table.eth_speed_override = %u",
 				ovr.eth_property_table.eth_speed_override);
