@@ -24,18 +24,12 @@ from e2e_smoke import (
     process_detectors_test,
     temperature_sensors_test,
     power_state_toggle_test,
-    _logical_tensix_x_coords,
 )
+from e2e_tensix import _logical_tensix_x_coords
 
 # Needed to keep ruff from complaining about this "unused import"
 # ruff: noqa: F811
-from e2e_smoke import arc_chip_dut, launched_arc_dut  # noqa: F401
-
-try:
-    from e2e_smoke import unlaunched_dut  # noqa: F401
-except ImportError:
-    pass  # we should have it from twister
-
+from e2e_smoke import arc_chip_dut  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
