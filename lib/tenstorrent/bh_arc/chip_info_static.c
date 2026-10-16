@@ -81,3 +81,8 @@ bool bh_chip_info_feature_noc_translation_en(void)
 {
 	return false;
 }
+
+bool bh_chip_info_feature_ecc_en(void)
+{
+	return false;
+}

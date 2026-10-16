@@ -30,6 +30,7 @@ feature_enable {
   harvesting_en: true
   doppler_en: false
   kernel_throttler_at_floor_en: false
+  ecc_en: true
 }
 
 fan_table {

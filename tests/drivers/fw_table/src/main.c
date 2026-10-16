@@ -155,6 +155,17 @@ static size_t encode_gddr_therm_trip_override(uint8_t *out, size_t out_size, boo
 	return encode_override(&ovr, out, out_size);
 }
 
+static size_t encode_ecc_override(uint8_t *out, size_t out_size, bool enabled)
+{
+	FwTableOverride ovr = FwTableOverride_init_zero;
+
+	ovr.has_feature_enable = true;
+	ovr.feature_enable.has_ecc_en = true;
+	ovr.feature_enable.ecc_en = enabled;
+
+	return encode_override(&ovr, out, out_size);
+}
+
 static void write_bank(uint32_t addr, struct ccfgovr_bank_hdr *hdr, const uint8_t *body,
 		       size_t body_len)
 {
@@ -285,6 +296,22 @@ ZTEST(bh_fwtable_ccfgovr, test_gddr_therm_trip_override_applies)
 	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
 	zassert_true(tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.gddr_therm_trip_en,
 		     "expected override to enable gddr_therm_trip_en");
+}
+
+/**
+ * @brief Test that ECC (NOC ECC, L1 scrubber, ECC telemetry) can be switched off by override
+ */
+ZTEST(bh_fwtable_ccfgovr, test_ecc_override_disables)
+{
+	uint8_t body[16];
+	size_t body_len = encode_ecc_override(body, sizeof(body), false);
+	struct ccfgovr_bank_hdr hdr = {.magic = CCFGOVR_MAGIC, .seq = 2};
+
+	write_bank(BANK_A_ADDR, &hdr, body, body_len);
+
+	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
+	zassert_false(tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.ecc_en,
+		      "expected override to disable ecc_en");
 }
 
 /**

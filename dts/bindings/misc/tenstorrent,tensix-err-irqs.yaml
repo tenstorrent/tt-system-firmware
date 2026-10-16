@@ -1,0 +1,21 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Tenstorrent Tensix tile error interrupt groups.
+
+  Each entry in interrupts is one ARC vector shared by 32 consecutive Tensix
+  tiles (entry n covers tile indices 32n..32n+31). reg points at the matching
+  block of TENSIX_ERR_INTR_STATUS words, one 32-bit word per entry, giving the
+  per-tile interrupt level for that group.
+
+compatible: "tenstorrent,tensix-err-irqs"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true

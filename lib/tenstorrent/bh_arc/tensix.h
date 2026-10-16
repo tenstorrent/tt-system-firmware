@@ -12,6 +12,15 @@
 
 #define TENSIX_INSTRUCTION_UNPACR 0x42800091u
 
+/*
+ * RMWCIBn: read-modify-write byte n of Tensix config register @p cfg_addr (word index) with
+ * @p mask / @p data, executed by the Tensix itself.
+ */
+#define TENSIX_INSTRUCTION_OP(opcode, params) (((uint32_t)(opcode) << 24) | (uint32_t)(params))
+#define TENSIX_INSTRUCTION_RMWCIB(n, mask, data, cfg_addr)                                         \
+	TENSIX_INSTRUCTION_OP(0xB3u + (n), (((mask) & 0xFFu) << 16) | (((data) & 0xFFu) << 8) |    \
+						   ((cfg_addr) & 0xFFu))
+
 /**
  * @brief Inject one instruction into a Tensix tile via the RISC debug instruction buffer
  *

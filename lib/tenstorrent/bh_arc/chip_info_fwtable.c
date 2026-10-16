@@ -75,3 +75,8 @@ bool bh_chip_info_feature_noc_translation_en(void)
 {
 	return tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.noc_translation_en;
 }
+
+bool bh_chip_info_feature_ecc_en(void)
+{
+	return tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.ecc_en;
+}
