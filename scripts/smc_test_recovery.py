@@ -5,8 +5,8 @@
 
 """
 This script performs recovery actions after a test failure. It is intended
-to be run as part of a test framework's post-test hook. It dumps SMC state data,
-reads DMC logs, and resets the SMC. The script requires that the SMC be
+to be run as part of a test framework's post-test hook. It dumps SMC state data
+and resets the SMC. The script requires that the SMC be
 accessible over PCIe, but does not require that the application firmware be in a
 good state.
 """
@@ -15,7 +15,6 @@ import argparse
 
 import dump_smc_state
 import dmc_reset
-import dmc_rtt
 import pcie_utils
 
 
@@ -64,8 +63,6 @@ def recover_smc(asic_id):
         dump_smc_state.dump_states(asic_id)
     except Exception as e:
         print(f"Failed to dump SMC state: {e}")
-    # Read DMC logs via RTT
-    dmc_rtt.start_dmc_rtt(["--non-blocking"])
     # Reset DMC
     reset_dmc()
     # Rescan PCIe to ensure device is accessible

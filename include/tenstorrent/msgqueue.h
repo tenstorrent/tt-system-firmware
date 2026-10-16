@@ -900,6 +900,10 @@ struct reinit_tensix_rqst {
 /** @brief Host request to toggle Tensix reset
  * @details Messages of this type are processed by @ref ToggleTensixReset.
  *
+ * Resets all Tensix tiles at a reset-safe AICLK, then re-initializes NOC
+ * programming and tile configuration (as @ref TT_SMC_MSG_REINIT_TENSIX does)
+ * and leaves all Tensix RISCs in soft reset.
+ *
  * This is a command-only request with no additional arguments.
  */
 struct toggle_tensix_reset_rqst {
