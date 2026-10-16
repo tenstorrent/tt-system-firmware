@@ -17,6 +17,7 @@ rsource "jtag_bootrom/Kconfig"
 rsource "log_ringbuf/Kconfig"
 rsource "log_tt_virt/Kconfig"
 rsource "occp/Kconfig"
+rsource "sep_bl1/Kconfig"
 # zephyr-keep-sorted-stop
 
 endmenu

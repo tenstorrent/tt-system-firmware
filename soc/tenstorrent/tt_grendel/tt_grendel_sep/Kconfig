@@ -1,0 +1,6 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_GRENDEL_SEP
+	select ARC
+	select CPU_EM4
