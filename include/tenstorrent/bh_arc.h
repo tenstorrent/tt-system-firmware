@@ -23,6 +23,7 @@ typedef enum {
 	kCm2DmMsgIdForcedFanSpeedUpdate = 7,
 	kCm2DmMsgIdLedBlink = 8,
 	kCm2DmMsgIdGddrThermTrip = 9,
+	kCm2DmMsgIdQsfpMgmt = 10,
 	kCm2DmMsgCount
 } Cm2DmMsgId;
 
