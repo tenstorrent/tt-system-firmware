@@ -38,7 +38,7 @@ zephyr_library_sources(
   smbus_target.c
   spi_eeprom.c
   spi_flash_buf.c
-  telemetry.c
+  telemetry_bh.c
   timer.c
 # zephyr-keep-sorted-stop
 )
@@ -49,7 +49,7 @@ zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_RUNTIME_TELEMETRY runtime_telemetr
 # unavailable (recovery), the fwtable-backed one (bh_arc_mission) otherwise.
 zephyr_library_sources_ifndef(CONFIG_BH_FWTABLE chip_info_static.c)
 
-# harvesting.c and telemetry.c include bh_fwtable.h (and thus the generated
+# harvesting.c and telemetry_bh.c include bh_fwtable.h (and thus the generated
 # nanopb headers) behind CONFIG_BH_FWTABLE guards, so when fwtable is enabled
 # this library needs the generated headers to exist before it is compiled.
 if(CONFIG_BH_FWTABLE)

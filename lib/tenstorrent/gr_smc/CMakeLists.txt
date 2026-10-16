@@ -4,6 +4,8 @@ zephyr_library_named(gr_smc)
 
 zephyr_library_sources(grendel_utils.c)
 
+zephyr_library_sources_ifdef(CONFIG_TT_TELEMETRY telemetry_gr.c)
+
 zephyr_library_sources_ifdef(CONFIG_TT_GR_SMC_LOG_BRIDGE grendel_log_bridge.c)
 
 # Sival SDK compilations
