@@ -31,7 +31,7 @@ const struct device *flash = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(spi_flash));
  * all of them. On the other boards it is the flash chip node itself.
  */
 #if DT_NODE_HAS_COMPAT(DT_NODELABEL(spi_flash), tenstorrent_flash_mux)
-#define FLASH_CHIP_NODE DT_PHANDLE_BY_IDX(DT_NODELABEL(spi_flash), flash_devices, 0)
+#define FLASH_CHIP_NODE DT_NODELABEL(flash_single_io)
 #else
 #define FLASH_CHIP_NODE DT_NODELABEL(spi_flash)
 #endif

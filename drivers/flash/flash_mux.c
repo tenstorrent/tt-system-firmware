@@ -16,8 +16,18 @@
 
 LOG_MODULE_REGISTER(flash_mux, CONFIG_FLASH_LOG_LEVEL);
 
+/* Length of the Read Identification response compared against jedec-id */
+#define FLASH_MUX_JEDEC_ID_LEN 3
+
+struct flash_mux_candidate {
+	const struct device *dev;
+	uint8_t jedec_id[FLASH_MUX_JEDEC_ID_LEN];
+};
+
 struct flash_mux_config {
-	const struct device *const *candidates;
+	/* The candidate without jedec-id, which accepts any chip */
+	const struct device *fallback;
+	const struct flash_mux_candidate *candidates;
 	size_t num_candidates;
 };
 
@@ -91,19 +101,49 @@ static int flash_mux_init(const struct device *dev)
 {
 	const struct flash_mux_config *config = dev->config;
 	struct flash_mux_data *data = dev->data;
+	uint8_t id[FLASH_MUX_JEDEC_ID_LEN];
+	int rc;
 
-	for (size_t i = 0; i < config->num_candidates; i++) {
-		const struct device *candidate = config->candidates[i];
+	/* Bring up the fallback first and identify the chip through it, so
+	 * that only the candidate matching the chip is initialized.
+	 */
+	rc = device_init(config->fallback);
+	if (rc < 0) {
+		LOG_ERR("%s init failed: %d", config->fallback->name, rc);
+		return rc;
+	}
+	data->active = config->fallback;
 
-		if (device_is_ready(candidate)) {
-			LOG_INF("Selected %s", candidate->name);
-			data->active = candidate;
-			return 0;
-		}
+	rc = flash_read_jedec_id(config->fallback, id);
+	if (rc < 0) {
+		LOG_ERR("Read JEDEC ID failed: %d", rc);
+		return 0;
 	}
 
-	LOG_ERR("No flash candidate initialized");
-	return -ENODEV;
+	for (size_t i = 0; i < config->num_candidates; i++) {
+		const struct flash_mux_candidate *candidate = &config->candidates[i];
+
+		if (!util_memeq(id, candidate->jedec_id, sizeof(id))) {
+			continue;
+		}
+
+		rc = device_init(candidate->dev);
+		if (rc < 0) {
+			LOG_ERR("%s init failed: %d", candidate->dev->name, rc);
+		} else {
+			data->active = candidate->dev;
+		}
+		break;
+	}
+
+	if (data->active == config->fallback) {
+		LOG_WRN("Using %s for JEDEC ID %02x %02x %02x", config->fallback->name, id[0],
+			id[1], id[2]);
+	} else {
+		LOG_INF("Selected %s", data->active->name);
+	}
+
+	return 0;
 }
 
 static DEVICE_API(flash, flash_mux_api) = {
@@ -124,13 +164,32 @@ static DEVICE_API(flash, flash_mux_api) = {
 #endif
 };
 
-#define FLASH_MUX_CANDIDATE(node_id, prop, idx)                                                    \
-	DEVICE_DT_GET(DT_PHANDLE_BY_IDX(node_id, prop, idx)),
+/* Candidates are the deferred-init children of candidate-bus */
+#define FLASH_MUX_IS_CANDIDATE(node_id) DT_PROP_OR(node_id, zephyr_deferred_init, 0)
+
+#define FLASH_MUX_CANDIDATE(node_id)                                                               \
+	IF_ENABLED(UTIL_AND(FLASH_MUX_IS_CANDIDATE(node_id), DT_NODE_HAS_PROP(node_id, jedec_id)), \
+		   ({                                                                              \
+			   .dev = DEVICE_DT_GET(node_id),                                          \
+			   .jedec_id = DT_PROP(node_id, jedec_id),                                 \
+		   },))
+
+#define FLASH_MUX_FALLBACK(node_id)                                                                \
+	IF_ENABLED(FLASH_MUX_IS_CANDIDATE(node_id),                                                \
+		   (COND_CODE_1(DT_NODE_HAS_PROP(node_id, jedec_id), (),                           \
+				(DEVICE_DT_GET(node_id),))))
 
 #define FLASH_MUX_DEFINE(inst)                                                                     \
-	static const struct device *const flash_mux_candidates_##inst[] = {                        \
-		DT_INST_FOREACH_PROP_ELEM(inst, flash_devices, FLASH_MUX_CANDIDATE)};              \
+	static const struct device *const flash_mux_fallback_##inst[] = {                          \
+		DT_FOREACH_CHILD_STATUS_OKAY(DT_INST_PHANDLE(inst, candidate_bus),                 \
+					     FLASH_MUX_FALLBACK)};                                 \
+	BUILD_ASSERT(ARRAY_SIZE(flash_mux_fallback_##inst) == 1,                                   \
+		     "Exactly one flash mux candidate must omit jedec-id");                        \
+	static const struct flash_mux_candidate flash_mux_candidates_##inst[] = {                  \
+		DT_FOREACH_CHILD_STATUS_OKAY(DT_INST_PHANDLE(inst, candidate_bus),                 \
+					     FLASH_MUX_CANDIDATE)};                                \
 	static const struct flash_mux_config flash_mux_config_##inst = {                           \
+		.fallback = flash_mux_fallback_##inst[0],                                          \
 		.candidates = flash_mux_candidates_##inst,                                         \
 		.num_candidates = ARRAY_SIZE(flash_mux_candidates_##inst),                         \
 	};                                                                                         \

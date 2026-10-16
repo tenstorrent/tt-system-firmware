@@ -531,8 +531,14 @@ def _flash_node(jedec_id: bytes = None, compats=("jedec,mspi-nor",), children=()
     if jedec_id is not None:
         props["jedec-id"] = types.SimpleNamespace(val=jedec_id)
     if children:
-        props["flash-devices"] = types.SimpleNamespace(val=list(children))
-    return types.SimpleNamespace(compats=list(compats), props=props)
+        # Mux candidates are the deferred-init children of its candidate-bus
+        for child in children:
+            child.props["zephyr,deferred-init"] = types.SimpleNamespace(val=True)
+        bus = types.SimpleNamespace(
+            children={f"child{i}": child for i, child in enumerate(children)}
+        )
+        props["candidate-bus"] = types.SimpleNamespace(val=bus)
+    return types.SimpleNamespace(compats=list(compats), props=props, status="okay")
 
 
 def _edt(flash_node):
@@ -711,6 +717,25 @@ def test_compat_variables_from_flash_mux():
             }
         ],
     }
+
+
+def test_compat_variables_ignore_non_candidates_on_bus():
+    """
+    Only the deferred-init children of the mux's bus are its candidates.
+    """
+    mux = _flash_node(
+        compats=("tenstorrent,flash-mux",),
+        children=(_flash_node(b"\x20\xbb\x20"), _flash_node(b"\xc8\x63\x1a")),
+    )
+    bus = mux.props["candidate-bus"].val
+    # Another device on the bus, initialized at boot
+    bus.children["other"] = _flash_node(b"\xc2\x25\x3a")
+    # A disabled candidate
+    bus.children["child1"].status = "disabled"
+
+    compat_variables = tt_boot_fs._compat_variables(_edt(mux))
+
+    assert compat_variables["variables"][0]["constraints"] == [{"eq": "0x20bb20"}]
 
 
 def test_compat_variables_with_universal_fallback():

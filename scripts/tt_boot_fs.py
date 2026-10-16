@@ -1143,7 +1143,15 @@ def _flash_candidate_nodes(edt) -> tuple[list, bool]:
         return [], False
 
     if "tenstorrent,flash-mux" in flash_node.compats:
-        return list(flash_node.props["flash-devices"].val), True
+        bus = flash_node.props["candidate-bus"].val
+        candidates = [
+            node
+            for node in bus.children.values()
+            if node.status == "okay"
+            and (prop := node.props.get("zephyr,deferred-init")) is not None
+            and prop.val
+        ]
+        return candidates, True
 
     return [flash_node], False
 
