@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Keraunos remote boots Quasar 0 instead of Mimir 1 */
+/ {
+	aliases {
+		smc-remoteproc = &remoteproc_q0;
+	};
+};
+
+&remoteproc_m1 {
+	status = "disabled";
+};
+
+&remoteproc_q0 {
+	status = "okay";
+};

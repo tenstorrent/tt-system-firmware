@@ -9,6 +9,9 @@ tests:
     platform_allow:
       - tt_mmk/tt_keraunos/smc
       - tt_mmk/tt_mimir/smc
+      - tt_qsr1a1/tt_keraunos/smc
+      - tt_qsr1a1/tt_mimir/smc
+      - tt_qsr1a1/tt_quasar/smc
     extra_args:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
