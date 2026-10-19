@@ -7,10 +7,25 @@ tests:
     platform_allow:
       - tt_mimir/tt_mimir/smc
       - tt_mmk/tt_keraunos/smc
+      - tt_qsr1a1/tt_keraunos/smc
     sysbuild: true
     harness: console
     harness_config:
       type: one_line
       regex:
         - "Secondary BL1 is running on .*!"
+    timeout: 30
+  drivers.tt_smc_remoteproc.bl1_primary.quasar:
+    tags: smoke
+    platform_allow:
+      - tt_qsr1a1/tt_keraunos/smc
+    sysbuild: true
+    extra_args:
+      - REMOTE_SMC_SOC=tt_quasar
+      - tt_smc_remoteproc_EXTRA_DTC_OVERLAY_FILE=boards/quasar_remote.overlay
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "Secondary BL1 is running on tt_qsr1a1/tt_quasar/smc!"
     timeout: 30
