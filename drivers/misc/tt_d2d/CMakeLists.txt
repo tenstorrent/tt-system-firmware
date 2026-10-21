@@ -5,7 +5,6 @@ zephyr_library_sources_ifdef(CONFIG_TT_D2D tt_d2d.c)
 
 # Include closed source SiVal drop.
 if(CONFIG_TT_D2D)
-  set(SIVAL_EXTDIR ${CMAKE_BINARY_DIR}/grendel-sival-sdk)
   set(SIVAL_BLOBS_TARBALL
       ${CMAKE_CURRENT_SOURCE_DIR}/../../../zephyr/blobs/grendel-sival-sdk.tar.gz)
 
@@ -15,10 +14,8 @@ if(CONFIG_TT_D2D)
             "It is closed source and distributed separately.")
   endif()
 
-  file(MAKE_DIRECTORY ${SIVAL_EXTDIR})
-  execute_process(COMMAND tar -xzf ${SIVAL_BLOBS_TARBALL}
-    WORKING_DIRECTORY ${SIVAL_EXTDIR}
-  )
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/sival_sdk.cmake)
+  tt_sival_sdk_extract(${SIVAL_BLOBS_TARBALL})
 
   zephyr_include_directories(
     ${SIVAL_EXTDIR}/grendel_sival_sdk/firmware/drivers/d2d/include)
