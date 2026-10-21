@@ -183,6 +183,8 @@ static struct telemetry_table telemetry_table = {
 		[73] = {TAG_FW_CAPABILITIES_0, TELEM_OFFSET(TAG_FW_CAPABILITIES_0)},
 		[74] = {TAG_FW_ACTIVE_CONFIG_0, TELEM_OFFSET(TAG_FW_ACTIVE_CONFIG_0)},
 		[75] = {TAG_FLASH_JEDEC_ID, TELEM_OFFSET(TAG_FLASH_JEDEC_ID)},
+		[76] = {TAG_CCFGOVR_STATE, TELEM_OFFSET(TAG_CCFGOVR_STATE)},
+		[77] = {TAG_CCFGOVR_SEQ, TELEM_OFFSET(TAG_CCFGOVR_SEQ)},
 	},
 };
 /* clang-format on */
@@ -491,6 +493,8 @@ static void write_static_telemetry(uint32_t app_version)
 	 */
 	telemetry[TAG_FLASH_BUNDLE_VERSION] =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)->fw_bundle_version;
+	telemetry[TAG_CCFGOVR_STATE] = tt_bh_fwtable_get_ccfgovr_state(fwtable_dev);
+	telemetry[TAG_CCFGOVR_SEQ] = tt_bh_fwtable_get_ccfgovr_seq(fwtable_dev);
 	telemetry[TAG_CM_FW_VERSION] = app_version;
 	telemetry[TAG_L2CPU_FW_VERSION] = 0x00000000;
 

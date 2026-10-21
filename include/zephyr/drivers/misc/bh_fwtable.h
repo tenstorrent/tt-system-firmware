@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/device.h>
+#include <zephyr/sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,6 +58,25 @@ uint32_t tt_bh_fwtable_get_board_type(const struct device *dev);
 bool tt_bh_fwtable_is_p300_left_chip(void);
 uint32_t tt_bh_fwtable_get_asic_location(const struct device *dev);
 void tt_bh_fwtable_apply_ccfgovr(const struct device *dev);
+
+/*
+ * Outcome of the boot-time ccfgovr merge, one 2-bit state per bank, as
+ * returned by tt_bh_fwtable_get_ccfgovr_state() and published in
+ * TAG_CCFGOVR_STATE.
+ */
+#define BH_FWTABLE_CCFGOVR_BANK_EMPTY    0U /* no plausible header */
+#define BH_FWTABLE_CCFGOVR_BANK_STANDBY  1U /* plausible header, never loaded */
+#define BH_FWTABLE_CCFGOVR_BANK_REJECTED 2U /* failed CRC or protobuf decode */
+#define BH_FWTABLE_CCFGOVR_BANK_APPLIED  3U
+
+#define BH_FWTABLE_CCFGOVR_STATE_BANK_A        GENMASK(1, 0)
+#define BH_FWTABLE_CCFGOVR_STATE_BANK_B        GENMASK(3, 2)
+/* The applied bank has a non-empty override body */
+#define BH_FWTABLE_CCFGOVR_STATE_HAS_OVERRIDES BIT(4)
+
+uint32_t tt_bh_fwtable_get_ccfgovr_state(const struct device *dev);
+/* Sequence number of the applied bank; 0 when no bank was applied */
+uint32_t tt_bh_fwtable_get_ccfgovr_seq(const struct device *dev);
 
 #ifdef __cplusplus
 }
