@@ -1,7 +1,9 @@
 # Copyright (c) 2026 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-set(SIVAL_SDK ${CMAKE_BINARY_DIR}/grendel-sival-sdk/grendel_sival_sdk)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/sival_sdk.cmake)
+tt_sival_sdk_extract(${CMAKE_CURRENT_SOURCE_DIR}/../../zephyr/blobs/grendel-sival-sdk.tar.gz)
+set(SIVAL_SDK ${SIVAL_EXTDIR}/grendel_sival_sdk)
 set(SIVAL_PCIE_LIB ${SIVAL_SDK}/lib/libdriver_pcie.a)
 
 if(NOT EXISTS ${SIVAL_PCIE_LIB})

@@ -7,7 +7,9 @@ zephyr_library_sources(grendel_utils.c)
 zephyr_library_sources_ifdef(CONFIG_TT_GR_SMC_LOG_BRIDGE grendel_log_bridge.c)
 
 # Sival SDK compilations
-set(SIVAL_SDK ${CMAKE_BINARY_DIR}/grendel-sival-sdk/grendel_sival_sdk)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/sival_sdk.cmake)
+tt_sival_sdk_extract(${CMAKE_CURRENT_SOURCE_DIR}/../../../zephyr/blobs/grendel-sival-sdk.tar.gz)
+set(SIVAL_SDK ${SIVAL_EXTDIR}/grendel_sival_sdk)
 
 set(SIVAL_SDK_SOURCES
   ${SIVAL_SDK}/firmware/drivers/addr_remap/src/remapper.c

@@ -8,16 +8,11 @@ project(tt_pcie)
 target_sources(app PRIVATE src/main.c src/stage_bundle.c)
 
 # Embed the real SERDES ICCM/DCCM images from the SiVal SDK
-set(SIVAL_EXTDIR ${CMAKE_BINARY_DIR}/grendel-sival-sdk)
 set(SIVAL_BLOBS_TARBALL ${CMAKE_CURRENT_SOURCE_DIR}/../../../zephyr/blobs/grendel-sival-sdk.tar.gz)
-set(SERDES_FW_DIR ${SIVAL_EXTDIR}/grendel_sival_sdk/firmware/drivers/pcie/fw)
 
-file(MAKE_DIRECTORY ${SIVAL_EXTDIR})
-execute_process(COMMAND tar -xzf ${SIVAL_BLOBS_TARBALL} WORKING_DIRECTORY ${SIVAL_EXTDIR}
-  RESULT_VARIABLE SIVAL_TAR_RESULT)
-if(NOT SIVAL_TAR_RESULT EQUAL 0)
-  message(FATAL_ERROR "Failed to extract ${SIVAL_BLOBS_TARBALL}")
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/sival_sdk.cmake)
+tt_sival_sdk_extract(${SIVAL_BLOBS_TARBALL})
+set(SERDES_FW_DIR ${SIVAL_EXTDIR}/grendel_sival_sdk/firmware/drivers/pcie/fw)
 
 set(GEN_DIR ${ZEPHYR_BINARY_DIR}/include/generated)
 foreach(mem iccm dccm)

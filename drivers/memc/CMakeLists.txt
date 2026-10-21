@@ -6,7 +6,9 @@ zephyr_library_include_directories(${ZEPHYR_BASE}/drivers/memc)
 zephyr_library_sources_ifdef(CONFIG_MEMC_TT_MIMIR memc_tt_mimir.c)
 
 if(CONFIG_MEMC_TT_MIMIR)
-  set(SIVAL_SDK ${CMAKE_BINARY_DIR}/grendel-sival-sdk/grendel_sival_sdk)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/sival_sdk.cmake)
+  tt_sival_sdk_extract(${CMAKE_CURRENT_SOURCE_DIR}/../../zephyr/blobs/grendel-sival-sdk.tar.gz)
+  set(SIVAL_SDK ${SIVAL_EXTDIR}/grendel_sival_sdk)
   set(SIVAL_GDDR_LIB ${SIVAL_SDK}/lib/libdriver_gddr.a)
 
   if(NOT EXISTS ${SIVAL_GDDR_LIB})
