@@ -612,6 +612,20 @@
 			status = "okay";
 		};
 
+		/*
+		 * Tensix tile error interrupts. Every tile's o_err_intr is OR'd 32 tiles per
+		 * ARC vector in tile-index order; interrupts[n] covers tiles 32n..32n+31 and
+		 * TENSIX_ERR_INTR_STATUS_n (reg + 4n) holds that group's per-tile level.
+		 * Level, active high: a tile holds the line until ECC_CTRL IRQ clear is pulsed.
+		 */
+		tensix_err_irqs: tensix-err-irqs@80030350 {
+			compatible = "tenstorrent,tensix-err-irqs";
+			reg = <0x80030350 0x20>;
+			interrupt-parent = <&idu_intc>;
+			interrupts = <60 1>, <61 1>, <62 1>, <63 1>, <64 1>;
+			status = "okay";
+		};
+
 		uart0: uart@80200000 {
 			compatible = "ns16550";
 			clocks = <&sysclk>;
