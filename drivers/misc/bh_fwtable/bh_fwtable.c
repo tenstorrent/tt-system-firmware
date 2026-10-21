@@ -46,6 +46,8 @@ struct bh_fwtable_data {
 	FwTable fw_table;
 	FlashInfoTable flash_info_table;
 	ReadOnly read_only_table;
+	uint32_t ccfgovr_state;
+	uint32_t ccfgovr_seq;
 };
 
 /* Getter function that returns a const pointer to the fw table */
@@ -133,6 +135,20 @@ uint32_t tt_bh_fwtable_get_board_type(const struct device *dev)
 
 	/* Extract board type from board_id */
 	return BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);
+}
+
+uint32_t tt_bh_fwtable_get_ccfgovr_state(const struct device *dev)
+{
+	const struct bh_fwtable_data *data = dev->data;
+
+	return data->ccfgovr_state;
+}
+
+uint32_t tt_bh_fwtable_get_ccfgovr_seq(const struct device *dev)
+{
+	const struct bh_fwtable_data *data = dev->data;
+
+	return data->ccfgovr_seq;
 }
 
 /* Reads GPIO6 to determine whether it is p300 left chip. GPIO6 is only set on p300 left chip. */
@@ -308,6 +324,14 @@ static bool ccfgovr_seq_is_newer(uint32_t a, uint32_t b)
 	return ((int32_t)(a - b)) > 0;
 }
 
+static void ccfgovr_set_bank_state(struct bh_fwtable_data *data, size_t bank, uint32_t state)
+{
+	uint32_t mask =
+		(bank == 0U) ? BH_FWTABLE_CCFGOVR_STATE_BANK_A : BH_FWTABLE_CCFGOVR_STATE_BANK_B;
+
+	data->ccfgovr_state = (data->ccfgovr_state & ~mask) | FIELD_PREP(mask, state);
+}
+
 void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 {
 	struct bh_fwtable_data *data = dev->data;
@@ -317,6 +341,9 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 		{.tag = CCFGOVR_TAG_B},
 	};
 	uint8_t body[CCFGOVR_DECODE_BODY_MAX];
+
+	data->ccfgovr_state = 0U;
+	data->ccfgovr_seq = 0U;
 
 	ccfgovr_read_header(config->flash, &banks[0]);
 	ccfgovr_read_header(config->flash, &banks[1]);
@@ -331,6 +358,7 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 	for (size_t i = 0; i < ARRAY_SIZE(banks); i++) {
 		if (banks[i].header_valid) {
 			order[n_candidates++] = &banks[i];
+			ccfgovr_set_bank_state(data, i, BH_FWTABLE_CCFGOVR_BANK_STANDBY);
 		}
 	}
 
@@ -342,7 +370,10 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 	}
 
 	for (size_t i = 0; i < n_candidates; i++) {
+		size_t bank = order[i] - banks;
+
 		if (!ccfgovr_load_and_verify_body(config->flash, order[i], body, sizeof(body))) {
+			ccfgovr_set_bank_state(data, bank, BH_FWTABLE_CCFGOVR_BANK_REJECTED);
 			continue;
 		}
 
@@ -351,6 +382,8 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 
 		/* Valid empty override; nothing to decode. */
 		if (order[i]->hdr.body_len == 0) {
+			ccfgovr_set_bank_state(data, bank, BH_FWTABLE_CCFGOVR_BANK_APPLIED);
+			data->ccfgovr_seq = order[i]->hdr.seq;
 			return;
 		}
 
@@ -365,8 +398,13 @@ void tt_bh_fwtable_apply_ccfgovr(const struct device *dev)
 				  PB_DECODE_NULLTERMINATED)) {
 			LOG_WRN("ccfgovr bank '%s' protobuf decode failed; trying next bank",
 				order[i]->tag);
+			ccfgovr_set_bank_state(data, bank, BH_FWTABLE_CCFGOVR_BANK_REJECTED);
 			continue;
 		}
+
+		ccfgovr_set_bank_state(data, bank, BH_FWTABLE_CCFGOVR_BANK_APPLIED);
+		data->ccfgovr_state |= BH_FWTABLE_CCFGOVR_STATE_HAS_OVERRIDES;
+		data->ccfgovr_seq = order[i]->hdr.seq;
 
 		/*
 		 * Allow-listed merge. Add one branch here for each field exposed

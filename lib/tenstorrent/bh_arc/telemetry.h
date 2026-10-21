@@ -494,12 +494,31 @@ typedef union {
  */
 #define TAG_FLASH_JEDEC_ID 80
 
+/** @brief Outcome of the boot-time ccfgovr (`bh-mod`) override merge.
+ *
+ * Each bank is one of 0 (empty: no plausible header), 1 (standby: plausible
+ * header, not loaded because the other bank was applied), 2 (rejected: CRC or
+ * protobuf decode failed) or 3 (applied).
+ * - bits [1:0]: state of bank `ccfgovra`
+ * - bits [3:2]: state of bank `ccfgovrb`
+ * - bit 4: the applied bank holds a non-empty override body
+ *
+ * See BH_FWTABLE_CCFGOVR_* in bh_fwtable.h.
+ */
+#define TAG_CCFGOVR_STATE 81
+
+/** @brief Sequence number of the applied ccfgovr bank.
+ *
+ * 0 when no bank was applied (see @ref TAG_CCFGOVR_STATE).
+ */
+#define TAG_CCFGOVR_SEQ 82
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 81
+#define TAG_COUNT 83
 
 /* Telemetry tags are at offset `tag` in the telemetry buffer */
 #define TELEM_OFFSET(tag) (tag)
