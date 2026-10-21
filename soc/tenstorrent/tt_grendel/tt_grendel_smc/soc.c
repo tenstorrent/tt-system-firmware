@@ -21,7 +21,7 @@ LOG_MODULE_REGISTER(soc, CONFIG_LOG_DEFAULT_LEVEL);
 #define GR_SCRATCH_REG_COUNT  16U
 #define GR_SCRATCH_REG_STRIDE 8U
 
-void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
+__weak void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 {
 	ARG_UNUSED(esf);
 
