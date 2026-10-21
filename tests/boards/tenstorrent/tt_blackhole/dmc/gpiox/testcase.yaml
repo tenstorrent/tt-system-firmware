@@ -5,3 +5,9 @@ tests:
       - gpio
       - smoke
     filter: dt_compat_enabled("nxp,pca9554") or dt_compat_enabled("nxp,pca9555")
+    platform_exclude:
+      - tt_mmk/tt_keraunos/smc
+      - tt_mmk/tt_mimir/smc
+      - tt_qsr1a1/tt_quasar/smc
+      - tt_qsr1a1/tt_mimir/smc
+      - tt_qsr1a1/tt_keraunos/smc
