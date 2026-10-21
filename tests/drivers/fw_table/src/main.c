@@ -95,6 +95,17 @@ static size_t encode_tdp_limit_override(uint8_t *out, size_t out_size, uint32_t 
 	return encode_override(&ovr, out, out_size);
 }
 
+static size_t encode_max_tdp_limit_override(uint8_t *out, size_t out_size, uint32_t value)
+{
+	FwTableOverride ovr = FwTableOverride_init_zero;
+
+	ovr.has_chip_limits = true;
+	ovr.chip_limits.has_max_tdp_limit = true;
+	ovr.chip_limits.max_tdp_limit = value;
+
+	return encode_override(&ovr, out, out_size);
+}
+
 static size_t encode_kernel_throttler_override(uint8_t *out, size_t out_size, bool enabled,
 					       uint32_t stop_freq)
 {
@@ -249,6 +260,24 @@ ZTEST(bh_fwtable_ccfgovr, test_happy_path_active_bank_applies)
 	zassert_equal(
 		tt_bh_fwtable_get_fw_table(fwtable_dev)->eth_property_table.eth_speed_override,
 		DEFAULT_ETH_SPEED, "fields absent from the override must keep their cmfwcfg value");
+}
+
+/**
+ * @brief Test that max_tdp_limit can be overridden independently of tdp_limit
+ */
+ZTEST(bh_fwtable_ccfgovr, test_max_tdp_limit_override_applies)
+{
+	uint8_t body[16];
+	size_t body_len = encode_max_tdp_limit_override(body, sizeof(body), 250U);
+	struct ccfgovr_bank_hdr hdr = {.magic = CCFGOVR_MAGIC, .seq = 2};
+
+	write_bank(BANK_A_ADDR, &hdr, body, body_len);
+
+	tt_bh_fwtable_apply_ccfgovr(fwtable_dev);
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.max_tdp_limit, 250U,
+		      "expected override to set max_tdp_limit=250");
+	zassert_equal(tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.tdp_limit,
+		      DEFAULT_TDP_LIMIT, "max_tdp_limit override must not clobber tdp_limit");
 }
 
 /**
