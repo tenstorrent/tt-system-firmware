@@ -465,7 +465,7 @@ static int uart_tt_virt_init(const struct device *dev)
 	};                                                                                         \
 	static struct uart_tt_virt_data uart_tt_virt_data_##_inst;                                 \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(_inst, uart_tt_virt_init, PM_DEVICE_DT_INST_GET(_inst),              \
+	DEVICE_DT_INST_DEFINE(_inst, uart_tt_virt_init, NULL,                                      \
 			      &uart_tt_virt_data_##_inst, &uart_tt_virt_config_##_inst,            \
 			      PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY, &uart_tt_virt_api);
 
