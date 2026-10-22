@@ -28,6 +28,12 @@
 		gpios = <&gpioc 3 GPIO_ACTIVE_HIGH>;
 	};
 
+	/* RC22504A clock generator LOCK output (APLL lock, active high) */
+	clk_gen_lock {
+		compatible = "zephyr,gpio-line";
+		gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
+	};
+
 	chip0: chip0 {
 		compatible = "tenstorrent,bh-chip";
 
