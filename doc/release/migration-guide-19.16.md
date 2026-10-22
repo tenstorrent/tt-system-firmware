@@ -6,7 +6,7 @@ This document lists recommended and required changes for those migrating from th
 
 ## Required: Galaxy CF board type
 
-- **Galaxy CF** (board type `0x202`): If your board type is a GALAXY-CF, you must use a tt-flash version that supports it. (These notes will be updated with the minimum tt-flash version number once it is released).
+- **Galaxy CF** (board type `0x202`): If your board type is a GALAXY-CF, you must use a tt-flash version that supports it (>= 4.1.0).
 
 ## Galaxy CF
 
