@@ -233,6 +233,8 @@ jobs:
       - name: Ethernet tests
         if: ${{ !cancelled() && steps.keepalive.outcome == 'success' && matrix.config.metal-deploy-run-eth }}
         timeout-minutes: 120
+        env:
+          ETH_TEST_EXPECTED_LINKS: ${{ matrix.config.eth-test-expected-links || '0'}}
         run: |
           python tests/tt_metal/tt_metal/deployment/eth/test_runner.py \
             -f /tmp/deploy-logs/eth.log -o /tmp/deploy-logs/eth.json

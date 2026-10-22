@@ -1,0 +1,394 @@
+name: Release Validation
+
+# This workflow flashes and stress-tests the shared CI boards for about an
+# hour per iteration. It runs for every new release candidate tag, for example
+# v1.2.3-rc1 or v1.2.3-rc12.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+"
+  # TODO: remove once workflow has been tested
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: "Number of times to run the full test list on each board"
+        type: number
+        default: 5
+
+concurrency:
+  # One run of this workflow at a time: the matrix jobs all share the same
+  # physical boards, and a second run must not flash while tests are running.
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build-fw-artifact:
+    uses: ./.github/workflows/build-fw.yml
+    secrets:
+      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
+
+  # Boards that set "release-validation-label" in ci_boards.json
+  generate-matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen-matrix.outputs.matrix }}
+      iterations: ${{ steps.gen-matrix.outputs.iterations }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gen-matrix
+        run: |
+          echo "matrix=$(jq -c '[.[][] | select(has("release-validation-label"))]' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "iterations=$(jq -nc --argjson n ${{ inputs.iterations || 5 }} '[range(1; $n + 1)]')" | tee -a $GITHUB_OUTPUT
+
+  # Flash the board before the main test suite loop executes
+  flash-firmware:
+    name: Flash ${{ matrix.config.board }}
+    needs: [build-fw-artifact, generate-matrix]
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    # Only machines that have both the board label and its release-validation
+    # label (for example quietbox2 and qb2-rc-validate) run this workflow.
+    runs-on:
+      - ${{ matrix.config.board }}
+      - ${{ matrix.config.release-validation-label }}
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
+      options: ${{ matrix.config.metal-options }}
+    env:
+      HOME: /home/user/tt-metal
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.HOME }}
+    steps:
+      - name: Checkout CI scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/ci/build-and-load-kmd.sh
+          sparse-checkout-cone-mode: false
+          path: tt-system-firmware
+
+      - name: Build and load tt-kmd
+        run: |
+          sudo bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/build-and-load-kmd.sh" \
+            "${{ matrix.config.kmd_build }}"
+
+      - name: Download the firmware bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-fw-artifact.outputs.combined-fwbundle-artifact }}
+          path: ${{ env.HOME }}
+
+      - name: Install tt-flash
+        run: |
+          python -m venv .env
+          source .env/bin/activate
+          pip install tt-flash==3.10.0
+
+      - name: Reset devices before flashing
+        run: |
+          # Whatever ran on this machine before us may have been killed by a
+          # step timeout, leaving kernels running on tensix/eth cores.
+          # If the reset fails, the board is not healthy: stop here rather
+          # than flash it.
+          source .env/bin/activate
+          tt-smi -r
+
+      - name: Flash the firmware
+        run: |
+          source .env/bin/activate
+          # If tt-flash fails this step fails before the reset below
+          # and the chip keeps running the firmware it already has.
+          tt-flash $HOME/fw_pack-*.fwbundle --force
+          tt-smi -r
+
+      # Only reached if the flash and reset succeeded.
+      - name: Mark board as flashed
+        run: echo "${{ matrix.config.board }}" > "$HOME/flashed-board"
+
+      - name: Upload flashed marker
+        uses: actions/upload-artifact@v4
+        with:
+          name: flashed-${{ matrix.config.board }}
+          path: ${{ env.HOME }}/flashed-board
+
+      - name: cleanup
+        if: ${{ always() }}
+        run: |
+          rm -f $HOME/fw_pack-*.fwbundle
+
+  # Narrow the matrix down to the boards that flashed successfully.
+  select-flashed:
+    name: Select flashed boards
+    needs: [generate-matrix, flash-firmware]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: flashed-*
+          path: flashed
+      - id: select
+        env:
+          MATRIX: ${{ needs.generate-matrix.outputs.matrix }}
+        run: |
+          flashed=$(find flashed -name flashed-board -exec cat {} + | jq -R . | jq -sc .)
+          echo "Flashed boards: $flashed"
+          echo "matrix=$(jq -c --argjson f "$flashed" '[.[] | select(.board as $b | $f | index($b))]' <<< "$MATRIX")" | tee -a $GITHUB_OUTPUT
+
+  # Every iteration is its own job.
+  release-validation:
+    name: Release validation iter ${{ matrix.iteration }} on ${{ matrix.config.board }}
+    needs: [generate-matrix, select-flashed]
+    # An empty matrix is an error, so skip when no board flashed.
+    if: ${{ !cancelled() && needs.select-flashed.result == 'success' && needs.select-flashed.outputs.matrix != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.select-flashed.outputs.matrix) }}
+        iteration: ${{ fromJson(needs.generate-matrix.outputs.iterations) }}
+    runs-on:
+      - ${{ matrix.config.board }}
+      - ${{ matrix.config.release-validation-label }}
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /dev/hugepages:/dev/hugepages
+        # Host kernel build tree, required to compile tt-kmd in-container.
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
+      options: ${{ matrix.config.metal-options }}
+    env:
+      ARCH_NAME: ${{ matrix.config.arch-name }}
+      HOME: /home/user/tt-metal
+      NUM_DEVICES: ${{ matrix.config.num-devices }}
+      ETH_TEST_EXPECTED_LINKS: ${{ matrix.config.eth-test-expected-links || '0' }}
+      # Times each ethernet test executes
+      ETH_TEST_RUNS: 10
+      # Times the SMI reset loop at the end executes
+      SMI_RESET_LOOPS: 10
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.HOME }}
+    steps:
+      - name: Checkout CI scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/ci/build-and-load-kmd.sh
+            scripts/ci/run-metal-test-multi-device.sh
+            scripts/ci/check_lspci.py
+            scripts/pcie_utils.py
+          sparse-checkout-cone-mode: false
+          path: tt-system-firmware
+
+      - name: Build and load tt-kmd
+        run: |
+          sudo bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/build-and-load-kmd.sh" \
+            "${{ matrix.config.kmd_build }}"
+
+      - name: Install pciutils
+        run: |
+          sudo apt update || true
+          sudo apt install -y pciutils
+
+      - name: Set up tools venv
+        run: |
+          python -m venv .env
+          source .env/bin/activate
+          pip install tt-flash==3.10.0
+
+      - name: Reset devices
+        run: |
+          # Start every iteration from a clean chip state, regardless of what
+          # the previous job on this machine left behind.
+          source .env/bin/activate
+          tt-smi -r
+
+      - id: keepalive
+        name: Start network keepalive
+        run: |
+          # Keep the network alive by periodically pulling tenstorrent.com.
+          # This prevents a bug in the container runtime where the network interface can
+          # drop after a period of inactivity, which would cause our tests to fail.
+          echo "while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com; sleep 10; done" > /tmp/network-keepalive
+          chmod +x /tmp/network-keepalive
+          /tmp/network-keepalive &
+          echo "Network keepalive started."
+          mkdir -p /tmp/deploy-logs
+
+      - name: Check PCIe link width and gen
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        env:
+          LOG_DIR: /tmp/deploy-logs/pci-width
+        run: |
+          python3 "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/check_lspci.py" \
+            --board "${{ matrix.config.board }}"
+
+      - name: PCIe write test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          LOG_DIR: /tmp/deploy-logs/pcie-write
+        run: |
+          bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/run-metal-test-multi-device.sh" \
+            ${{ matrix.config.separate-cache && '--separate-cache' || '' }} \
+            ${{ matrix.config.single-visible-device && '--single-visible-device' || '' }} \
+            ./build/tools/mem_bench --num-devices "$NUM_DEVICES" -- \
+            --benchmark_repetitions=20 \
+            --benchmark_filter='Device Writing Host/1073741824/32768/0/1/0/iterations:5/manual_time'
+
+      - name: PCIe read test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          LOG_DIR: /tmp/deploy-logs/pcie-read
+        run: |
+          bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/run-metal-test-multi-device.sh" \
+            ${{ matrix.config.separate-cache && '--separate-cache' || '' }} \
+            ${{ matrix.config.single-visible-device && '--single-visible-device' || '' }} \
+            ./build/tools/mem_bench --num-devices "$NUM_DEVICES" -- \
+            --benchmark_repetitions=20 \
+            --benchmark_filter='Device Reading Host/1073741824/32768/1/0/0/iterations:5/manual_time'
+
+      - name: DRAM unary BW test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        # 100 repeats take well over 30 minutes; a step timeout kills the host
+        # process but leaves the dispatch kernels running on the device, which
+        # is what the final "Reset devices" step is for. Size from measurements.
+        timeout-minutes: 90
+        env:
+          LOG_DIR: /tmp/deploy-logs/unary-dram
+        run: |
+          # --count is provided by pytest-repeat
+          # The unary test does not support slow dispatch mode
+          rc=0
+          bash "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/run-metal-test-multi-device.sh" \
+            --fast-dispatch --hide-build-logs \
+            python --num-devices 1 -- \
+            -m pytest -s tests/tt_metal/tt_metal/data_movement/python/test_data_movement.py \
+            --confcutdir=tests/tt_metal/tt_metal/data_movement/python \
+            --arch=blackhole --verbose-log --report \
+            --gtest-filter='DRAMPacketSizes:*DRAMCoreLocations:*DRAMChannels:*DRAMDirectedIdeal' \
+            --count=100 || rc=$?
+          # The test ignores the exit status of the gtest binary, so a skipped
+          # suite only shows up later as a missing profiler log.
+          # therefore we need this grep to detect a skip and mark as failed.
+          if grep -qE 'SKIPPED|Fast Dispatch Mode' "$LOG_DIR/dev0.log"; then
+            echo "::error::gtest skipped tests in the data movement run"
+            grep -E 'SKIPPED|Fast Dispatch Mode' "$LOG_DIR/dev0.log" | sort | uniq -c
+            rc=1
+          fi
+          exit $rc
+
+      - name: DRAM deploy test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          # DRAM_TEST_FAST is left unset so that all memory patterns are used
+          DRAM_TEST_LOOPS: 20
+        run: |
+          python tests/tt_metal/tt_metal/deployment/dram/test_runner.py \
+            -l /tmp/deploy-logs/dram.log -o /tmp/deploy-logs/dram.json
+
+      - name: Ethernet bidir BW test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        # ETH_TEST_RUNS runs over all links on a 32-chip galaxy do not fit in
+        # 5 minutes. See the note on the DRAM unary BW test.
+        timeout-minutes: 90
+        env:
+          TT_METAL_SLOW_DISPATCH_MODE: 1
+        run: |
+          rc=0
+          for run in $(seq 1 "$ETH_TEST_RUNS"); do
+            python tests/tt_metal/tt_metal/deployment/eth/test_runner.py \
+              -t BandwidthBidir \
+              -f /tmp/deploy-logs/eth-bw-$run.log \
+              -o /tmp/deploy-logs/eth-bw-$run.json || rc=1
+          done
+          exit $rc
+
+      - name: Ethernet DRAM data integrity bidir test
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        timeout-minutes: 90
+        env:
+          TT_METAL_SLOW_DISPATCH_MODE: 1
+        run: |
+          rc=0
+          for run in $(seq 1 "$ETH_TEST_RUNS"); do
+            python tests/tt_metal/tt_metal/deployment/eth/test_runner.py \
+              -t DataIntegrityDram \
+              -f /tmp/deploy-logs/eth-di-dram-$run.log \
+              -o /tmp/deploy-logs/eth-di-dram-$run.json || rc=1
+          done
+          exit $rc
+
+      - name: TT-SMI reset loops
+        if: ${{ !cancelled() && steps.keepalive.outcome == 'success' }}
+        timeout-minutes: 60
+        run: |
+          # Run all iterations even after a failure so every bad reset is
+          # logged, then fail the step if any check_lspci run failed.
+          source .env/bin/activate
+          rc=0
+          for i in $(seq 1 "$SMI_RESET_LOOPS"); do
+            echo "::group::smi reset loop $i"
+            tt-smi -r || { echo "::error::tt-smi -r failed in loop $i"; rc=1; }
+            LOG_DIR=/tmp/deploy-logs/smi-reset-loops/$i \
+              python3 "$GITHUB_WORKSPACE/tt-system-firmware/scripts/ci/check_lspci.py" \
+              --board "${{ matrix.config.board }}" \
+              || { echo "::error::check_lspci failed in loop $i"; rc=1; }
+            echo "::endgroup::"
+          done
+          exit $rc
+
+      - name: Upload Test Output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validation-${{ matrix.config.board }}-iter${{ matrix.iteration }}-output
+          path: /tmp/deploy-logs
+
+      - name: Upload DRAM BW Output
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: dram-bw-${{ matrix.config.board }}-iter${{ matrix.iteration }}-output
+          path: ${{ env.HOME }}/logs
+
+      - name: cleanup
+        if: ${{ always() }}
+        run: |
+          kill $(pgrep -f network-keepalive) || true
+
+      - name: Reset devices
+        if: ${{ always() }}
+        run: |
+          # A step timeout only kills the host side (and, in a container job,
+          # not always even that): kernels keep running on the tensix and eth
+          # cores until the chip is reset. Never hand the board to the next job
+          # in that state: the next thing that job does is tt-flash.
+          # Kill anything still holding /dev/tenstorrent, then reset. If the
+          # reset fails the job fails, so a sick board is noticed here instead
+          # of in whatever runs next.
+          pkill -TERM -f 'mem_bench|test_runner.py|pytest' || true
+          sleep 5
+          pkill -KILL -f 'mem_bench|test_runner.py|pytest' || true
+          source .env/bin/activate || true
+          tt-smi -r
