@@ -10,6 +10,7 @@
  *
  */
 
+#include <stddef.h>
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/watchdog.h>
@@ -18,6 +19,7 @@
 #include <zephyr/sys/crc.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
+#include <tenstorrent/qsfp_mgmt.h>
 
 #include "cm2dm_msg.h"
 #include "asic_state.h"
@@ -41,6 +43,13 @@ typedef struct {
 
 static Cm2DmMsgState cm2dm_msg_state;
 K_SEM_DEFINE(dmfw_ping_sem, 0, 1);
+K_SEM_DEFINE(qsfp_mgmt_sem, 0, 1);
+K_MUTEX_DEFINE(qsfp_mgmt_mutex);
+static struct qsfp_mgmt_response qsfp_mgmt_response;
+static uint8_t qsfp_mgmt_expected_token;
+static uint8_t qsfp_mgmt_expected_operation;
+static uint8_t qsfp_mgmt_expected_cage;
+static uint8_t qsfp_mgmt_next_token = 1;
 static uint16_t power;
 static uint16_t telemetry_reg;
 static struct {
@@ -241,6 +250,89 @@ static uint8_t ping_dm_handler(const union request *request, struct response *re
 }
 
 REGISTER_MESSAGE(TT_SMC_MSG_PING_DM, ping_dm_handler);
+
+int32_t Dm2CmQsfpMgmtResponseHandler(const uint8_t *data, uint8_t size)
+{
+	const struct qsfp_mgmt_response *response = (const struct qsfp_mgmt_response *)data;
+
+	if (size != sizeof(*response)) {
+		return -1;
+	}
+
+	/* A timed-out command may finish after a new host request starts. */
+	if (response->length > sizeof(response->payload)) {
+		return -1;
+	}
+	if (response->token != qsfp_mgmt_expected_token ||
+	    response->operation != qsfp_mgmt_expected_operation ||
+	    response->cage != qsfp_mgmt_expected_cage) {
+		return 0;
+	}
+
+	memcpy(&qsfp_mgmt_response, response, sizeof(qsfp_mgmt_response));
+	k_sem_give(&qsfp_mgmt_sem);
+	return 0;
+}
+
+int32_t Dm2CmQsfpStatusHandler(const uint8_t *data, uint8_t size)
+{
+#ifndef CONFIG_TT_SMC_RECOVERY
+	uint32_t status;
+
+	if (size != sizeof(status)) {
+		return -1;
+	}
+
+	memcpy(&status, data, sizeof(status));
+	UpdateTelemetryQsfp(status);
+	return 0;
+#endif
+
+	return -1;
+}
+
+static uint8_t qsfp_mgmt_handler(const union request *request, struct response *response)
+{
+	BUILD_ASSERT(sizeof(struct qsfp_mgmt_response) <=
+			     sizeof(response->data) - sizeof(response->data[0]),
+		     "QSFP management response does not fit host response");
+	uint8_t token;
+	uint32_t data;
+	int ret;
+
+	if (request->qsfp_mgmt.operation >= QSFP_MGMT_OP_COUNT ||
+	    request->qsfp_mgmt.cage >= QSFP_CAGE_COUNT) {
+		return QSFP_MGMT_ERR_ARGUMENT;
+	}
+
+	k_mutex_lock(&qsfp_mgmt_mutex, K_FOREVER);
+	token = qsfp_mgmt_next_token++;
+	if (token == 0) {
+		token = qsfp_mgmt_next_token++;
+	}
+	qsfp_mgmt_expected_token = token;
+	qsfp_mgmt_expected_operation = request->qsfp_mgmt.operation;
+	qsfp_mgmt_expected_cage = request->qsfp_mgmt.cage;
+	k_sem_reset(&qsfp_mgmt_sem);
+	memset(&qsfp_mgmt_response, 0, sizeof(qsfp_mgmt_response));
+
+	data = QSFP_MGMT_REQUEST(request->qsfp_mgmt.operation, request->qsfp_mgmt.cage,
+				 request->qsfp_mgmt.argument, token);
+	PostCm2DmMsg(kCm2DmMsgIdQsfpMgmt, data);
+	ret = k_sem_take(&qsfp_mgmt_sem, K_MSEC(QSFP_MGMT_SMC_TIMEOUT_MS));
+	if (ret == 0) {
+		memcpy(&response->data[1], &qsfp_mgmt_response, sizeof(qsfp_mgmt_response));
+		ret = qsfp_mgmt_response.status;
+	} else {
+		ret = QSFP_MGMT_ERR_TIMEOUT;
+	}
+	qsfp_mgmt_expected_token = 0;
+	k_mutex_unlock(&qsfp_mgmt_mutex);
+
+	return (uint8_t)ret;
+}
+
+REGISTER_MESSAGE(TT_SMC_MSG_QSFP_MGMT, qsfp_mgmt_handler);
 
 /**
  * @brief Handler for @ref TT_SMC_MSG_SET_WDT_TIMEOUT

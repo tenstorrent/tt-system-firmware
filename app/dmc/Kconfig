@@ -7,4 +7,28 @@ config DMC_RUN_SMBUS_TESTS
 	  Run SMBUS tests on the DMC at boot time. This can be used to verify
 	  functionality of the SMBUS interface.
 
+config TT_QSFP
+	bool "QSFP-DD cage management"
+	depends on I2C
+	depends on "$(BOARD_REVISION)" = "p150a"
+	default y
+	help
+	  P150A only. At DMC boot, enable FXMA2102 U1 (MCU_CONN_I2C_EN) and
+	  probe the four QSFP-DD cage TCA9554A expanders (0x38..0x3b) on
+	  MCU_I2C0 / i2c3 for module presence. Publish TAG_QSFP_STATUS and
+	  provide serialized runtime CMIS inventory, power, reset, DOM, and
+	  diagnostic page access through the SMC management bridge.
+
+	  Do not enable on P300: there the same i2c3 controller is chip1 ARC
+	  SMBus, not the QSFP-DD cage plane (P300 uses Samtec ARP6). Galaxy
+	  cages are BMC-owned.
+
+config TT_QSFP_DISCOVERY
+	bool
+	depends on I2C
+	depends on "$(BOARD_REVISION)" = "p150a"
+	select TT_QSFP
+	help
+	  Deprecated compatibility symbol. Use CONFIG_TT_QSFP.
+
 source "Kconfig.zephyr"

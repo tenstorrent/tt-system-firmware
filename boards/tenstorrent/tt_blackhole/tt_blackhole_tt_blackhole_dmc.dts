@@ -67,10 +67,6 @@
 	status = "disabled";
 };
 
-/*
- * To do- GPIOx3-GPIOx6 should be enabled for QSFP support, but they are not
- * currently detected on a P150a board.
- */
 &gpiox3 {
 	status = "disabled";
 };
