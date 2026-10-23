@@ -3,3 +3,7 @@ tests:
     tags: smoke
     platform_allow:
       - tt_mimir/tt_mimir/smc
+      - tt_mmk/tt_keraunos/smc
+      - tt_mmk/tt_mimir/smc
+    extra_args:
+      - DTC_OVERLAY_FILE=tt_grendel.overlay
