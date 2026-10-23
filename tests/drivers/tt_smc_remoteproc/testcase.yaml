@@ -8,3 +8,9 @@ tests:
       - tt_mimir/tt_mimir/smc
       - tt_mmk/tt_keraunos/smc
     sysbuild: true
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "Secondary BL1 is running on .*!"
+    timeout: 30
