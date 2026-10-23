@@ -4,13 +4,24 @@ common:
     - dma
   extra_configs:
     - CONFIG_TT_MSGQUEUE=n
-  platform_allow:
-    - tt_blackhole@p100a/tt_blackhole/smc
-    - tt_blackhole@p150a/tt_blackhole/smc
-    - tt_blackhole@p150b/tt_blackhole/smc
-    - tt_blackhole@p300a/tt_blackhole/smc
 tests:
+  drivers.dma.loop_transfer.tt_mmk_smc:
+    platform_allow:
+      - tt_mmk/tt_keraunos/smc
+      - tt_mmk/tt_mimir/smc
+    extra_args:
+      - "DTC_OVERLAY_FILE=\
+         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
+         tt_grendel.overlay"
+      - "EXTRA_CONF_FILE=\
+         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
+         tt_grendel.conf"
   drivers.dma.loop_transfer.tt_bh_noc:
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
     extra_args:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
@@ -19,6 +30,11 @@ tests:
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
          tt_bh_noc.conf"
   drivers.dma.loop_transfer.arc_hs.interrupts:
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
     extra_args:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
@@ -27,6 +43,11 @@ tests:
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
          arc_hs.conf"
   drivers.dma.loop_transfer.arc_hs.polling:
+    platform_allow:
+      - tt_blackhole@p100a/tt_blackhole/smc
+      - tt_blackhole@p150a/tt_blackhole/smc
+      - tt_blackhole@p150b/tt_blackhole/smc
+      - tt_blackhole@p300a/tt_blackhole/smc
     extra_args:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/loop_transfer/\
