@@ -1,0 +1,17 @@
+{
+  "syseng-gh-01": { "board": "p100a" },
+  "syseng-gh-02": { "board": "p150a" },
+  "syseng-gh-03": { "board": "p150a" },
+  "syseng-gh-05": { "board": "p100a" },
+  "syseng-gh-06": { "board": "p150a" },
+  "syseng-gh-07": { "board": "n150" },
+  "syseng-gh-08": { "board": "p300a" },
+  "syseng-gh-11": { "board": "n150" },
+  "syseng-gh-12": { "board": "p100a" },
+  "syseng-gh-13": { "board": "p300a" },
+  "syseng-gh-14": { "board": "loudbox" },
+  "sys-gh-qb2-01": { "board": "quietbox2" },
+  "bh-glx6u-36": { "board": "bh-galaxy-revc" },
+  "yyz-zephyr-01": { "board": "p300a" },
+  "yyz-zephyr-02": { "board": "p100a" }
+}

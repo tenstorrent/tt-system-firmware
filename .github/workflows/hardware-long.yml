@@ -6,20 +6,52 @@ on:
       - labeled
   schedule:
     - cron: "0 5 * * *"
-  workflow_dispatch: {}
+  # For debugging, e.g. to run only the stress test on one runner against a
+  # fork PR:
+  #   gh workflow run hardware-long.yml -R tenstorrent/tt-system-firmware \
+  #     -f runner=syseng-gh-08 -f tests=stress -f pr=123
+  # Runs started this way are not uploaded by produce-data.yml.
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Only run on this runner (a key of .github/ci_runners.json)'
+        type: string
+        default: ''
+      tests:
+        description: 'Comma-separated tests to run: all, stress, tensix-column, manufacturing'
+        type: string
+        default: 'all'
+      pr:
+        description: 'Test the head of this PR number instead of the selected branch'
+        type: string
+        default: ''
+
+# Debug dispatches are named so that produce-data.yml can skip them.
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+      && (inputs.runner != '' || inputs.tests != 'all' || inputs.pr != '')
+      && format('HW Soak (debug): {0} on {1}{2}', inputs.tests, inputs.runner || 'all runners',
+                inputs.pr && format(' for PR #{0}', inputs.pr) || '')
+      || '' }}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  # Dispatched runs get their own group, so several can be queued at once
+  # (e.g. to repeat a test) without cancelling each other or the nightly run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
 jobs:
   # Single source of truth for whether the long tests should run. Downstream
   # jobs gate on this via `needs` so the condition lives in exactly one place.
+  # On a PR, a 'runner:<name>' label pins the run to that runner. Adding it to
+  # a PR that already has 'long-tests' also (re)starts the run.
   should-run:
     if: >
       github.event_name == 'schedule'
       || github.event_name == 'workflow_dispatch'
       || github.event.label.name == 'long-tests'
+      || (startsWith(github.event.label.name, 'runner:')
+          && contains(github.event.pull_request.labels.*.name, 'long-tests'))
     runs-on: ubuntu-24.04
     steps:
       - run: echo "Long tests will run."
@@ -27,6 +59,8 @@ jobs:
   build-fw-artifact:
     needs: should-run
     uses: ./.github/workflows/build-fw.yml
+    with:
+      ref: ${{ inputs.pr && format('refs/pull/{0}/head', inputs.pr) || '' }}
     secrets:
       SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
 
@@ -34,27 +68,76 @@ jobs:
     needs: should-run
     runs-on: ubuntu-24.04
     outputs:
+      ref: ${{ steps.gen.outputs.ref }}
       matrix-config: ${{ steps.gen.outputs.matrix-config }}
       mfg-matrix-config: ${{ steps.gen.outputs.mfg-matrix-config }}
-      p150a-kmd: ${{ steps.gen.outputs.p150a-kmd }}
+      tensix-matrix-config: ${{ steps.gen.outputs.tensix-matrix-config }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.pr && format('refs/pull/{0}/head', inputs.pr) || '' }}
       - id: gen
+        env:
+          RUNNER_INPUT: ${{ inputs.runner }}
+          TESTS_INPUT: ${{ inputs.tests || 'all' }}
+          PR_INPUT: ${{ inputs.pr }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
-          echo "matrix-config=$(jq -c '.bh' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          if [[ -n "$PR_INPUT" && ! "$PR_INPUT" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr must be a PR number, got '$PR_INPUT'"
+            exit 1
+          fi
+          echo "ref=${PR_INPUT:+refs/pull/$PR_INPUT/head}" | tee -a $GITHUB_OUTPUT
+
+          # The runner comes from the dispatch input or a 'runner:<name>' PR label
+          RUNNER="$RUNNER_INPUT"
+          if [ -z "$RUNNER" ]; then
+            RUNNER=$(echo "$PR_LABELS" | jq -r '.[]? | select(startswith("runner:")) | ltrimstr("runner:")')
+            if [ "$(echo "$RUNNER" | grep -c .)" -gt 1 ]; then
+              echo "::error::Only one runner:<name> label is supported, found:" $RUNNER
+              exit 1
+            fi
+          fi
+          if [ -n "$RUNNER" ]; then
+            # Fail here on an unknown runner, as failures inside the $(...)
+            # below would not stop the step.
+            echo '[]' | scripts/ci/pin-runner.sh "$RUNNER" > /dev/null
+            echo "::notice::Pinned to runner $RUNNER"
+          fi
+
+          TESTS="${TESTS_INPUT// /}"
+          for t in ${TESTS//,/ }; do
+            case "$t" in
+              all|stress|tensix-column|manufacturing) ;;
+              *) echo "::error::Unknown test '$t'"; exit 1 ;;
+            esac
+          done
+          # Print the configs selected by a jq filter for a test, pinned to
+          # $RUNNER, or [] if the test was not selected.
+          select_test() {
+            if [[ ",$TESTS," != *",all,"* && ",$TESTS," != *",$1,"* ]]; then
+              echo '[]'
+            else
+              jq -c "$2" .github/ci_boards.json | scripts/ci/pin-runner.sh "$RUNNER"
+            fi
+          }
+
+          echo "matrix-config=$(select_test stress '.bh')" | tee -a $GITHUB_OUTPUT
           # Manufacturing test only runs on the standalone PCIe cards (p100a, p150a, p300a)
-          MFG_MATRIX_CONFIG="$(jq -c '[.bh[] | select(.board == "p100a" or .board == "p150a" or .board == "p300a")]' .github/ci_boards.json)"
+          MFG_MATRIX_CONFIG="$(select_test manufacturing '[.bh[] | select(.board == "p100a" or .board == "p150a" or .board == "p300a")]')"
           echo "mfg-matrix-config=$MFG_MATRIX_CONFIG" | tee -a $GITHUB_OUTPUT
-          echo "p150a-kmd=$(jq -r '.bh[] | select(.board == "p150a") | .kmd_build' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "tensix-matrix-config=$(select_test tensix-column '[.bh[] | select(.board == "p150a")]')" | tee -a $GITHUB_OUTPUT
 
   e2e-stress-test:
-    name: BH E2E Stress Test on ${{ matrix.config.board }}
+    name: BH E2E Stress Test on ${{ matrix.config.board }}${{ matrix.config.runner && format(' ({0})', matrix.config.runner) || '' }}
     needs: [gen-config]
+    # A matrix can't be empty, so skip tests that were filtered out
+    if: needs.gen-config.outputs.matrix-config != '[]'
     strategy:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on: ${{ matrix.config.runs-on }}
     container:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
@@ -76,6 +159,7 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           path: tt-system-firmware
+          ref: ${{ needs.gen-config.outputs.ref }}
 
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
@@ -129,8 +213,13 @@ jobs:
           python3 ./scripts/dump_smc_state.py
 
   tensix-column-test:
+    name: tensix-column-test${{ matrix.config.runner && format(' ({0})', matrix.config.runner) || '' }}
     needs: [gen-config, build-fw-artifact]
-    runs-on: p150a
+    if: needs.gen-config.outputs.tensix-matrix-config != '[]'
+    strategy:
+      matrix:
+        config: ${{ fromJson(needs.gen-config.outputs.tensix-matrix-config) }}
+    runs-on: ${{ matrix.config.runs-on }}
     container:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
@@ -152,12 +241,13 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           path: tt-system-firmware
+          ref: ${{ needs.gen-config.outputs.ref }}
 
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
         with:
           app-path: tt-system-firmware
-          kmd-version: ${{ needs.gen-config.outputs.p150a-kmd }}
+          kmd-version: ${{ matrix.config.kmd_build }}
 
       - name: Install the package from PyPI
         run: |
@@ -185,12 +275,14 @@ jobs:
           echo "Successfully verified that tensix-enabled column count is correct: $TENSIX_COUNT"
 
   manufacturing-test:
+    name: manufacturing-test (${{ matrix.config.board }})${{ matrix.config.runner && format(' ({0})', matrix.config.runner) || '' }}
     needs: [build-fw-artifact, gen-config]
+    if: needs.gen-config.outputs.mfg-matrix-config != '[]'
     strategy:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.gen-config.outputs.mfg-matrix-config) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on: ${{ matrix.config.runs-on }}
     container:
       image: ghcr.io/tenstorrent/tt-system-firmware/ci-image:v19.11.0
       volumes:
@@ -210,6 +302,7 @@ jobs:
         uses: actions/checkout@v4.2.2
         with:
           path: tt-system-firmware
+          ref: ${{ needs.gen-config.outputs.ref }}
 
       - name: Prepare Container
         uses: ./tt-system-firmware/.github/workflows/prepare-container
