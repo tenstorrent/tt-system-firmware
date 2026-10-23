@@ -1,10 +1,6 @@
 # Copyright (c) 2025 Tenstorrent AI ULC
 # SPDX-License-Identifier: Apache-2.0
 
-# Needed to keep ruff from complaining about this "unused import"
-# ruff: noqa: F811
-from e2e_smoke import arc_chip_dut, launched_arc_dut  # noqa: F401
-
 
 def test_boot_banner(arc_chip_dut):
     """

@@ -204,8 +204,8 @@ jobs:
       - name: Build bh-mod
         shell: bash
         env:
-          LUWEN_REPO: ${{ vars.LUWEN_REPO || 'https://github.com/tenstorrent/luwen.git' }}
-          LUWEN_REF: ${{ vars.LUWEN_REF || 'main' }}
+          LUWEN_REPO: ${{ vars.LUWEN_REPO || 'https://github.com/alexapostolu/luwen.git' }}
+          LUWEN_REF: ${{ vars.LUWEN_REF || 'bh-mod-remove-reset' }}
         run: |
           set -euo pipefail
           missing=()
