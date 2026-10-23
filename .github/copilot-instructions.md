@@ -8,7 +8,7 @@ tools (host software, `tt-flash`, `tt-smi`, etc.).
 
 Flag any change that could break compatibility, including:
 
-- **Telemetry tags** (`lib/tenstorrent/bh_arc/telemetry.h`): reusing or renumbering an
+- **Telemetry tags** (`lib/tenstorrent/fw_common/telemetry.h`): reusing or renumbering an
   existing `TAG_*` value, changing the meaning, units, encoding, or bit-layout of an
   existing tag, or removing a tag. New tags must be appended with a new number and must
   not shift existing values. `TELEMETRY_VERSION` should be bumped when the meaning of an
