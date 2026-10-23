@@ -22,3 +22,15 @@ tests:
       - "CONF_FILE=\
         ../../../../../tt-system-firmware/test-conf/tests/drivers/uart/uart_elementary/\
         tt_mimir_tt_mimir_smc.conf"
+  drivers.uart.uart_elementary.grendel_uart.tt_mmk:
+    tags: smoke
+    platform_allow:
+      - tt_mmk/tt_keraunos/smc
+      - tt_mmk/tt_mimir/smc
+    extra_args:
+      - "DTC_OVERLAY_FILE=\
+        ../../../../../tt-system-firmware/test-conf/tests/drivers/uart/uart_elementary/\
+        tt_mmk_smc.overlay"
+      - "CONF_FILE=\
+        ../../../../../tt-system-firmware/test-conf/tests/drivers/uart/uart_elementary/\
+        tt_mmk_smc.conf"

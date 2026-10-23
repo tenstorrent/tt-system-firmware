@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2025 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Enable UART0 in loopback mode as the DUT */
+dut: &uart0 {
+	loopback;
+	current-speed = <115200>;
+	/* Set clock frequency so DLAB is programmed to 1 */
+	clock-frequency = <2000000>;
+	status = "okay";
+};
