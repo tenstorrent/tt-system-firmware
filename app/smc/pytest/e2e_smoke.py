@@ -58,10 +58,6 @@ except ImportError:
 
             assert "FLASH SUCCESS" in strip_ansi_codes(result.stdout)
 
-    @pytest.fixture(scope="session")
-    def unlaunched_dut(fwbundle):
-        return DeviceAdapter(fwbundle)
-
 
 TTZP = Path(__file__).parents[3]
 sys.path.append(str(TTZP / "scripts"))
@@ -125,12 +121,9 @@ FUSE_ASIC_ID_HIGH_START_BIT = 5568
 TRISC0_RESET_PC_ADDR = 0xFFB12228
 
 # ARC messages
-TT_SMC_MSG_REINIT_TENSIX = 0x20
 TT_SMC_MSG_FORCE_AICLK = 0x33
 TT_SMC_MSG_GET_AICLK = 0x34
 TT_SMC_MSG_TEST = 0x90
-TT_SMC_MSG_TOGGLE_TENSIX_RESET = 0xAF
-TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET = 0xAE
 TT_SMC_MSG_PING_DM = 0xC0
 TT_SMC_MSG_SET_WDT = 0xC1
 TT_SMC_MSG_READ_TS = 0x1B
@@ -189,28 +182,6 @@ def convert_telemetry_to_float(value):
         return sys.float_info.max
     else:
         return value / 65536.0
-
-
-@pytest.fixture(scope="session")
-def launched_arc_dut(unlaunched_dut: DeviceAdapter, board_name, asic_id, skip_flash):
-    """
-    This fixture launches the Zephyr DUT once per test session, and returns
-    a reference to the launched DUT. This is used by tests that need to
-    flash the DUT once, and then run multiple tests against it.
-    """
-    if skip_flash:
-        logger.info("Skipping ARC DUT flash (--skip-flash)")
-    else:
-        logger.info("Flashing ARC DUT")
-    _prepare_and_launch_dut(
-        unlaunched_dut,
-        flash_mcuboot_bl2=True,
-        board_name=board_name,
-        asic_id=asic_id,
-        skip_flash=skip_flash,
-    )
-    time.sleep(1)  # Wait for ARC to start
-    return unlaunched_dut
 
 
 def _verify_running_versions(board_name=None, asic_id=0):
@@ -1115,160 +1086,6 @@ def test_dirty_reset():
     assert fail_count <= allowed_failures, (
         f"dirty reset failed {fail_count}/{total_tries} times (allowed {allowed_failures} failures)."
     )
-
-
-def tensix_reset_sequence(arc_chip):
-    """
-    Careful sequence to reset all the Tensixes
-    """
-    TENSIX_RISC_RESET_ADDR = [0x80030040 + i * 4 for i in range(8)]
-    SOFT_RESET_ADDR = 0xFFB121B0
-    SOFT_RESET_DATA = 0x47800
-
-    # Force AICLK to safe frequency
-    arc_chip.arc_msg(TT_SMC_MSG_FORCE_AICLK, arg0=250, arg1=0)
-    # Clear RISC reset registers
-    for addr in TENSIX_RISC_RESET_ADDR:
-        arc_chip.axi_write32(addr, 0)
-
-    # The tensix reset message
-    response = arc_chip.arc_msg(TT_SMC_MSG_TOGGLE_TENSIX_RESET)
-    assert response[1] == 0, "SMC response invalid to toggle tensix reset message"
-    response = arc_chip.arc_msg(TT_SMC_MSG_REINIT_TENSIX)
-    assert response[1] == 0, "SMC response invalid to reinit tensix message"
-
-    # Set soft reset registers inside Tensix
-    arc_chip.noc_broadcast32(1, SOFT_RESET_ADDR, SOFT_RESET_DATA)
-
-    # Release RISC reset registers
-    for addr in TENSIX_RISC_RESET_ADDR:
-        arc_chip.axi_write32(addr, 0xFFFFFFFF)
-
-    # Unforce AICLK
-    arc_chip.arc_msg(TT_SMC_MSG_FORCE_AICLK, arg0=0, arg1=0)
-
-
-def test_tensix_reset(arc_chip_dut, asic_id):
-    """
-    Validates the Tensix reset sequence
-    """
-    # Unused register in Tensix. Use bit 0 as a scratch bit
-    # "PREFECTH" is a typo carried over from the register name in the RTL
-    arc_chip = pyluwen.detect_chips()[asic_id]
-
-    try:
-        arc_chip.set_power_state("high")
-    except Exception:
-        logger.info("No driver support for power IOCTL; continue.")
-
-    ETH_RISC_PREFECTH_CTRL_ADDR = 0xFFB120B8
-    # This Tensix coordinate (1-2) should be available in all current harvesting configs
-    scratch_set = arc_chip.noc_read32(
-        noc_id=0, x=1, y=2, addr=ETH_RISC_PREFECTH_CTRL_ADDR
-    )
-    scratch_set |= 1  # Set bit 0 as a scratch flag
-
-    for i in range(10):
-        logger.info(f"Starting Tensix reset test iteration {i}")
-        # Set scratch bit before reset
-        arc_chip.noc_write32(
-            noc_id=0, x=1, y=2, addr=ETH_RISC_PREFECTH_CTRL_ADDR, data=scratch_set
-        )
-
-        tensix_reset_sequence(arc_chip)
-
-        # Check that the Tensix reset worked by checking the scratch bit is cleared
-        scratch_get = arc_chip.noc_read32(
-            noc_id=0, x=1, y=2, addr=ETH_RISC_PREFECTH_CTRL_ADDR
-        )
-        assert scratch_get & 1 == 0, (
-            "Tensix scratch bit not cleared. Tensix reset failed"
-        )
-
-        logger.info(f"Tensix reset test iteration {i} passed")
-
-
-def _logical_tensix_x_coords(enabled_cols: int) -> list[int]:
-    """Return valid logical NOC0 X coordinates for enabled tensix columns.
-
-    Translation fills logical X 1..7 (left half) then 10..16 (right half)
-    with good columns in ascending physical NOC0 X order.  Harvested columns
-    are pushed to the high end of the right half.
-    """
-    num_enabled = enabled_cols.bit_count()
-    left_count = min(7, num_enabled)
-    right_count = max(0, num_enabled - 7)
-    return list(range(1, 1 + left_count)) + list(range(10, 10 + right_count))
-
-
-def test_tensix_reset_single(arc_chip_dut, asic_id):
-    """
-    Reset every non-harvested tensix one at a time and verify that only the
-    target tile is affected.  For each tile the test:
-
-    1. Writes a sentinel pattern to every enabled tile.
-    2. Resets one tile and checks its register is cleared.
-    3. Reads every *other* tile and checks the pattern is still intact.
-    """
-    arc_chip = pyluwen.detect_chips()[asic_id]
-
-    TENSIX_NOC_Y = list(range(2, 12))
-    TRISC0_RESET_PC = 0xFFB12228
-    PATTERN = 0xA5A5
-
-    enabled_cols = int(arc_chip.get_telemetry().tensix_enabled_col)
-    assert enabled_cols != 0, "tensix_enabled_col is zero"
-
-    valid_x = _logical_tensix_x_coords(enabled_cols)
-    all_tiles = [(x, y) for x in valid_x for y in TENSIX_NOC_Y]
-
-    arc_chip.set_power_state("high")
-
-    # Write pattern to every tile once up front
-    for x, y in all_tiles:
-        arc_chip.noc_write32(noc_id=0, x=x, y=y, addr=TRISC0_RESET_PC, data=PATTERN)
-
-    failed = 0
-
-    for target_x, target_y in all_tiles:
-        # Reset the target tile
-        response = arc_chip.arc_msg(
-            TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET,
-            arg0=target_x | (target_y << 8),
-        )
-        if response[1] != 0:
-            failed += 1
-            arc_chip.noc_write32(
-                noc_id=0, x=target_x, y=target_y, addr=TRISC0_RESET_PC, data=PATTERN
-            )
-            continue
-
-        # Verify the target tile was cleared
-        val = arc_chip.noc_read32(
-            noc_id=0, x=target_x, y=target_y, addr=TRISC0_RESET_PC
-        )
-        if val != 0:
-            failed += 1
-            arc_chip.noc_write32(
-                noc_id=0, x=target_x, y=target_y, addr=TRISC0_RESET_PC, data=PATTERN
-            )
-            continue
-
-        # Verify no other tile was affected
-        for x, y in all_tiles:
-            if (x, y) == (target_x, target_y):
-                continue
-            val = arc_chip.noc_read32(noc_id=0, x=x, y=y, addr=TRISC0_RESET_PC)
-            if val != PATTERN:
-                failed += 1
-                break
-
-        # Restore pattern on the reset tile before moving to the next
-        arc_chip.noc_write32(
-            noc_id=0, x=target_x, y=target_y, addr=TRISC0_RESET_PC, data=PATTERN
-        )
-
-    assert failed == 0, f"{failed}/{len(all_tiles)} tiles failed"
 
 
 def test_aiclk(arc_chip_dut, asic_id):

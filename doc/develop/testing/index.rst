@@ -79,7 +79,17 @@ tested, this is possible with the following command:
 
 .. code-block:: shell
 
-   pytest app/smc/pytest/e2e_smoke.py
+   pytest app/smc/pytest/e2e_smoke.py app/smc/pytest/e2e_tensix_reset.py -m "not stress"
+
+Smoke tests are split across modules under ``app/smc/pytest/``. Twister runs
+every file listed in ``pytest_root`` for ``app.e2e-smoke-flash``. Pass the same
+files to pytest to run that set directly. A single module still works, for
+example ``pytest app/smc/pytest/e2e_tensix_reset.py -m smoke``.
+
+Modules such as ``e2e_tensix_reset.py`` hold both smoke and stress tests, labelled
+with the ``smoke`` and ``stress`` pytest markers. The smoke suites deselect
+``stress`` tests and the stress suite deselects ``smoke`` tests, so tests
+without a marker run in whichever suite lists their file.
 
 Pytest additionally supports running a single test instead of all, for example:
 
@@ -109,7 +119,7 @@ In order to execute stress tests, the following command can be used:
 
 Note that these tests can take up to 90 minutes to execute. To reduce their
 execution time, consider editing ``MAX_TEST_ITERATIONS`` in ``e2e_stress.py``
-to a lower value.
+and ``e2e_tensix_reset.py`` to a lower value.
 
 Manufacturing Test
 ------------------
