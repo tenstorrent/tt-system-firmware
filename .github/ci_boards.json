@@ -36,28 +36,40 @@
     },
     {
       "board": "quietbox2",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-qb-ge:v0.78.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-qb-ge:v0.81.0-rc1",
       "metal-target": "blackhole_qb_ge",
       "arch-name": "blackhole",
-      "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
+      "metal-options": "--cap-add SYS_MODULE --cap-add SYS_ADMIN --device /dev/tenstorrent --user=root",
+      "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "4",
+      "num-devices": "4",
       "kmd_build": "2.11.0"
     },
     {
       "board": "loudbox",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-loudbox:v0.78.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-loudbox:v0.81.0-rc1",
       "metal-target": "blackhole_loudbox",
       "arch-name": "blackhole",
-      "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
+      "metal-options": "--cap-add SYS_MODULE --cap-add SYS_ADMIN --device /dev/tenstorrent --user=root",
+      "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "8",
+      "separate-cache": true,
+      "single-visible-device": true,
+      "num-devices": "8",
       "kmd_build": "2.11.0"
     },
 
     {
       "board": "bh-galaxy-revc",
-      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-glx:v0.78.0",
+      "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-glx:v0.81.0-rc1",
       "metal-target": "blackhole_glx",
       "arch-name": "blackhole",
-      "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
+      "metal-options": "--cap-add SYS_MODULE --cap-add SYS_ADMIN --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
       "metal-deploy-run-eth": true,
+      "eth-test-expected-links": "10",
+      "separate-cache": true,
+      "single-visible-device": true,
+      "num-devices": "32",
       "kmd_build": "2.11.0"
     }
   ]
