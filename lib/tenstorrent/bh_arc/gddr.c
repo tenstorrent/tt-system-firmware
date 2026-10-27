@@ -5,6 +5,7 @@
  */
 
 #include "bh_reset.h"
+#include "chip_info.h"
 #include "gddr.h"
 #include "gddr_cal.h"
 #include "harvesting.h"
@@ -885,6 +886,14 @@ static int32_t mrisc_message(uint32_t op_code, uint32_t instance_mask, uint32_t 
 
 int32_t set_mrisc_power_setting(bool on)
 {
+	/*
+	 * Galaxy/UBB stays out of GDDR PHY powerdown (self-refresh).
+	 */
+	if (!on && bh_chip_info_is_ubb()) {
+		LOG_WRN_ONCE("Skipping GDDR PHY powerdown on Galaxy");
+		return 0;
+	}
+
 	uint32_t op_code = on ? MRISC_MSG_TYPE_PHY_WAKEUP : MRISC_MSG_TYPE_PHY_POWERDOWN;
 
 	return mrisc_message(op_code, GetDramMask(), MRISC_POWER_SETTING_TIMEOUT_MS,

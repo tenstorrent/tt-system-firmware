@@ -16,6 +16,7 @@
 
 #include "noc_init.h"
 #include "aiclk_ppm.h"
+#include "chip_info.h"
 #include "gddr.h"
 #include "bh_reset.h"
 
@@ -105,8 +106,11 @@ static int32_t apply_power_settings(const struct power_setting_rqst *power_setti
 
 	if (power_setting->power_flags_valid > BH_POWER_DOMAIN_MRISC) {
 		ret = set_mrisc_power_setting(power_setting->power_flags_bitfield.mrisc_phy_power);
-		power_state[BH_POWER_DOMAIN_MRISC] =
-			power_setting->power_flags_bitfield.mrisc_phy_power;
+		/* Powerdown no-ops on Galaxy, so leave the tracked state powered. */
+		if (!bh_chip_info_is_ubb()) {
+			power_state[BH_POWER_DOMAIN_MRISC] =
+				power_setting->power_flags_bitfield.mrisc_phy_power;
+		}
 	}
 
 	return ret;
