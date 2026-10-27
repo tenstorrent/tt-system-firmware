@@ -515,21 +515,22 @@ typedef union {
 
 /** @brief QSFP cage discovery status.
  *
- * Present on every board. Remains 0 if the DMC never publishes
+ * Present on every board. Reads 0x7F7F7F7F if the DMC never publishes
  * CMFW_SMBUS_QSFP_STATUS.
  *
  * Packed little-endian: one byte per cage, byte 0 = cage A ... byte 3 = D.
  *
  * Per-cage byte:
- *   bit 7     present flag (QSFP_TELEM_PRESENT_FLAG)
- *   bits 6:0  SFF-8024 identifier when present (7 bits)
+ *   0x00-0x6F, 0x80-0xFF  module present; value is its SFF-8024 identifier
  *
- * Not-present codes (bit 7 clear):
- *   0x00  expander absent (no I2C ACK)
- *   0x01  expander present, no module seated
- *   0x02  module seated, identifier read at 0x50 failed
- *   0x03  bus stuck (all four bytes set)
- *   0x04-0x7F reserved. Hosts must treat unknown values as not present.
+ * Status codes, in the range SFF-8024 reserves (0x70-0x7F):
+ *   0x70  expander absent (no I2C ACK)
+ *   0x71  expander present, no module seated
+ *   0x72  module seated, identifier read at 0x50 failed or returned a
+ *         reserved value
+ *   0x73  bus stuck (all four bytes set)
+ *   0x74-0x7E reserved. Hosts must treat unknown values as not present.
+ *   0x7F  not reported by the DMC (all four bytes set)
  */
 #define TAG_QSFP_STATUS 83
 

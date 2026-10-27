@@ -17,11 +17,11 @@
  * per-cage module presence and, for any seated module, the CMIS Identifier.
  *
  * Returns a packed status word, one byte per cage (byte 0 = A ... byte 3 = D):
- *   0x00        expander absent (no I2C response)
- *   0x01        expander present, no module seated
- *   0x02        module seated, identifier read at 0x50 failed
- *   0x03        MCU_I2C0 stuck (all four bytes)
- *   0x80 | id   module present; id = SFF-8024 identifier byte
+ *   0x70        expander absent (no I2C response)
+ *   0x71        expander present, no module seated
+ *   0x72        module seated, identifier read at 0x50 failed or reserved
+ *   0x73        MCU_I2C0 stuck (all four bytes)
+ *   otherwise   module present; value = SFF-8024 identifier byte
  * Forwarded to the SMC as telemetry TAG_QSFP_STATUS.
  */
 uint32_t qsfp_discover(void);

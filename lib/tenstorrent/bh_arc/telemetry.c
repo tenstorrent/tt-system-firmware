@@ -21,6 +21,7 @@
 #include <math.h>  /* for floor */
 #include <stdint.h>
 
+#include <tenstorrent/qsfp_mgmt.h>
 #include <zephyr/logging/log.h>
 
 #ifdef CONFIG_BH_FWTABLE
@@ -186,6 +187,9 @@ static struct telemetry_table telemetry_table = {
 		[76] = {TAG_CCFGOVR_STATE, TELEM_OFFSET(TAG_CCFGOVR_STATE)},
 		[77] = {TAG_CCFGOVR_SEQ, TELEM_OFFSET(TAG_CCFGOVR_SEQ)},
 		[78] = {TAG_QSFP_STATUS, TELEM_OFFSET(TAG_QSFP_STATUS)},
+	},
+	.telemetry = {
+		[TAG_QSFP_STATUS] = QSFP_TELEM_ALL(QSFP_TELEM_NOT_REPORTED),
 	},
 };
 /* clang-format on */

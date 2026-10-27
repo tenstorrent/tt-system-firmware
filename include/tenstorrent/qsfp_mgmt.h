@@ -19,20 +19,22 @@ extern "C" {
 #define QSFP_MGMT_SMC_TIMEOUT_MS 5000U
 
 /*
- * TAG_QSFP_STATUS contains one byte per cage (A in bits 7:0). Values with the
- * present flag set carry the module's seven-bit SFF-8024 identifier.
+ * TAG_QSFP_STATUS contains one byte per cage (A in bits 7:0). A seated module
+ * reports its full SFF-8024 identifier byte. Status codes live in 70h-7Fh,
+ * which SFF-8024 reserves, so they never collide with an identifier.
  */
 enum qsfp_telemetry_status {
-	QSFP_TELEM_EXPANDER_ABSENT = 0x00,
-	QSFP_TELEM_NO_MODULE = 0x01,
-	QSFP_TELEM_CMIS_READ_FAILED = 0x02,
-	QSFP_TELEM_BUS_STUCK = 0x03,
-	QSFP_TELEM_PRESENT_FLAG = 0x80,
+	QSFP_TELEM_EXPANDER_ABSENT = 0x70,
+	QSFP_TELEM_NO_MODULE = 0x71,
+	QSFP_TELEM_CMIS_READ_FAILED = 0x72,
+	QSFP_TELEM_BUS_STUCK = 0x73,
+	/* Initial SMC value until the DMC publishes CMFW_SMBUS_QSFP_STATUS. */
+	QSFP_TELEM_NOT_REPORTED = 0x7f,
 };
 
 #define QSFP_TELEM_CAGE(word, cage) ((uint8_t)((uint32_t)(word) >> (8U * (cage))))
-#define QSFP_TELEM_PRESENT_ID(identifier)                                                          \
-	((uint8_t)(QSFP_TELEM_PRESENT_FLAG | ((identifier) & 0x7fU)))
+#define QSFP_TELEM_IS_CODE(value)   (((uint8_t)(value) & 0xf0U) == 0x70U)
+#define QSFP_TELEM_ALL(value)       ((uint32_t)(value) * 0x01010101U)
 
 enum qsfp_mgmt_op {
 	QSFP_MGMT_OP_STATUS = 0,

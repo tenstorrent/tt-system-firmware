@@ -10,6 +10,8 @@
 #include "qsfp_bus.h"
 #include "qsfp_cmis.h"
 
+#include <errno.h>
+
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
@@ -24,7 +26,7 @@ static uint32_t qsfp_probe(bool log_discovery)
 
 	if (bus == NULL) {
 		LOG_ERR("QSFP: i2c3 (MCU_I2C0) not ready, skipping discovery");
-		return status;
+		return QSFP_TELEM_ALL(QSFP_TELEM_EXPANDER_ABSENT);
 	}
 
 	ARRAY_FOR_EACH(qsfp_cages, i) {
@@ -36,6 +38,7 @@ static uint32_t qsfp_probe(bool log_discovery)
 
 		if (i2c_reg_read_byte(bus, cage->expander_addr, TCA9554_REG_INPUT, &pins) != 0) {
 			qsfp_dom_cache_invalidate(i);
+			status |= (uint32_t)QSFP_TELEM_EXPANDER_ABSENT << (8 * i);
 			if (log_discovery) {
 				LOG_WRN("QSFP %s: expander 0x%02x absent", cage->name,
 					cage->expander_addr);
@@ -67,6 +70,11 @@ static uint32_t qsfp_probe(bool log_discovery)
 		ident_ret = qsfp_cmis_read_identity(bus, &identifier, &revision);
 		qsfp_deselect(bus, i);
 
+		/* A reserved identifier would alias a status code. */
+		if (ident_ret == 0 && QSFP_TELEM_IS_CODE(identifier)) {
+			ident_ret = -EIO;
+		}
+
 		if (ident_ret != 0) {
 			qsfp_dom_cache_invalidate(i);
 			status |= (uint32_t)QSFP_TELEM_CMIS_READ_FAILED << (8 * i);
@@ -84,7 +92,7 @@ static uint32_t qsfp_probe(bool log_discovery)
 		 */
 		qsfp_dom_cache_invalidate(i);
 
-		status |= (uint32_t)QSFP_TELEM_PRESENT_ID(identifier) << (8 * i);
+		status |= (uint32_t)identifier << (8 * i);
 		if (log_discovery) {
 			if (qsfp_ident_sff8636(identifier)) {
 				LOG_INF("QSFP %s: %s id=0x%02x, SFF-8636 rev 0x%02x", cage->name,
@@ -98,7 +106,7 @@ static uint32_t qsfp_probe(bool log_discovery)
 	}
 
 	if (responsive == 0 && qsfp_recover(bus) != 0) {
-		status = (uint32_t)QSFP_TELEM_BUS_STUCK * 0x01010101U;
+		status = QSFP_TELEM_ALL(QSFP_TELEM_BUS_STUCK);
 	}
 	qsfp_session_end(bus);
 	return status;
