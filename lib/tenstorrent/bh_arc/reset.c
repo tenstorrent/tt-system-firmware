@@ -181,11 +181,11 @@ static int DeassertRiscvResets(void)
 		clock_control_configure(pll_devs[i], NULL,
 					(void *)CLOCK_CONTROL_TT_BH_CONFIG_BYPASS);
 	}
-	/* Deassert RISC reset from reset_unit */
-	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
-		(void)reset_tt_bh_lines_deassert(tensix_risc_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
-						 UINT32_MAX);
-	}
+	/*
+	 * Deassert RISC reset from reset_unit. Absolute write to every bank
+	 * (no RMW) so the release is a back-to-back store burst.
+	 */
+	(void)reset_tt_bh_write(tensix_risc_reset_dev, UINT32_MAX);
 
 	/* Dual-field banks: RMW so tile bits from DeassertTileResets stay set */
 	(void)reset_tt_bh_lines_deassert(eth_reset_dev, 0, TT_BH_ETH_RISC_MASK);
@@ -378,16 +378,12 @@ static int DeassertTileResets(void)
 
 	/* Always deassert NOC, system, and PCIe resets - needed for ARC-PCIe communication.
 	 * Absolute writes for dual-field / sparse banks force a known full-word state
-	 * (tile half released, RISC half still held). Full tensix banks use line RMW.
+	 * (tile half released, RISC half still held). The multi-bank tensix write
+	 * releases every bank with a back-to-back store burst (no RMW).
 	 */
 	(void)reset_tt_bh_write(global_reset_dev, TT_BH_GLOBAL_RESET_MASK);
 	(void)reset_tt_bh_write(eth_reset_dev, TT_BH_ETH_TILE_MASK);
-
-	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
-		(void)reset_tt_bh_lines_deassert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
-						 UINT32_MAX);
-	}
-
+	(void)reset_tt_bh_write(tensix_reset_dev, UINT32_MAX);
 	(void)reset_tt_bh_write(ddr_reset_dev, TT_BH_DDR_TILE_MASK);
 	(void)reset_tt_bh_write(l2cpu_reset_dev, TT_BH_L2CPU_TILE_MASK);
 

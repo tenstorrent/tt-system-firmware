@@ -110,10 +110,14 @@ static int tt_bh_reset_emul_line_toggle(const struct device *dev, uint32_t id)
 
 int reset_tt_bh_write(const struct device *dev, uint32_t value)
 {
+	const struct tt_bh_reset_emul_config *config = dev->config;
 	struct tt_bh_reset_emul_data *const data = dev->data;
+	uint32_t n_banks = config->size / TT_BH_RESET_BANK_STRIDE;
 
 	K_SPINLOCK(&data->lock) {
-		data->values[0] = value;
+		for (uint32_t i = 0; i < n_banks; i++) {
+			data->values[i] = value;
+		}
 	}
 
 	return 0;

@@ -31,12 +31,14 @@ extern "C" {
 		    (DT_REG_SIZE(node_id) / TT_BH_RESET_BANK_STRIDE))
 
 /**
- * @brief Absolute write to a BH reset-unit bank register.
+ * @brief Absolute write to every bank register of a BH reset controller.
  *
- * Sets the entire bank word at offset 0 (no read-modify-write). Use when init
- * must force a known full-register state (e.g. dual-field tile half deasserted
- * with RISC half still asserted). Prefer reset_tt_bh_lines_assert/deassert when
- * only selected lines should change.
+ * Writes @p value to each bank word in the region (no read-modify-write). For
+ * single-bank controllers this is one store; for multi-bank regions (tensix)
+ * it is a back-to-back store burst, which is why init uses it for full-bank
+ * releases. Use when init must force a known full-register state (e.g.
+ * dual-field tile half deasserted with RISC half still asserted). Prefer
+ * reset_tt_bh_lines_assert/deassert when only selected lines should change.
  */
 int reset_tt_bh_write(const struct device *dev, uint32_t value);
 

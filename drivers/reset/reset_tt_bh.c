@@ -123,9 +123,14 @@ int reset_tt_bh_write(const struct device *dev, uint32_t value)
 {
 	const struct tt_bh_reset_config *config = dev->config;
 	struct tt_bh_reset_data *const data = dev->data;
+	const uintptr_t base = config->base;
+	const size_t size = config->size;
 
+	/* Posted stores only: no MMIO reads, so multi-bank regions release as a burst */
 	K_SPINLOCK(&data->lock) {
-		sys_write32(value, config->base);
+		for (size_t off = 0; off < size; off += TT_BH_RESET_BANK_STRIDE) {
+			sys_write32(value, base + off);
+		}
 	}
 
 	return 0;
