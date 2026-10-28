@@ -12,7 +12,6 @@ echo "Linking source files into package directory..."
 PYTHON_FILES=(
     "fwtable_tooling.py"
     "tt_boot_fs.py"
-    "tt_fwbundle.py"
     "update_tensix_disable_count.py"
 )
 for file in "${PYTHON_FILES[@]}"; do
