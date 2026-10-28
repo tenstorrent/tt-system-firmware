@@ -30,6 +30,11 @@ The release process consists of the following high level steps:
 
 8. Announce the release via internal channels, providing a link to the GitHub release page.
 
+If fixes are needed on top of an already-published release, a patch release
+(``vX.Y.Z`` with ``Z > 0``) is created from the same release branch. This
+follows the same RC-based flow, starting from the existing release branch rather
+than a new one; see `Creating a Patch Release`_.
+
 
 Shared Building Blocks
 **********************
@@ -319,6 +324,45 @@ steps:
    CI process for the release from the final release tag. Once this is complete,
    follow `Posting a Release to GitHub`_ steps to post the final release to
    GitHub as a published stable release.
+
+Creating a Patch Release
+========================
+
+A patch release delivers fixes on top of a release that has already been
+published, without picking up all the new developments that have landed on main
+since the release branch was cut. Patch releases are made from the existing
+release branch (e.g. ``v19.17-branch``) and increment only the PATCHLEVEL field
+of the version, so the first patch release after ``v19.17.0`` is ``v19.17.1``.
+
+Patch releases go through a similar RC and validation process as a minor
+release. The only difference is in how the first RC is created: instead of
+creating a new release branch and bumping MINOR, the existing release branch is
+reused and PATCHLEVEL is bumped.
+
+To create a patch release, follow these steps:
+
+1. Backport Fixes - Open PRs against the release branch for the fixes to be
+   included in the patch release, following the rules in
+   `Backports and Validation`_. In particular, every fix must also be present on
+   main.
+
+2. Patch RC Version Update - Increment the PATCHLEVEL field and set the
+   EXTRAVERSION field to "rc1" in the release branch. For example, if the release
+   branch is ``v19.17-branch`` and the last published release was ``v19.17.0``,
+   then the version should become ``19.17.1-rc1``. This step can be performed
+   using the command ``./scripts/update_versions.sh patch-rc``.
+
+3. Merge, Tag and Post the RC - Follow steps 2 through 4 of
+   `Creating Additional RCs`_ to merge the version bump, tag the release branch
+   and post the RC to GitHub. The tag uses the new patch number, e.g.
+   ``v19.17.1-rc1`` for the first RC of the ``19.17.1`` patch release.
+
+4. Validate and Finalize - From this point the flow is identical to a minor
+   release: create further RCs as needed (`Creating Additional RCs`_) and, once
+   an RC has been validated, finalize the version and tag ``vX.Y.Z``
+   (`Creating the Final Release`_). Make sure the GitHub release notes describe
+   it as a patch release on top of the previous version (e.g. "This is a patch
+   release on top of v19.17.0").
 
 Testing the Release Process in a Fork
 *************************************
