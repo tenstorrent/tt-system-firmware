@@ -14,7 +14,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <tenstorrent/bh_power.h>
 #include <tenstorrent/post_code.h>
 #include <tenstorrent/spi_flash_buf.h>
 #include <tenstorrent/sys_init_defines.h>
@@ -327,15 +326,7 @@ static int wipe_dest(void)
 
 void TensixInit(void)
 {
-	bool power_state;
-
 	EnableTensixCG(true, 0, 0);
-
-	/* NocInit un-gates tile clocks. If tensix is in low power, re-gate them. */
-	bh_power_state_get(BH_POWER_DOMAIN_TENSIX, &power_state);
-	if (!power_state) {
-		set_tensix_enable(false);
-	}
 
 	/* wipe_l1()/wipe_dest() aren't here because they're only needed on boot & board reset. */
 

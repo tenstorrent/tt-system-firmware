@@ -201,15 +201,56 @@ static int DeassertRiscvResets(void)
 }
 SYS_INIT_APP(DeassertRiscvResets);
 
+/* Redo Tensix init that gets cleared on Tensix reset.
+ * This includes all NOC programming and any programming within the tile.
+ */
+static __maybe_unused void ReinitAllTensix(void)
+{
+	ClearNocTranslation();
+	/* We technically don't have to re-program the entire NOC (only the Tensix NOC portions),
+	 * but it's simpler to reuse the same functions to re-program all of it.
+	 */
+	NocInit();
+	TensixInit();
+	if (bh_chip_info_feature_noc_translation_en()) {
+		InitNocTranslationFromHarvesting();
+	}
+}
+
+/* NocInit un-gates tile clocks. If tensix is in low power, re-gate them.
+ * Call only after the last write to Tensix tiles: NOC writes to clock-gated tiles hang.
+ */
+static __maybe_unused void RestoreTensixClockGate(void)
+{
+	bool power_state;
+
+	bh_power_state_get(BH_POWER_DOMAIN_TENSIX, &power_state);
+	if (!power_state) {
+		set_tensix_enable(false);
+	}
+}
+
 /**
  * @brief Handler for @ref TT_SMC_MSG_TOGGLE_TENSIX_RESET
  * @see toggle_tensix_reset_rqst
+ *
+ * Reset all Tensix tiles and restore them to their post-boot state:
+ * NOC re-initialized and RISCs held in soft reset.
  */
 static __maybe_unused uint8_t ToggleTensixReset(const union request *req, struct response *rsp)
 {
 	ARG_UNUSED(req);
 	ARG_UNUSED(rsp);
 
+	SetAiclkResetSafe(true);
+
+	/* RISC reset assert */
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_assert(tensix_risc_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+					       UINT32_MAX);
+	}
+
+	/* Tile reset assert then deassert */
 	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
 		(void)reset_tt_bh_lines_assert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
 					       UINT32_MAX);
@@ -219,6 +260,20 @@ static __maybe_unused uint8_t ToggleTensixReset(const union request *req, struct
 		(void)reset_tt_bh_lines_deassert(tensix_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
 						 UINT32_MAX);
 	}
+
+	ReinitAllTensix();
+
+	bh_soft_reset_all_tensix();
+
+	/* RISC reset deassert */
+	for (uint32_t i = 0; i < TENSIX_NUM_RESET_BANKS; i++) {
+		(void)reset_tt_bh_lines_deassert(tensix_risc_reset_dev, i * TT_BH_RESET_BANK_STRIDE,
+						 UINT32_MAX);
+	}
+
+	SetAiclkResetSafe(false);
+
+	RestoreTensixClockGate();
 
 	return 0;
 }
@@ -315,15 +370,8 @@ REGISTER_MESSAGE(TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET, ToggleSingleTensixReset)
  */
 static __maybe_unused uint8_t ReinitTensix(const union request *req, struct response *rsp)
 {
-	ClearNocTranslation();
-	/* We technically don't have to re-program the entire NOC (only the Tensix NOC portions),
-	 * but it's simpler to reuse the same functions to re-program all of it.
-	 */
-	NocInit();
-	TensixInit();
-	if (bh_chip_info_feature_noc_translation_en()) {
-		InitNocTranslationFromHarvesting();
-	}
+	ReinitAllTensix();
+	RestoreTensixClockGate();
 
 	return 0;
 }

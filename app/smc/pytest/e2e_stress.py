@@ -24,18 +24,11 @@ from e2e_smoke import (
     process_detectors_test,
     temperature_sensors_test,
     power_state_toggle_test,
-    _logical_tensix_x_coords,
 )
 
 # Needed to keep ruff from complaining about this "unused import"
 # ruff: noqa: F811
-from e2e_smoke import arc_chip_dut, launched_arc_dut  # noqa: F401
-
-try:
-    from e2e_smoke import unlaunched_dut  # noqa: F401
-except ImportError:
-    pass  # we should have it from twister
-
+from e2e_smoke import arc_chip_dut  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +51,6 @@ PING_DMFW_DURATION_REG_ADDR = 0x80030448
 TT_SMC_MSG_PING_DM = 0xC0
 TT_SMC_MSG_READ_TS = 0x1B
 TT_SMC_MSG_TEST = 0x90
-TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET = 0xAE
 
 # Lower this number if testing local changes, so that tests run faster.
 MAX_TEST_ITERATIONS = 1000
@@ -526,77 +518,3 @@ def test_power_virus(arc_chip_dut, asic_id):
     assert fail_count == 0, (
         f"Power virus test failed with {fail_count} temperature read failures"
     )
-
-
-@pytest.mark.skipif(
-    "os.getenv('BOARD') in ('bh-galaxy', 'bh-galaxy-revc', 'loudbox', 'quietbox2')",
-    reason="Burnin not stable on Galaxy, Loudbox, or Quietbox2",
-)
-def test_tensix_reset_then_burnin(arc_chip_dut, asic_id):
-    """
-    Reset every non-harvested Tensix tile, then run tt-burnin and check
-    it exits successfully.
-    """
-    arc_chip = pyluwen.detect_chips()[asic_id]
-
-    TENSIX_NOC_Y = list(range(2, 12))
-    enabled_cols = int(arc_chip.get_telemetry().tensix_enabled_col)
-    valid_x = _logical_tensix_x_coords(enabled_cols)
-    all_tiles = [(x, y) for x in valid_x for y in TENSIX_NOC_Y]
-
-    # We want to test the tensix reset message on low power.
-    # Set high power after the message to allow NOC read/write to function properly.
-    logger.info(f"Resetting {len(all_tiles)} Tensix tiles")
-    arc_chip.set_power_state("low")
-    for noc_x, noc_y in all_tiles:
-        response = arc_chip.arc_msg(
-            TT_SMC_MSG_TOGGLE_SINGLE_TENSIX_RESET,
-            arg0=noc_x | (noc_y << 8),
-        )
-        assert response[1] == 0, (
-            f"Tensix ({noc_x}, {noc_y}) reset failed with {response[1]}"
-        )
-    arc_chip.set_power_state("high")
-    logger.info("  Succeeded")
-
-    duration = 180
-    logger.info(f"Running tt-burnin for {duration}s")
-
-    burnin_process = subprocess.Popen(
-        ["tt-burnin", "--no-reset"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    terminated_early = False
-    try:
-        end_time = time.time() + duration
-        while time.time() < end_time:
-            if burnin_process.poll() is not None:
-                terminated_early = True
-                break
-            time.sleep(1.0)
-    finally:
-        if burnin_process.poll() is None:
-            # Send enter key to stop tt-burnin gracefully
-            try:
-                burnin_process.stdin.write(b"\n")
-                burnin_process.stdin.flush()
-                burnin_process.wait(timeout=5)
-            except (subprocess.TimeoutExpired, BrokenPipeError):
-                logger.warning(
-                    "tt-burnin did not terminate gracefully, killing process"
-                )
-                burnin_process.terminate()
-                try:
-                    burnin_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    burnin_process.kill()
-                    burnin_process.wait()
-
-    assert not terminated_early, "tt-burnin terminated early"
-    assert burnin_process.returncode == 0, (
-        f"tt-burnin failed with {burnin_process.returncode}"
-    )
-    logger.info("  Succeeded")

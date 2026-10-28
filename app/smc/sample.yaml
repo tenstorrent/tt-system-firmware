@@ -17,8 +17,11 @@ tests:
     harness_config:
       pytest_root:
         - pytest/e2e_smoke.py
+        - pytest/e2e_tensix_reset.py
       pytest_args:
         - "--dut-scope=session"
+        - "-m"
+        - "not stress"
     extra_args:
       - dmc_CONFIG_DMC_RUN_SMBUS_TESTS=y
   app.recovery:
@@ -73,8 +76,11 @@ tests:
     harness_config:
       pytest_root:
         - pytest/e2e_stress.py
+        - pytest/e2e_tensix_reset.py
       pytest_args:
         - "--dut-scope=session"
+        - "-m"
+        - "not smoke"
       record:
         regex:
           - >-
@@ -89,8 +95,11 @@ tests:
     harness_config:
       pytest_root:
         - pytest/e2e_smoke.py
+        - pytest/e2e_tensix_reset.py
       pytest_args:
         - "--dut-scope=session"
+        - "-m"
+        - "not stress"
     extra_args:
       - dmc_CONFIG_DMC_RUN_SMBUS_TESTS=y
       - CONFIG_ASSERT=y
