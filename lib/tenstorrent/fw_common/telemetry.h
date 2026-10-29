@@ -519,12 +519,21 @@ typedef union {
  */
 #define TAG_CCFGOVR_SEQ 82
 
+/** @brief Upper 32 bits of the extended board ID as flashed. */
+#define TAG_BOARD_ID_EXT_HIGH 83
+
+/** @brief Middle 32 bits of the extended board ID as flashed. */
+#define TAG_BOARD_ID_EXT_MIDDLE 84
+
+/** @brief Lower 32 bits of the extended board ID as flashed. */
+#define TAG_BOARD_ID_EXT_LOW 85
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 83
+#define TAG_COUNT 86
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100
