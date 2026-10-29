@@ -180,6 +180,9 @@ static struct telemetry_table telemetry_table = {
 		[75] = {TAG_FLASH_JEDEC_ID, TELEM_OFFSET(TAG_FLASH_JEDEC_ID)},
 		[76] = {TAG_CCFGOVR_STATE, TELEM_OFFSET(TAG_CCFGOVR_STATE)},
 		[77] = {TAG_CCFGOVR_SEQ, TELEM_OFFSET(TAG_CCFGOVR_SEQ)},
+		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
+		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
+		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
 	},
 };
 /* clang-format on */
@@ -344,6 +347,10 @@ void telemetry_platform_write_static(uint32_t app_version)
 	/* Get the static values */
 	telemetry[TAG_BOARD_ID_HIGH] = board_id >> 32;
 	telemetry[TAG_BOARD_ID_LOW] = board_id & 0xFFFFFFFF;
+	telemetry[TAG_BOARD_ID_EXT_HIGH] =
+		read_only->has_board_id_high ? read_only->board_id_high & 0xFFFF : 0;
+	telemetry[TAG_BOARD_ID_EXT_MIDDLE] = read_only->board_id >> 32;
+	telemetry[TAG_BOARD_ID_EXT_LOW] = read_only->board_id & 0xFFFFFFFF;
 	telemetry[TAG_ASIC_ID_HIGH] = READ_FUNCTIONAL_EFUSE(ASIC_ID_HIGH);
 	telemetry[TAG_ASIC_ID_LOW] = READ_FUNCTIONAL_EFUSE(ASIC_ID_LOW);
 	telemetry[TAG_HARVESTING_STATE] = 0x00000000;
