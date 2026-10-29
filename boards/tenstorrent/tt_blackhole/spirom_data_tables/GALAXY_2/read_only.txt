@@ -19,4 +19,5 @@ reference_values_table {
 }
 vendor_id: 0x1e52
 asic_location: 0
-board_id: 0x00000000000
+board_id: 0x0780000000000000
+board_id_high: 0x0000
