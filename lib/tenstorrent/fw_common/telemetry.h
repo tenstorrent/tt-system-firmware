@@ -79,8 +79,11 @@ typedef struct {
 	 */
 	uint32_t gddr_therm_trip: 1;
 
+	/** @brief Extended board ID. */
+	uint32_t extended_board_id: 1;
+
 	/** @brief Reserved for future use. */
-	uint32_t reserved: 30;
+	uint32_t reserved: 29;
 } telemetry_feature_flags_bits_0_t;
 
 /** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
@@ -467,6 +470,7 @@ typedef union {
  * - bit 0 (`kernel_nops_at_aiclk_fmin`): firmware supports the
  *   kernel-throttler-at-AICLK-floor feature.
  * - bit 1 (`gddr_therm_trip`): firmware supports the GDDR thermal-trip action.
+ * - bit 2 (`extended_board_id`): the board uses an extended board ID.
  */
 #define TAG_FW_CAPABILITIES_0 78
 
@@ -477,6 +481,8 @@ typedef union {
  * Current assignments:
  * - bit 0 (`kernel_nops_at_aiclk_fmin`): kernel-throttler-at-AICLK-floor is enabled.
  * - bit 1 (`gddr_therm_trip`): GDDR thermal-trip action is enabled.
+ * - bit 2 (`extended_board_id`): the board uses an extended board ID; this is
+ *   a board property and is not runtime-enabled.
  *
  * Runtime control:
  * - The host can enable or disable bit 0 with @ref TT_SMC_MSG_CHARACTERISATION

@@ -134,8 +134,7 @@ static const struct board_expected *expected;
 static void *suite_setup(void)
 {
 	const struct device *dev = FWTABLE_DEV;
-	const struct _ReadOnly *ro = tt_bh_fwtable_get_read_only_table(dev);
-	uint32_t board_type = BOARDTYPE_FROM_BOARD_ID(ro->board_id);
+	uint32_t board_type = tt_bh_fwtable_get_board_type(dev);
 
 	expected = expected_for_board_type(board_type);
 	return (void *)expected;
@@ -154,6 +153,12 @@ ZTEST(bh_fwtable_sim, test_0_device_ready)
 		     "failed; check the driver's -EIO/-ENOMEM/-EINVAL load paths.");
 }
 
+ZTEST(bh_fwtable_sim, test_extended_board_id_extraction)
+{
+	zassert_equal(BOARDTYPE_FROM_EXTENDED_BOARD_ID(0x0100, 0x0781DC0F26410001), 0x00078,
+		      "extended board type extraction does not match the documented format");
+}
+
 ZTEST(bh_fwtable_sim, test_read_only_loaded)
 {
 	zassert_not_null(expected, "no expected-values table for this board; "
@@ -166,6 +171,10 @@ ZTEST(bh_fwtable_sim, test_read_only_loaded)
 		      expected->name, expected->vendor_id, ro->vendor_id);
 	zassert_not_equal(ro->board_id, 0, "[%s] board_id is zero — did boardcfg actually load?",
 			  expected->name);
+	zassert_false(ro->has_board_id_high, "[%s] legacy board must not have board_id_high",
+		      expected->name);
+	zassert_equal(ro->board_id_high, 0, "[%s] legacy board_id_high should default to zero",
+		      expected->name);
 
 	TC_PRINT("[%s] board_id  = 0x%llx\n", expected->name, (unsigned long long)ro->board_id);
 	TC_PRINT("[%s] vendor_id = 0x%x\n", expected->name, ro->vendor_id);

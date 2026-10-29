@@ -78,6 +78,13 @@ def set_board_serial(hex_file, board_name, board_id):
         print("Ensure the protobuf files are generated and the path is correct.")
         sys.exit(1)
     work_dir = Path(hex_file).parent
+    if board_id < 0 or board_id >= (1 << 80):
+        raise ValueError("Board ID must fit in 80 bits")
+
+    override = {"board_id": board_id & 0xFFFFFFFFFFFFFFFF}
+    if board_id >> 64:
+        override["board_id_high"] = board_id >> 64
+
     # Dump new readonly data
     convert_proto_txt_to_bin_file(
         TT_Z_P_ROOT / "boards" / "tenstorrent" / "tt_blackhole" / "spirom_data_tables",
@@ -86,7 +93,7 @@ def set_board_serial(hex_file, board_name, board_id):
         "read_only",
         read_only_pb2.ReadOnly,
         False,
-        override={"board_id": board_id},
+        override=override,
     )
     bootfs_data = IntelHex(hex_file).tobinstr()
     protobuf_bin = open(
