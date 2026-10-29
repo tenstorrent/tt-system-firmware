@@ -3,7 +3,8 @@
 We are pleased to announce the release of TT System Firmware version 19.17.1 🥳🎉.
 
 This is a patch release on top of v19.17.0. It includes the following updates:
-- Disabling MRISC powerdown policy on Galaxy systems
+- Disabling MRISC powerdown policy on Galaxy systems to resolve GDDR issues
+  - As a result, Galaxy idle power increases by 1.6 kW
 
 # v19.17.0
 
