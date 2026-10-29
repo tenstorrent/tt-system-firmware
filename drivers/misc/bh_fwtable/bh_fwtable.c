@@ -130,6 +130,9 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 	case BOARDTYPE_GALAXY_CF:
 		pcb_type = PcbTypeUBB;
 		break;
+	case BOARDTYPE_GALAXY2:
+		pcb_type = PcbTypeGalaxy2;
+		break;
 	default:
 		pcb_type = PcbTypeUnknown;
 		break;
@@ -149,7 +152,7 @@ uint32_t tt_bh_fwtable_get_board_type(const struct device *dev)
 
 	if (data->read_only_table.has_board_id_high) {
 		return BOARDTYPE_FROM_EXTENDED_BOARD_ID(data->read_only_table.board_id_high,
-						       data->read_only_table.board_id);
+							data->read_only_table.board_id);
 	}
 
 	return BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);

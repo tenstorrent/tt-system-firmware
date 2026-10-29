@@ -38,19 +38,22 @@ uint64_t tt_bh_fwtable_get_legacy_board_id(const struct device *dev);
  * Extended board IDs encode the part number in the upper 8 hex digits. The
  * board type occupies the middle 5 hex digits of that part number.
  */
-#define BOARDTYPE_FROM_EXTENDED_BOARD_ID(board_id_high, board_id)                            \
-	((uint32_t)(((((uint32_t)(board_id_high) << 16) |                                  \
-		      (uint32_t)((uint64_t)(board_id) >> 48)) >> 4) & 0xFFFFF))
-#define BOARDTYPE_ORION_SLT               0x37
-#define BOARDTYPE_P100A                   0x43
-#define BOARDTYPE_P150A                   0x40
-#define BOARDTYPE_P150                    0x41
-#define BOARDTYPE_P150C                   0x42
-#define BOARDTYPE_P300                    0x44
-#define BOARDTYPE_P300A                   0x45
-#define BOARDTYPE_P300C                   0x46
-#define BOARDTYPE_UBB                     0x47
-#define BOARDTYPE_GALAXY_CF               0x202
+#define BOARDTYPE_FROM_EXTENDED_BOARD_ID(board_id_high, board_id)                                  \
+	((uint32_t)(((((uint32_t)(board_id_high) << 16) |                                          \
+		      (uint32_t)((uint64_t)(board_id) >> 48)) >>                                   \
+		     4) &                                                                          \
+		    0xFFFFF))
+#define BOARDTYPE_ORION_SLT 0x37
+#define BOARDTYPE_P100A     0x43
+#define BOARDTYPE_P150A     0x40
+#define BOARDTYPE_P150      0x41
+#define BOARDTYPE_P150C     0x42
+#define BOARDTYPE_P300      0x44
+#define BOARDTYPE_P300A     0x45
+#define BOARDTYPE_P300C     0x46
+#define BOARDTYPE_UBB       0x47
+#define BOARDTYPE_GALAXY2   0x78
+#define BOARDTYPE_GALAXY_CF 0x202
 
 typedef enum {
 	PcbTypeOrionSLT = 0,
@@ -58,6 +61,7 @@ typedef enum {
 	PcbTypeP150 = 2,
 	PcbTypeP300 = 3,
 	PcbTypeUBB = 4,
+	PcbTypeGalaxy2 = 5,
 	PcbTypeUnknown = 0xFF
 } PcbType;
 
