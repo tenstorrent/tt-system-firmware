@@ -40,7 +40,7 @@ uint32_t bh_chip_info_additional_board_power(void)
 	return 0;
 }
 
-uint64_t bh_chip_info_board_id(void)
+uint64_t bh_chip_info_legacy_board_id(void)
 {
 	return 0;
 }

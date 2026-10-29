@@ -36,9 +36,9 @@ uint32_t bh_chip_info_additional_board_power(void)
 	return tt_bh_fwtable_get_fw_table(fwtable_dev)->chip_limits.additional_board_power;
 }
 
-uint64_t bh_chip_info_board_id(void)
+uint64_t bh_chip_info_legacy_board_id(void)
 {
-	return tt_bh_fwtable_get_read_only_table(fwtable_dev)->board_id;
+	return tt_bh_fwtable_get_legacy_board_id(fwtable_dev);
 }
 
 uint32_t bh_chip_info_vendor_id(void)

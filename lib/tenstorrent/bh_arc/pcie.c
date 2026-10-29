@@ -462,7 +462,7 @@ static int pcie_init(void)
 		return 0;
 	}
 
-	uint64_t board_id = bh_chip_info_board_id();
+	uint64_t legacy_board_id = bh_chip_info_legacy_board_id();
 	uint32_t vendor_id = bh_chip_info_vendor_id();
 	struct bh_pci_property pci0_property_table;
 	struct bh_pci_property pci1_property_table;
@@ -472,12 +472,12 @@ static int pcie_init(void)
 	bh_chip_info_pci_property(1, &pci1_property_table);
 
 	if (pci0_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
-		CntlInitV3ParamInit(0, board_id, vendor_id, &pci0_property_table, &param);
+		CntlInitV3ParamInit(0, legacy_board_id, vendor_id, &pci0_property_table, &param);
 		PCIeInit(&param);
 	}
 
 	if (pci1_property_table.pcie_mode != BH_PCIE_MODE_DISABLED) {
-		CntlInitV3ParamInit(1, board_id, vendor_id, &pci1_property_table, &param);
+		CntlInitV3ParamInit(1, legacy_board_id, vendor_id, &pci1_property_table, &param);
 		PCIeInit(&param);
 	}
 

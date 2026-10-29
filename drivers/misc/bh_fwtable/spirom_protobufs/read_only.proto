@@ -13,6 +13,10 @@ message ReadOnly {
   ReferenceValuesTable reference_values_table = 3;
   uint32 vendor_id = 4;
   uint32 asic_location = 5;
+  // Upper 16 bits of the 80-bit board ID. Protobuf has no uint16 type; values
+  // greater than 0xffff are invalid.
+  // Presence indicates an extended board ID.
+  optional uint32 board_id_high = 6;
 
   message FuntestTable {
     uint32 ft_stage = 1;

@@ -39,6 +39,12 @@ struct bh_pci_property {
 	uint32_t gen5_eq_pset_req_vec;
 };
 
+/* An 80-bit board ID. The high member uses only its low 16 bits. */
+typedef struct {
+	uint64_t low;
+	uint32_t high;
+} board_id_t;
+
 /* True if this is a UBB (Galaxy) board. Used to skip DMC cable-fault checks.
  * Exposed as a semantic predicate rather than a raw board-type byte so that
  * recovery code never needs to include the bh_fwtable / protobuf headers.
@@ -48,8 +54,8 @@ bool bh_chip_info_is_ubb(void);
 /* Extra board power budget, in W, added to host-reported power. */
 uint32_t bh_chip_info_additional_board_power(void);
 
-/* Read-only board identity. */
-uint64_t bh_chip_info_board_id(void);
+/* Legacy board ID for PCIe. */
+uint64_t bh_chip_info_legacy_board_id(void);
 uint32_t bh_chip_info_vendor_id(void);
 
 /* PCIe property table for instance @p pcie_inst (0 or 1). */
