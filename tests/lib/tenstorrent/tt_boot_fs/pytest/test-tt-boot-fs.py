@@ -10,6 +10,7 @@ import os
 import pykwalify.core
 import pytest
 import requests
+import struct
 import sys
 import tarfile
 import types
@@ -521,6 +522,93 @@ def test_tensix_disable(tmp_path: Path):
     assert tt_fwbundle.diff_fw_bundles(input_path, output_path) != os.EX_OK, (
         "diff_fw_bundles should detect changes after Tensix disable count update"
     )
+
+
+@pytest.mark.parametrize("multi_table", [False, True])
+def test_bootfs_image_edit(tmp_path: Path, multi_table: bool):
+    """
+    Tests that fwtable_tooling.BootFsImage edits cmfwcfg in place in both the
+    single-table layout and the multi-table layout, leaving the rest of the
+    image as it was.
+    """
+
+    def entry(tag, data, spi_addr):
+        return tt_boot_fs.FsEntry(
+            provisioning_only=False,
+            tag=tag,
+            data=data,
+            spi_addr=spi_addr,
+            load_addr=0,
+            executable=False,
+        )
+
+    cmfw = entry("cmfw", b"\x11" * 64, 0x14000)
+    cmfwcfg = entry("cmfwcfg", b"\x22" * 8, 0x1F7000)
+    ethfwcfg = entry("ethfwcfg", b"\x33" * 16, 0x1F8000)
+
+    header = b""
+    if multi_table:
+        mutable_addr = 0x170000
+        header = struct.pack(
+            "<IIIII",
+            fwtable_tooling.BOOTFS_HEADER_MAGIC,
+            fwtable_tooling.BOOTFS_HEADER_VERSION,
+            2,
+            tt_boot_fs.FD_HEAD_ADDR,
+            mutable_addr,
+        )
+        writes = {
+            tt_boot_fs.FD_HEAD_ADDR: cmfw.descriptor(),
+            fwtable_tooling.BOOTFS_HEADER_ADDR: header,
+            mutable_addr: cmfwcfg.descriptor() + ethfwcfg.descriptor(),
+        }
+    else:
+        writes = {
+            tt_boot_fs.FD_HEAD_ADDR: cmfw.descriptor()
+            + cmfwcfg.descriptor()
+            + ethfwcfg.descriptor()
+        }
+    for e in (cmfw, cmfwcfg, ethfwcfg):
+        writes[e.spi_addr] = e.data
+
+    path = tmp_path / "image.bin"
+    with open(path, "w") as f:
+        for addr, data in sorted(writes.items()):
+            f.write(f"@{addr}\n{base64.b16encode(data).decode('ascii')}\n")
+
+    image = fwtable_tooling.BootFsImage(path)
+    assert image.read("cmfwcfg") == (cmfwcfg.spi_addr, cmfwcfg.data)
+
+    # Grow, then shrink, the image
+    for new_data in (b"\x44" * 12, b"\x55" * 4):
+        image.write("cmfwcfg", new_data)
+        image.save(path)
+
+        image = fwtable_tooling.BootFsImage(path)
+        assert image.read("cmfwcfg") == (cmfwcfg.spi_addr, new_data)
+        _, fd = image.find("cmfwcfg")
+        assert bytes(fd) == entry("cmfwcfg", new_data, cmfwcfg.spi_addr).descriptor()
+
+    stale_start = cmfwcfg.spi_addr + 4
+    assert image.ih.tobinstr(start=stale_start, size=8) == b"\xff" * 8
+    assert image.read("cmfw") == (cmfw.spi_addr, cmfw.data)
+    assert image.read("ethfwcfg") == (ethfwcfg.spi_addr, ethfwcfg.data)
+    if multi_table:
+        assert (
+            image.ih.tobinstr(
+                start=fwtable_tooling.BOOTFS_HEADER_ADDR, size=len(header)
+            )
+            == header
+        )
+    else:
+        assert image.ih.minaddr() == tt_boot_fs.FD_HEAD_ADDR
+        assert image.ih.tobinstr(start=fwtable_tooling.BOOTFS_HEADER_ADDR, size=4) == (
+            b"\xff" * 4
+        )
+
+    # The image may not grow into the next erase block
+    with pytest.raises(ValueError):
+        image.write("cmfwcfg", bytes(fwtable_tooling.BOOTFS_BLOCK_SIZE + 4))
 
 
 def _flash_node(jedec_id: bytes = None, compats=("jedec,mspi-nor",), children=()):
