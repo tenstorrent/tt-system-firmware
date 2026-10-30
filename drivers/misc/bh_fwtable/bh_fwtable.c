@@ -79,18 +79,32 @@ const ReadOnly *tt_bh_fwtable_get_read_only_table(const struct device *dev)
 	return &data->read_only_table;
 }
 
+uint64_t tt_bh_fwtable_get_legacy_board_id(const struct device *dev)
+{
+	const ReadOnly *read_only = tt_bh_fwtable_get_read_only_table(dev);
+
+	if (!read_only->has_board_id_high) {
+		return read_only->board_id;
+	}
+
+	uint64_t board_id_high =
+		((uint64_t)read_only->board_id_high << 16) | (read_only->board_id >> 48);
+	uint64_t board_id_low =
+		(((read_only->board_id >> 16) & 0xFFFFF) << 12) | (read_only->board_id & 0xFFF);
+
+	return (board_id_high << 32) | board_id_low;
+}
+
 /* Converts a board id extracted from board type and converts it to a PCB Type */
 PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 {
 	PcbType pcb_type;
-	struct bh_fwtable_data *data = dev->data;
 
 	if (!device_is_ready(dev)) {
 		return PcbTypeUnknown;
 	}
 
-	/* Extract board type from board_id */
-	uint32_t board_type = BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);
+	uint32_t board_type = tt_bh_fwtable_get_board_type(dev);
 
 	/* Figure out PCB type from board type */
 	switch (board_type) {
@@ -114,6 +128,9 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 	case BOARDTYPE_GALAXY_CF:
 		pcb_type = PcbTypeUBB;
 		break;
+	case BOARDTYPE_GALAXY2:
+		pcb_type = PcbTypeGalaxy2;
+		break;
 	default:
 		pcb_type = PcbTypeUnknown;
 		break;
@@ -122,7 +139,7 @@ PcbType tt_bh_fwtable_get_pcb_type(const struct device *dev)
 	return pcb_type;
 }
 
-/* Returns the board type extracted from board_id (bits 36-55) */
+/* Returns the board type extracted from the legacy or extended board ID. */
 uint32_t tt_bh_fwtable_get_board_type(const struct device *dev)
 {
 	struct bh_fwtable_data *data = dev->data;
@@ -131,7 +148,11 @@ uint32_t tt_bh_fwtable_get_board_type(const struct device *dev)
 		return 0xFF;
 	}
 
-	/* Extract board type from board_id */
+	if (data->read_only_table.has_board_id_high) {
+		return BOARDTYPE_FROM_EXTENDED_BOARD_ID(data->read_only_table.board_id_high,
+							data->read_only_table.board_id);
+	}
+
 	return BOARDTYPE_FROM_BOARD_ID(data->read_only_table.board_id);
 }
 
@@ -214,6 +235,11 @@ static int tt_bh_fwtable_load(const struct device *dev, enum bh_fwtable_e table)
 	if (!pb_decode_ex(&stream, loadcfg[table].msg, (uint8_t *)data + loadcfg[table].offs,
 			  PB_DECODE_NULLTERMINATED)) {
 		LOG_ERR("%s() failed: '%s'", "pb_decode_ex", loadcfg[table].tag);
+		return -EINVAL;
+	}
+
+	if (table == BH_FWTABLE_BOARDCFG && data->read_only_table.board_id_high > UINT16_MAX) {
+		LOG_ERR("%s() board_id_high must fit in 16 bits", loadcfg[table].tag);
 		return -EINVAL;
 	}
 

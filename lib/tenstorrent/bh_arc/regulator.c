@@ -275,6 +275,8 @@ uint32_t RegulatorInit(PcbType board_type)
 		regulators_config = &ubb_regulators_config;
 	} else if (board_type == PcbTypeOrionSLT) {
 		/* Do nothing, Orion SLT regulators are manually programmed */
+	} else if (board_type == PcbTypeGalaxy2) {
+		/* Galaxy2 regulators are not configured by fw. */
 	} else {
 		LOG_ERR("Unsupported board type %d", board_type);
 		return -ENOTSUP;

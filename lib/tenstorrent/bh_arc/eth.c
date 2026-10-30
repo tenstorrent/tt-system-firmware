@@ -378,8 +378,10 @@ int LoadEthFwCfg(uint32_t eth_inst, uint32_t ring, uint8_t *buf, uint32_t eth_en
 	 */
 	fw_cfg_32b[32] = tt_bh_fwtable_get_pcb_type(fwtable_dev);
 	fw_cfg_32b[33] = tt_bh_fwtable_get_asic_location(fwtable_dev);
-	fw_cfg_32b[34] = tt_bh_fwtable_get_read_only_table(fwtable_dev)->board_id >> 32;
-	fw_cfg_32b[35] = tt_bh_fwtable_get_read_only_table(fwtable_dev)->board_id & 0xFFFFFFFF;
+	uint64_t board_id = tt_bh_fwtable_get_legacy_board_id(fwtable_dev);
+
+	fw_cfg_32b[34] = board_id >> 32;
+	fw_cfg_32b[35] = board_id & 0xFFFFFFFF;
 	/* Split the 48-bit MAC address into 2 24-bit values, separated by organisation ID and
 	 * device ID
 	 */

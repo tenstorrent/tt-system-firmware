@@ -39,6 +39,14 @@ from encode_spirom_bins import convert_proto_txt_to_bin_file
 
 TT_Z_P_ROOT = Path(__file__).parents[3]
 
+SMC_SCRATCH_RAM_BASE = 0x80030400
+TELEMETRY_DATA_REG_ADDR = SMC_SCRATCH_RAM_BASE + 12 * 4
+TELEMETRY_TABLE_REG_ADDR = SMC_SCRATCH_RAM_BASE + 13 * 4
+TAG_BOARD_ID_EXT_HIGH = 81
+TAG_BOARD_ID_EXT_MIDDLE = 82
+TAG_BOARD_ID_EXT_LOW = 83
+MAX_TELEMETRY_ENTRIES = 1024
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -64,12 +72,13 @@ def parse_args():
     return parser.parse_args()
 
 
-def set_board_serial(hex_file, board_name, board_id):
+def set_board_serial(hex_file, board_name, board_id, extended=False):
     """
     Modifies a recovery hex file to include a new board ID in the EEPROM image
     @param hex_file: Path to hex file to patch. Should include tt-boot-fs and dmc image
     @param board_name: Name of board in protobuf definitions
     @param board_id: serial to patch for board
+    @param extended: always write board_id_high, marking the ID as extended
     """
     try:
         import read_only_pb2  # pylint: disable=import-outside-toplevel
@@ -78,6 +87,12 @@ def set_board_serial(hex_file, board_name, board_id):
         print("Ensure the protobuf files are generated and the path is correct.")
         sys.exit(1)
     work_dir = Path(hex_file).parent
+
+    override = {"board_id": board_id & 0xFFFFFFFFFFFFFFFF}
+    # Presence of board_id_high marks an extended ID, even when it is 0
+    if extended or board_id >> 64:
+        override["board_id_high"] = board_id >> 64
+
     # Dump new readonly data
     convert_proto_txt_to_bin_file(
         TT_Z_P_ROOT / "boards" / "tenstorrent" / "tt_blackhole" / "spirom_data_tables",
@@ -86,7 +101,7 @@ def set_board_serial(hex_file, board_name, board_id):
         "read_only",
         read_only_pb2.ReadOnly,
         False,
-        override={"board_id": board_id},
+        override=override,
     )
     bootfs_data = IntelHex(hex_file).tobinstr()
     protobuf_bin = open(
@@ -111,6 +126,60 @@ def set_board_serial(hex_file, board_name, board_id):
     return hex_file
 
 
+def default_board_id(asic):
+    if asic.get("extended-board-id"):
+        # Extended IDs carry the UPI in hex digits 1-5 of the leading PN
+        return asic["upi"] << 52
+    return asic["upi"] << 36 | (0x1 << 32)
+
+
+def is_extended_board_id(asic, board_id):
+    return bool(asic.get("extended-board-id")) or bool(board_id >> 64)
+
+
+def expected_board_ids(board_config, board_id):
+    if board_id == "auto":
+        return [default_board_id(asic) for asic in board_config]
+    parsed_id = int(board_id, 0)
+    if parsed_id < 0 or parsed_id >= (1 << 80):
+        raise ValueError("Board ID must fit in 80 bits")
+    return [parsed_id] * len(board_config)
+
+
+def read_telemetry_tags(card, tags):
+    """Read telemetry tags directly from the SMC telemetry table over AXI."""
+    table_addr = card.axi_read32(TELEMETRY_TABLE_REG_ADDR)
+    data_addr = card.axi_read32(TELEMETRY_DATA_REG_ADDR)
+    if table_addr in (0, 0xFFFFFFFF) or data_addr in (0, 0xFFFFFFFF):
+        raise RuntimeError("telemetry not initialized")
+    entry_count = card.axi_read32(table_addr + 0x4)
+    if entry_count > MAX_TELEMETRY_ENTRIES:
+        raise RuntimeError(f"implausible telemetry entry_count: {entry_count}")
+
+    values = {}
+    for i in range(entry_count):
+        # struct telemetry_entry { uint16_t tag; uint16_t offset; }
+        raw = card.axi_read32(table_addr + 0x8 + i * 4)
+        tag = raw & 0xFFFF
+        if tag in tags:
+            values[tag] = card.axi_read32(data_addr + ((raw >> 16) & 0xFFFF) * 4)
+    missing = set(tags) - values.keys()
+    if missing:
+        raise RuntimeError(f"telemetry tags {sorted(missing)} not reported by firmware")
+    return values
+
+
+def read_extended_board_id(card):
+    values = read_telemetry_tags(
+        card, (TAG_BOARD_ID_EXT_HIGH, TAG_BOARD_ID_EXT_MIDDLE, TAG_BOARD_ID_EXT_LOW)
+    )
+    return (
+        (values[TAG_BOARD_ID_EXT_HIGH] << 64)
+        | (values[TAG_BOARD_ID_EXT_MIDDLE] << 32)
+        | values[TAG_BOARD_ID_EXT_LOW]
+    )
+
+
 def cards_on_bus(board_config):
     """Return True only if every ASIC's device node is present on the PCIe bus."""
     return all(
@@ -119,7 +188,7 @@ def cards_on_bus(board_config):
     )
 
 
-def check_card_status(board_config):
+def check_card_status(board_config, expected_ids=None):
     """Check if the card is in a good state"""
     for pci_idx, config in enumerate(board_config):
         # See if the card is on the bus
@@ -133,12 +202,20 @@ def check_card_status(board_config):
                 return False
             if not pcie_utils.ping_dmc(card, pci_idx):
                 return False
-            # Check telemetry data to see if the UPI looks right
-            if card.get_telemetry().board_id >> 36 != config["upi"]:
+            expected_id = expected_ids[pci_idx] if expected_ids else None
+            if expected_id is not None and is_extended_board_id(config, expected_id):
+                actual_id = read_extended_board_id(card)
+                if actual_id != expected_id:
+                    print(
+                        f"Extended board ID 0x{actual_id:020x} does not match "
+                        f"expected 0x{expected_id:020x} for ASIC {pci_idx}"
+                    )
+                    return False
+            elif card.get_telemetry().board_id >> 36 != config["upi"]:
                 print(f"Board ID UPI does not match expected value for ASIC {pci_idx}")
                 return False
-        except BaseException:
-            print(f"Error accessing card with pyluwen for ASIC {pci_idx}")
+        except Exception as e:
+            print(f"Error accessing card with pyluwen for ASIC {pci_idx}: {e}")
             return False
     return True
 
@@ -162,9 +239,12 @@ def main():
             print(f"Error: board {args.board} not found in recovery bundle")
             return
 
+        expected_ids = expected_board_ids(BOARD_ID_MAP[args.board], args.board_id)
         sys.path.append(str(Path(temp_dir) / args.board / "python_proto_files"))
 
-        if (not args.force) and check_card_status(BOARD_ID_MAP[args.board]):
+        if (not args.force) and check_card_status(
+            BOARD_ID_MAP[args.board], expected_ids
+        ):
             print(f"All ASICs on board {args.board} are functional, skipping recovery")
             return
 
@@ -186,7 +266,9 @@ def main():
             pcie_utils.rescan_pcie()
             time.sleep(2)
 
-        if (not args.force) and check_card_status(BOARD_ID_MAP[args.board]):
+        if (not args.force) and check_card_status(
+            BOARD_ID_MAP[args.board], expected_ids
+        ):
             print(f"All ASICs on board {args.board} are functional, skipping recovery")
             return
 
@@ -220,11 +302,14 @@ def main():
                 print(f"Error: recovery hex file {recovery_hex} not found in bundle")
                 return
             if args.board_id == "auto":
-                board_id = asic["upi"] << 36 | (0x1 << 32)
+                board_id = default_board_id(asic)
             else:
                 board_id = int(args.board_id, 0)
             recovery_hex = set_board_serial(
-                str(recovery_hex), asic["protobuf-name"], board_id
+                str(recovery_hex),
+                asic["protobuf-name"],
+                board_id,
+                extended=is_extended_board_id(asic, board_id),
             )
             pyocd_config = Path(temp_dir) / asic["pyocd-config"]
             session = pyocd_utils.get_session(
@@ -254,7 +339,7 @@ def main():
         timeout_ts = time.time() + timeout
         pcie_utils.rescan_pcie()
         while time.time() < timeout_ts:
-            if check_card_status(BOARD_ID_MAP[args.board]):
+            if check_card_status(BOARD_ID_MAP[args.board], expected_ids):
                 print("Card recovered successfully")
                 return
             # Only rescan when the card is off the bus; otherwise give the link

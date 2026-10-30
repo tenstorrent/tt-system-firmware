@@ -19,7 +19,7 @@ SECTION_TITLES = {
     "read_only": "Read-Only Configuration",
     "fw_table": "Firmware Table Configuration",
 }
-HEX_FIELDS = {"board_id", "vendor_id"}
+HEX_FIELDS = {"board_id", "board_id_high", "vendor_id"}
 FILE_TYPES = ["read_only", "fw_table"]
 
 # Sections to ignore when generating documentation

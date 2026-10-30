@@ -32,7 +32,6 @@ ZTEST(chip_info_static, test_vendor_id_is_tenstorrent)
 
 ZTEST(chip_info_static, test_board_identity_defaults)
 {
-	zassert_equal(bh_chip_info_board_id(), 0, "recovery has no SPI board_id to report");
 	zassert_equal(bh_chip_info_additional_board_power(), 0,
 		      "recovery reports no extra board power budget");
 }

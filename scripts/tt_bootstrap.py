@@ -304,10 +304,22 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
             board_name = cfg["protobuf-name"]
             if self.board_id == 0:
                 # Autogenerate board ID
-                board_id = cfg["upi"] << 36 | (0x1 << 32)
+                if cfg.get("extended-board-id"):
+                    # Extended IDs carry the UPI in hex digits 1-5 of the leading PN
+                    board_id = cfg["upi"] << 52
+                else:
+                    board_id = cfg["upi"] << 36 | (0x1 << 32)
             else:
                 # Use the provided board ID
                 board_id = self.board_id
+            if board_id < 0 or board_id >= (1 << 80):
+                raise ValueError("Board ID must fit in 80 bits")
+            board_id_low = board_id & 0xFFFFFFFFFFFFFFFF
+            board_id_high = board_id >> 64
+            override = {"board_id": board_id_low}
+            # Presence of board_id_high marks an extended ID, even when it is 0
+            if board_id_high or cfg.get("extended-board-id"):
+                override["board_id_high"] = board_id_high
             convert_proto_txt_to_bin_file(
                 self.board_dir / "spirom_data_tables",
                 board_name,
@@ -315,7 +327,7 @@ class TTBootStrapRunner(ZephyrBinaryRunner):
                 "read_only",
                 read_only_pb2.ReadOnly,
                 False,
-                override={"board_id": board_id},
+                override=override,
             )
             protobuf_bin = open(
                 Path(temp_dir) / "generated_proto_bins" / board_name / "read_only.bin",

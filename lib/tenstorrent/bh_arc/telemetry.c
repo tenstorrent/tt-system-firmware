@@ -183,6 +183,9 @@ static struct telemetry_table telemetry_table = {
 		[73] = {TAG_FW_CAPABILITIES_0, TELEM_OFFSET(TAG_FW_CAPABILITIES_0)},
 		[74] = {TAG_FW_ACTIVE_CONFIG_0, TELEM_OFFSET(TAG_FW_ACTIVE_CONFIG_0)},
 		[75] = {TAG_FLASH_JEDEC_ID, TELEM_OFFSET(TAG_FLASH_JEDEC_ID)},
+		[76] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
+		[77] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
+		[78] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
 	},
 };
 /* clang-format on */
@@ -441,6 +444,8 @@ static void write_static_telemetry(uint32_t app_version)
 {
 	telemetry_feature_flags_0_t fw_capabilities = {0};
 	telemetry_feature_flags_0_t active_config = {0};
+	const ReadOnly *read_only = tt_bh_fwtable_get_read_only_table(fwtable_dev);
+	uint64_t board_id = tt_bh_fwtable_get_legacy_board_id(fwtable_dev);
 
 	telemetry_table.version = TELEMETRY_VERSION; /* v0.1.0 - Only update when redefining the
 						      * meaning of an existing tag
@@ -459,10 +464,12 @@ static void write_static_telemetry(uint32_t app_version)
 	telemetry[TAG_TDP_LIMIT_MAX] = fw_table->chip_limits.tdp_limit;
 
 	/* Get the static values */
-	telemetry[TAG_BOARD_ID_HIGH] =
-		tt_bh_fwtable_get_read_only_table(fwtable_dev)->board_id >> 32;
-	telemetry[TAG_BOARD_ID_LOW] =
-		tt_bh_fwtable_get_read_only_table(fwtable_dev)->board_id & 0xFFFFFFFF;
+	telemetry[TAG_BOARD_ID_HIGH] = board_id >> 32;
+	telemetry[TAG_BOARD_ID_LOW] = board_id & 0xFFFFFFFF;
+	telemetry[TAG_BOARD_ID_EXT_HIGH] =
+		read_only->has_board_id_high ? read_only->board_id_high & 0xFFFF : 0;
+	telemetry[TAG_BOARD_ID_EXT_MIDDLE] = read_only->board_id >> 32;
+	telemetry[TAG_BOARD_ID_EXT_LOW] = read_only->board_id & 0xFFFFFFFF;
 	telemetry[TAG_ASIC_ID_HIGH] = READ_FUNCTIONAL_EFUSE(ASIC_ID_HIGH);
 	telemetry[TAG_ASIC_ID_LOW] = READ_FUNCTIONAL_EFUSE(ASIC_ID_LOW);
 	telemetry[TAG_HARVESTING_STATE] = 0x00000000;
@@ -511,6 +518,7 @@ static void write_static_telemetry(uint32_t app_version)
 
 	fw_capabilities.bits.kernel_nops_at_aiclk_fmin = 1U;
 	fw_capabilities.bits.gddr_therm_trip = 1U;
+	fw_capabilities.bits.extended_board_id = read_only->has_board_id_high ? 1U : 0U;
 	telemetry[TAG_FW_CAPABILITIES_0] = fw_capabilities.u32_all;
 
 	active_config.bits.kernel_nops_at_aiclk_fmin =
