@@ -31,6 +31,7 @@ We are pleased to announce the release of TT System Firmware version 19.17.0 ðŸ¥
   puts the chip into low-power cable fault mode. Off in every board table;
   intended for bring-up and debug. `bh-mod res` restores the cmfwcfg value.
 - Expose `chip_limits.max_tdp_limit` to `bh-mod` (`CCFGOVR`), allowing the maximum TDP limit to be overridden independently of `chip_limits.tdp_limit`.
+- Add telemetry tags `TAG_CCFGOVR_STATE` (81) and `TAG_CCFGOVR_SEQ` (82) reporting which `ccfgovr` bank was applied at boot. `TAG_CCFGOVR_STATE` holds a 2-bit state per bank (bits 1:0 for bank A, 3:2 for bank B: empty, standby, rejected or applied) and sets bit 4 when the applied bank holds a non-empty override. `TAG_CCFGOVR_SEQ` is the sequence number of the applied bank, or 0 if none was applied.
 
 ### SPI Flash
 
@@ -75,6 +76,7 @@ We are pleased to announce the release of TT System Firmware version 19.17.0 ðŸ¥
 
 - Fix `tests/drivers/tt_pcie` by staging a fake firmware bundle with real SerDes firmware and allowing the test to complete without halting.
 - Add the `metal-deploy-test` CI workflow and bump `metal-test` images to `v0.78.0`.
+- Extend `ccfgovr` coverage: A/B bank fallback, torn and corrupted bank, out-of-range value, recovery, DMC reset, and downgrade tests in `e2e_bh_mod.py`, plus a session-level check that no override is left set on the card. bh-mod is now also built for the stress suite.
 
 ## Migration guide
 

@@ -83,6 +83,12 @@ jobs:
           app-path: tt-system-firmware
           kmd-version: ${{ matrix.config.kmd_build }}
 
+      - name: Build bh-mod
+        uses: ./tt-system-firmware/.github/workflows/prepare-bh-mod
+        with:
+          luwen-repo: ${{ vars.LUWEN_REPO || 'https://github.com/alexapostolu/luwen.git' }}
+          luwen-ref: ${{ vars.LUWEN_REF || 'bh-mod-remove-reset' }}
+
       - name: run-e2e-stress-test
         run: |
           tt-system-firmware/scripts/ci/run-stress.sh ${{ matrix.config.board }}
