@@ -47,6 +47,10 @@ Hello World::
 
    west build -b tt_mmk/tt_keraunos/sep samples/hello_world
 
+SEP BL1 (unsecured bring-up; boots from SEP BL0 and stages BUN1 for SMC BL0P5)::
+
+   west build -b tt_mmk/tt_keraunos/sep app/sep_bl1
+
 Interconnects
 *************
 

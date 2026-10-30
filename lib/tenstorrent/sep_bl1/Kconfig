@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_SEP_BL1
+	bool "SEP BL1 boot services"
+	help
+	  Unsecured SEP BL1 path: stage the BUN1 SEP BL0 loaded for SMC BL0P5,
+	  load and start BL0P5, and acknowledge its BUN2 validation doorbell.
+	  MMIO and status reporting are supplied by platform ops.
