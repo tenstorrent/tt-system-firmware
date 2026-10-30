@@ -43,6 +43,9 @@ jobs:
       - name: Determine run ID
         id: run-info
         shell: bash
+        env:
+          # Via env, as the title can come from an untrusted PR title
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
         run: |
           run_id="${{ github.event.workflow_run.id }}"
           run_attempt="${{ github.event.workflow_run.run_attempt }}"
@@ -68,6 +71,12 @@ jobs:
           if [[ "$workflow_name" == "HW Soak" && "$head_branch" != "$default_branch" ]]; then
             upload="false"
             echo "::notice::Skipping upload for '$workflow_name' on branch '$head_branch' (only uploads on $default_branch)"
+          fi
+          # Debug dispatches (pinned runner, subset of tests, or another PR's
+          # code) run on the default branch but are not representative of it.
+          if [[ "$RUN_TITLE" == "HW Soak (debug):"* ]]; then
+            upload="false"
+            echo "::notice::Skipping upload for debug run '$RUN_TITLE'"
           fi
 
           [[ -z "$run_id" ]] && { echo "::error::run_id is empty"; exit 1; }

@@ -2,6 +2,11 @@ name: Build
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: 'Ref to build instead of the triggering one (e.g. refs/pull/123/head)'
+        type: string
+        default: ''
     secrets:
       SIGNATURE_KEY:
         required: true
@@ -28,7 +33,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-build-fw-${{ github.event.pull_request.number || github.event.merge_group.base_sha || github.sha }}
+  group: ${{ github.workflow }}-build-fw-${{ github.event.pull_request.number || github.event.merge_group.base_sha || (github.event_name == 'workflow_dispatch' && github.run_id) || github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -38,6 +43,8 @@ jobs:
       boards: ${{ steps.genboards.outputs.boards }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - id: genboards
         run: |
           echo "boards=$(jq -c '.' .github/boards.json)" | tee -a $GITHUB_OUTPUT
@@ -53,6 +60,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -145,6 +153,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -216,6 +225,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -335,6 +345,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -361,6 +372,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
 
       - name: Download firmware artifacts
         uses: actions/download-artifact@v4
@@ -392,6 +404,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -414,6 +427,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
 
       - name: Discover SMC Tests
         id: discover
@@ -434,6 +448,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
 
       - name: Discover DMC Tests
         id: discover
@@ -462,6 +477,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
 
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
@@ -519,6 +535,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
 
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
@@ -563,6 +580,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
@@ -598,6 +616,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          ref: ${{ inputs.ref }}
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
