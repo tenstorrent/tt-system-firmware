@@ -2049,7 +2049,24 @@ def test_bindesc(arc_chip_dut, asic_id):
     logger.info(f"Bindesc version: 0x{bindesc_version:08x}")
 
 
-def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
+def _smi_reset_after_bh_mod(board_name):
+    """
+    Reset the chip with tt-smi after a bh-mod write. bh-mod resets the chip
+    itself, but only waits for it to reappear on PCIe, not for ARC to boot.
+    """
+    if board_name is not None and "galaxy" in board_name.lower():
+        cmd = ["tt-smi", "-glx_reset", "--eth_train_skip"]
+    else:
+        cmd = ["tt-smi", "-r", "--eth_train_skip"]
+    result = subprocess.run(cmd, capture_output=True, check=False)
+    if result.returncode != 0:
+        logger.warning(
+            f"'{' '.join(cmd)}' after bh-mod failed (rc={result.returncode}): "
+            f"{result.stdout.decode(errors='replace')}"
+        )
+
+
+def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int, board_name):
     """
     Test bh-mod can persist overrides in SPI flash via the A/B ccfgovr mechanism,
     and that they are not overridden by tt-flash.
@@ -2082,7 +2099,6 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
     result = subprocess.run(
         [
             bh_mod,
-            "--reset-timeout=60s",
             "set",
             f"chip_limits.tdp_limit={tdp_target}",
             "feature_enable.kernel_throttler_at_floor_en=true",
@@ -2092,8 +2108,9 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
         check=False,
     )
     assert result.returncode == 0, f"bh-mod set failed, rc={result.returncode}"
+    _smi_reset_after_bh_mod(board_name)
 
-    chip = wait_arc_boot(asic_id)
+    chip = wait_arc_boot(asic_id, timeout=60)
     # Verify the overrides were applied by the running firmware.
     measured_tdp = chip.get_telemetry().tdp_limit_max
     assert measured_tdp == tdp_target, (
@@ -2127,7 +2144,6 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
     restore = subprocess.run(
         [
             bh_mod,
-            "--reset-timeout=60s",
             "set",
             f"chip_limits.tdp_limit={tdp_baseline}",
             f"feature_enable.kernel_throttler_at_floor_en={'true' if kt_baseline & 1 else 'false'}",
@@ -2141,6 +2157,8 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int):
             f"Failed to restore baseline config (rc={restore.returncode}); "
             f"SPI flash may be left modified: {restore.stderr.decode(errors='replace')}"
         )
+    else:
+        _smi_reset_after_bh_mod(board_name)
     del chip
     wait_arc_boot(asic_id, timeout=60)
 
@@ -2190,7 +2208,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     )
 
     write = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "set", f"{ETH_SPEED_PATH}={speed}"],
+        [bh_mod, "set", f"{ETH_SPEED_PATH}={speed}"],
         capture_output=True,
         check=False,
     )
@@ -2199,6 +2217,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
         f"stdout={write.stdout.decode(errors='replace')!r} "
         f"stderr={write.stderr.decode(errors='replace')!r}"
     )
+    _smi_reset_after_bh_mod(board_name)
     # ARC has to be back after bh-mod applied the override with a reset.
     wait_arc_boot(asic_id, timeout=60)
 
@@ -2206,7 +2225,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     # Warn (don't fail) if this doesn't succeed, so a stale flash state can't
     # flake later tests / CI runs.
     restore = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "res", ETH_SPEED_PATH],
+        [bh_mod, "res", ETH_SPEED_PATH],
         capture_output=True,
         check=False,
     )
@@ -2217,10 +2236,11 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
             f"{restore.stderr.decode(errors='replace')}"
         )
     else:
+        _smi_reset_after_bh_mod(board_name)
         wait_arc_boot(asic_id, timeout=60)
 
 
-def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
+def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id, board_name):
     """
     Exercise the PCIe generation override that ccfgovr merges into
     FwTable.pci{0,1}_property_table.max_pcie_speed.
@@ -2286,7 +2306,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
         pytest.skip("no PCIe endpoint instance in cmfwcfg")
 
     write = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "set", f"{path}=4"],
+        [bh_mod, "set", f"{path}=4"],
         capture_output=True,
         check=False,
     )
@@ -2295,6 +2315,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
         f"stdout={write.stdout.decode(errors='replace')!r} "
         f"stderr={write.stderr.decode(errors='replace')!r}"
     )
+    _smi_reset_after_bh_mod(board_name)
     wait_arc_boot(asic_id, timeout=60)
 
     verify = subprocess.run(
@@ -2311,7 +2332,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
     assert str(row.get("override")) == "4", f"expected override {path}=4, got {row!r}"
 
     restore = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "res", path],
+        [bh_mod, "res", path],
         capture_output=True,
         check=False,
     )
@@ -2322,6 +2343,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id):
             f"{restore.stderr.decode(errors='replace')}"
         )
     else:
+        _smi_reset_after_bh_mod(board_name)
         wait_arc_boot(asic_id, timeout=60)
 
 
