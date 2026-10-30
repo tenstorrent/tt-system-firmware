@@ -28,13 +28,15 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(telemetry_info), okay),
 #define FUSE_CHIPLET_ID_LOW_ADDR  (mem_addr_t) SMC_CPU_SMC_FUSE_MAP_CHIPLET_ID_REG_ADDR
 #define FUSE_CHIPLET_ID_HIGH_ADDR (FUSE_CHIPLET_ID_LOW_ADDR + sizeof(uint32_t))
 
-#define GR_TAG_ENTRIES 5
+#define GR_TAG_ENTRIES 7
 
-#define GR_SLOT_TAG_BOARD_ID_HIGH 0
-#define GR_SLOT_TAG_BOARD_ID_LOW  1
-#define GR_SLOT_TAG_CM_FW_VERSION 2
-#define GR_SLOT_TAG_ASIC_ID_HIGH  3
-#define GR_SLOT_TAG_ASIC_ID_LOW   4
+#define GR_SLOT_TAG_BOARD_ID_HIGH      0
+#define GR_SLOT_TAG_BOARD_ID_LOW       1
+#define GR_SLOT_TAG_CM_FW_VERSION      2
+#define GR_SLOT_TAG_ASIC_ID_HIGH       3
+#define GR_SLOT_TAG_ASIC_ID_LOW        4
+#define GR_SLOT_TAG_UPDATE_TELEM_SPEED 5
+#define GR_SLOT_TAG_TIMER_HEARTBEAT    6
 
 struct telemetry_entry {
 	uint16_t tag;
@@ -57,7 +59,9 @@ static struct telemetry_table telemetry_table = {
 		TAG_ENTRY(TAG_BOARD_ID_LOW),
 		TAG_ENTRY(TAG_CM_FW_VERSION),
 		TAG_ENTRY(TAG_ASIC_ID_HIGH),
-		TAG_ENTRY(TAG_ASIC_ID_LOW)
+		TAG_ENTRY(TAG_ASIC_ID_LOW),
+		TAG_ENTRY(TAG_UPDATE_TELEM_SPEED),
+		TAG_ENTRY(TAG_TIMER_HEARTBEAT)
 	},
 };
 /* clang-format on */
@@ -89,10 +93,12 @@ void telemetry_platform_write_static(uint32_t app_version)
 	telemetry_table.telemetry[GR_SLOT_TAG_CM_FW_VERSION] = app_version;
 	telemetry_table.telemetry[GR_SLOT_TAG_ASIC_ID_HIGH] = sys_read32(FUSE_CHIPLET_ID_HIGH_ADDR);
 	telemetry_table.telemetry[GR_SLOT_TAG_ASIC_ID_LOW] = sys_read32(FUSE_CHIPLET_ID_LOW_ADDR);
+	telemetry_table.telemetry[GR_SLOT_TAG_UPDATE_TELEM_SPEED] = telemetry_update_interval_ms();
 }
 
 void telemetry_platform_update(void)
 {
+	telemetry_table.telemetry[GR_SLOT_TAG_TIMER_HEARTBEAT]++;
 }
 
 void telemetry_platform_publish(void)
