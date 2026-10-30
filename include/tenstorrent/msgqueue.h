@@ -426,6 +426,27 @@ struct dmc_ping_rqst {
 	bool legacy_ping;
 };
 
+/**
+ * @brief Host request for runtime QSFP-DD cage management.
+ *
+ * The host supplies operation/cage/argument. The SMC allocates the transport
+ * token, forwards a packed QSFP_MGMT_REQUEST over CM2DM, and returns a
+ * qsfp_mgmt_response in response data[1..7].
+ */
+struct qsfp_mgmt_rqst {
+	/** @brief The command code corresponding to @ref TT_SMC_MSG_QSFP_MGMT */
+	uint8_t command_code;
+	uint8_t pad[3];
+
+	/** @brief One of @ref qsfp_mgmt_op */
+	uint8_t operation;
+	/** @brief Cage index, A=0 through D=3 */
+	uint8_t cage;
+	/** @brief Operation-specific field selector, mode, or lane */
+	uint8_t argument;
+	uint8_t reserved;
+};
+
 /** @brief Host request to set the message queue serial number
  * @details Messages of this type are processed by @ref handle_set_last_serial.
  * This message allows the host to manually set the serial number for message queue
@@ -1071,6 +1092,9 @@ union request {
 
 	/** @brief A dmc ping request */
 	struct dmc_ping_rqst dmc_ping;
+
+	/** @brief A QSFP-DD management request */
+	struct qsfp_mgmt_rqst qsfp_mgmt;
 
 	/** @brief A set last serial request */
 	struct set_last_serial_rqst set_last_serial;
