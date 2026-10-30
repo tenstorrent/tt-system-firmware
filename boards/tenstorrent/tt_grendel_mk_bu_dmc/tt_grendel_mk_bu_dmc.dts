@@ -163,8 +163,22 @@
 	status = "okay";
 };
 
+/* USB-C device port straight to the STM32: PA11 = D-, PA12 = D+. The USB FS
+ * clock is HSI48 (see &clk_hsi48 above, and the SoC's ICLK_SEL); there is no
+ * HSE or LSE on this board, so HSI48 running on its factory trim is the only
+ * 48 MHz source -- which is exactly how upstream's nucleo_u385rg_q does it.
+ */
 zephyr_udc0: &usb {
 	pinctrl-0 = <&usb_dm_pa11 &usb_dp_pa12>;
 	pinctrl-names = "default";
 	status = "okay";
+
+	/* CDC ACM function, so the host sees a /dev/ttyACM* serial port. The
+	 * node label is what CONFIG_CDC_ACM_SERIAL_INITIALIZE_AT_BOOT looks for
+	 * (it registers the first CDC ACM instance under zephyr_udc0), and what
+	 * dm_test_app binds its second shell instance to.
+	 */
+	cdc_acm_uart0: cdc_acm_uart0 {
+		compatible = "zephyr,cdc-acm-uart";
+	};
 };
