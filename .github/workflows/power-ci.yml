@@ -1,0 +1,691 @@
+name: Power CI
+
+# Nightly power and telemetry measurements on the SysEng Blackhole boards, imported by the Power CI Dashboard
+# (Systems Engineering / PPA, SYS-3895 / SYS-4936).
+#
+# Build firmware -> flash and reset -> run each workload under telemetry inside the board's tt-metal test image
+# (same container setup as metal.yml) -> one artifact per board. Kill switch: repository variable POWER_CI_ENABLED=false.
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      firmware:
+        description: '"main" (build and flash this ref), a release tag such as v19.17.1 (flash its bundle), or "none" (measure what is on the board)'
+        type: string
+        default: main
+      boards:
+        description: Comma-separated boards from ci_boards.json that have a power-ci-label (p150a, p300a, quietbox2, bh-galaxy-revc), or "all"
+        type: string
+        default: all
+      workloads:
+        description: '"nightly", "all", "validate" (collect-only check of the image), or a comma-separated list'
+        type: string
+        default: nightly
+      didt_iterations:
+        description: Iterations for resnet_conv, lm_head and the other dI/dt tests
+        type: string
+        default: "50000"
+      ff1_iterations:
+        description: Iterations for ff1_matmul with and without GELU
+        type: string
+        default: "100000"
+      bursty_iterations:
+        description: Iterations for the Bursty tests (x1000 repetitions each)
+        type: string
+        default: "200"
+      telem_interval_ms:
+        description: Firmware telemetry refresh interval in ms (0 = firmware default 100)
+        type: string
+        default: "10"
+      mm_throttle:
+        description: TT_MM_THROTTLE_PERF for every workload, off or a level 1-5
+        type: string
+        default: "off"
+      metal_image_tag:
+        description: 'tt-metal test image tag: blank = the Power CI default, "release" = the tags in ci_boards.json, or any tag'
+        type: string
+        default: ""
+      tag:
+        description: Free text recorded on the session
+        type: string
+        default: ""
+  pull_request:
+    types: [labeled, synchronize]   # runs only while the power-ci label is on the PR (should-run)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+env:
+  # workloads of the nightly; "all" adds the other dI/dt tests listed in the run step
+  NIGHTLY_WORKLOADS: idle,mission_mode,resnet_conv,ff1_matmul_with_gelu,ff1_matmul_no_gelu,lm_head,bursty5,max_util,max_util_fpu100_dram100,deepseek_v3_mla_matmul,deepseek_v3_gate_matmul,llama_8b_demo,tt_burnin_no_reset,tt_burnin
+  # Max Util exists only in v0.80 dev builds until v0.80.0 ships; set to "" to use the ci_boards.json release tags
+  DEFAULT_METAL_IMAGE_TAG: v0.80.0-dev20261005
+
+jobs:
+  should-run:
+    if: >
+      vars.POWER_CI_ENABLED != 'false' &&
+      (github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'power-ci'))
+    runs-on: ubuntu-24.04
+    outputs:
+      firmware: ${{ steps.params.outputs.firmware }}
+      boards: ${{ steps.params.outputs.boards }}
+      workloads: ${{ steps.params.outputs.workloads }}
+      didt_iterations: ${{ steps.params.outputs.didt_iterations }}
+      ff1_iterations: ${{ steps.params.outputs.ff1_iterations }}
+      bursty_iterations: ${{ steps.params.outputs.bursty_iterations }}
+      telem_interval_ms: ${{ steps.params.outputs.telem_interval_ms }}
+      mm_throttle: ${{ steps.params.outputs.mm_throttle }}
+      metal_image_tag: ${{ steps.params.outputs.metal_image_tag }}
+      subtest_timeout_min: ${{ steps.params.outputs.subtest_timeout_min }}
+      tag: ${{ steps.params.outputs.tag }}
+    steps:
+      - id: params
+        env:
+          IN_FIRMWARE: ${{ inputs.firmware }}
+          IN_BOARDS: ${{ inputs.boards }}
+          IN_WORKLOADS: ${{ inputs.workloads }}
+          IN_DIDT: ${{ inputs.didt_iterations }}
+          IN_FF1: ${{ inputs.ff1_iterations }}
+          IN_BURSTY: ${{ inputs.bursty_iterations }}
+          IN_TELEM: ${{ inputs.telem_interval_ms }}
+          IN_MM_THROTTLE: ${{ inputs.mm_throttle }}
+          IN_METAL_IMAGE_TAG: ${{ inputs.metal_image_tag }}
+          IN_TAG: ${{ inputs.tag }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # workflow_dispatch supplies inputs; schedule and pull_request use the nightly defaults.
+          # Inputs end up in command lines on the hardware runners: accept only what they can be.
+          get() { local v="${!1}"; echo "${v:-$2}"; }
+          FW="$(get IN_FIRMWARE main)"
+          WL="$(get IN_WORKLOADS nightly | tr -d '[:space:]')"
+          [ "$WL" = nightly ] && WL="$NIGHTLY_WORKLOADS"
+          [ "$WL" = validate ] && FW=none
+          TAG="$(get IN_TAG '' | tr -d '\r' | head -1)"
+          case "$EVENT" in
+            schedule)     TAG="${TAG:-nightly}" ;;
+            pull_request) FW=main; TAG="${TAG:-PR #$PR}" ;;
+          esac
+          KNOWN="idle mission_mode resnet_conv ff1_matmul_with_gelu ff1_matmul_no_gelu lm_head bursty1 bursty2 bursty3 bursty4 bursty5 bursty6 minimal_matmul sdpa_op binary_mul mla_sdpa deepseek_v3_mla_matmul deepseek_v3_gate_matmul max_util max_util_fpu100_dram100 llama_8b_demo tt_burnin tt_burnin_no_reset"
+          if [ "$WL" != all ] && [ "$WL" != validate ]; then
+            [ -n "$WL" ] || { echo "::error::workloads is empty"; exit 1; }
+            for w in ${WL//,/ }; do
+              echo " $KNOWN " | grep -q " $w " || { echo "::error::unknown workload '$w' (known: $KNOWN)"; exit 1; }
+            done
+          fi
+          for v in "$(get IN_DIDT 50000)" "$(get IN_FF1 100000)" "$(get IN_BURSTY 200)"; do
+            [[ "$v" =~ ^[1-9][0-9]{0,8}$ ]] || { echo "::error::iteration inputs must be positive integers, got '$v'"; exit 1; }
+          done
+          [[ "$(get IN_TELEM 10)" =~ ^(0|[1-9][0-9]{0,2}|1000)$ ]] || { echo "::error::telem_interval_ms must be 0 or 1-1000"; exit 1; }
+          [[ "$(get IN_MM_THROTTLE off)" =~ ^(off|[1-5])$ ]] || { echo "::error::mm_throttle must be off or 1-5"; exit 1; }
+          [[ "$(get IN_METAL_IMAGE_TAG '')" =~ ^[A-Za-z0-9_.-]{0,128}$ ]] || { echo "::error::metal_image_tag is not a docker tag"; exit 1; }
+          [[ "$FW" =~ ^(main|none|v[0-9][A-Za-z0-9_.-]{0,63})$ ]] || { echo "::error::firmware must be main, none or a release tag"; exit 1; }
+          [[ "$TAG" =~ ^[^$'\n'$'\r']{0,200}$ ]] || { echo "::error::tag must be one line of at most 200 characters"; exit 1; }
+          [[ "$(get IN_BOARDS all)" =~ ^[a-z0-9_,\ -]{1,120}$ ]] || { echo "::error::boards must be a comma-separated list"; exit 1; }
+          [[ "$WL" =~ ^[a-z0-9_,]{1,400}$ ]] || { echo "::error::workloads must be a comma-separated list"; exit 1; }
+          # per-workload timeout from the slowest configured workload (rates measured on Galaxy) plus margin, capped
+          A=$(get IN_DIDT 50000); B=$(get IN_FF1 100000); C=$(get IN_BURSTY 200)
+          m=$(( 65 + 10#$A * 10 / 10000 ))
+          mf=$(( 65 + 10#$B * 3 / 10000 )); [ "$mf" -gt "$m" ] && m=$mf
+          mb=$(( 65 + 10#$C * 13 / 100 )); [ "$mb" -gt "$m" ] && m=$mb
+          [ "$m" -le 240 ] || m=240
+          {
+            echo "firmware=$FW"
+            echo "boards=$(get IN_BOARDS all)"
+            echo "workloads=$WL"
+            echo "didt_iterations=$A"
+            echo "ff1_iterations=$B"
+            echo "bursty_iterations=$C"
+            echo "telem_interval_ms=$(get IN_TELEM 10)"
+            echo "mm_throttle=$(get IN_MM_THROTTLE off)"
+            echo "metal_image_tag=$(get IN_METAL_IMAGE_TAG '')"
+            echo "subtest_timeout_min=$m"
+            echo "tag=$TAG"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  build-fw:
+    needs: should-run
+    if: ${{ needs.should-run.outputs.firmware == 'main' }}
+    uses: ./.github/workflows/build-fw.yml
+    secrets:
+      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
+
+  # Boards with a Power CI runner (ci_boards.json power-ci-label), narrowed by the boards input
+  generate-matrix:
+    needs: should-run
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: gen-matrix
+        env:
+          BOARDS: ${{ needs.should-run.outputs.boards }}
+          IMAGE_TAG: ${{ needs.should-run.outputs.metal_image_tag }}
+        run: |
+          case "$IMAGE_TAG" in
+            release) TAG="" ;;
+            "")      TAG="$DEFAULT_METAL_IMAGE_TAG" ;;
+            *)       TAG="$IMAGE_TAG" ;;
+          esac
+          MATRIX="$(jq -c --arg boards "$BOARDS" --arg tag "$TAG" '
+            [.bh[] | select(has("power-ci-label"))
+                   | .board as $b | select($boards == "all" or (($boards | split(",") | map(gsub(" "; ""))) | index($b)))
+                   | if $tag != "" then .["metal-image"] |= sub(":[^:/]*$"; ":" + $tag) else . end]' .github/ci_boards.json)"
+          [ "$MATRIX" != "[]" ] || { echo "::error::no board matched '$BOARDS'"; exit 1; }
+          echo "matrix=$MATRIX" | tee -a "$GITHUB_OUTPUT"
+
+  power-ci:
+    name: Power CI on ${{ matrix.config.board }}
+    needs: [should-run, build-fw, generate-matrix]
+    if: ${{ !cancelled() && needs.generate-matrix.result == 'success' && (needs.build-fw.result == 'success' || needs.build-fw.result == 'skipped') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.config.power-ci-label }}
+    timeout-minutes: 720
+    container:
+      image: ${{ matrix.config.metal-image }}
+      volumes:
+        - /dev/hugepages-1G:/dev/hugepages-1G
+        - /dev/hugepages:/dev/hugepages
+        - /opt/tenstorrent/hf-models/:/opt/tenstorrent/hf-models/
+        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+      options: ${{ matrix.config.metal-options }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      ARCH_NAME: ${{ matrix.config.arch-name }}
+      TT_METAL_DIR: /home/user/tt-metal
+      BOARD: ${{ matrix.config.board }}
+      SYSTEM_POWER: ${{ matrix.config.system-power || 'none' }}
+      MODEL_DIR: /opt/tenstorrent/hf-models/meta-llama/Llama-3.1-8B-Instruct
+      POWER_CI_FIRMWARE: ${{ needs.should-run.outputs.firmware }}
+      POWER_CI_WORKLOADS: ${{ needs.should-run.outputs.workloads }}
+      POWER_CI_DIDT_ITERATIONS: ${{ needs.should-run.outputs.didt_iterations }}
+      POWER_CI_FF1_ITERATIONS: ${{ needs.should-run.outputs.ff1_iterations }}
+      POWER_CI_BURSTY_ITERATIONS: ${{ needs.should-run.outputs.bursty_iterations }}
+      POWER_CI_TELEM_INTERVAL_MS: ${{ needs.should-run.outputs.telem_interval_ms }}
+      POWER_CI_MM_THROTTLE: ${{ needs.should-run.outputs.mm_throttle }}
+      POWER_CI_SUBTEST_TIMEOUT_MIN: ${{ needs.should-run.outputs.subtest_timeout_min }}
+      POWER_CI_TAG: ${{ needs.should-run.outputs.tag }}
+      POWER_CI_IDLE_SECONDS: "30"
+      POWER_CI_COOLDOWN_SECONDS: "20"
+      POWER_CI_IDLE_RUN_SECONDS: "240"
+      POWER_CI_MAX_UTIL_ITERATIONS: "15000"
+      POWER_CI_MAX_UTIL_WL_LOOPS: "15000"
+      POWER_CI_BURNIN_SECONDS: "300"
+      TT_BURNIN_VERSION: v0.4.4
+    steps:
+      - name: Select tt-kmd
+        run: |
+          sudo apt update || true
+          sudo apt install -y kmod
+          KO=/opt/tenstorrent/kmd-builds/${{ matrix.config.kmd_build }}/tenstorrent.ko
+          if [ -f "$KO" ]; then
+            sudo rmmod tenstorrent || true
+            sudo insmod "$KO" || echo "::warning::could not load $KO; keeping the host's driver"
+          else
+            echo "::warning::$KO not on this runner; keeping the host's driver"
+          fi
+          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+
+      - name: Install ipmitool
+        if: ${{ env.SYSTEM_POWER == 'ipmi' }}
+        run: |
+          sudo apt update || true
+          sudo apt install -y ipmitool
+
+      - name: Checkout CI scripts
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up tools venv
+        run: |
+          set -euo pipefail
+          [ -d "$TT_METAL_DIR/tests/didt" ] || { echo "::error::tt-metal checkout not found at $TT_METAL_DIR"; exit 1; }
+          rm -rf "$GITHUB_WORKSPACE/telemetry_output"
+          python3 -m venv "$GITHUB_WORKSPACE/.venv"
+          "$GITHUB_WORKSPACE/.venv/bin/pip" install -q --upgrade pip
+          "$GITHUB_WORKSPACE/.venv/bin/pip" install -q "pyluwen>=0.9" "tt-flash==3.11.0rc1" "tt-smi==6.2.1" \
+            "https://github.com/tenstorrent/tt-burnin/archive/refs/tags/${TT_BURNIN_VERSION}.tar.gz"
+          { echo "VENV=$GITHUB_WORKSPACE/.venv"; echo "PATH=$GITHUB_WORKSPACE/.venv/bin:$PATH"; } >> "$GITHUB_ENV"
+          # metal.yml's workaround: the container network can drop after a period of inactivity
+          nohup bash -c 'while true; do curl --no-progress-meter -o /dev/null https://tenstorrent.com || true; sleep 10; done' >/dev/null 2>&1 </dev/null &
+          echo $! > /tmp/network-keepalive.pid
+
+      - name: Set model env
+        if: ${{ env.POWER_CI_WORKLOADS == 'all' || contains(format(',{0},', env.POWER_CI_WORKLOADS), ',llama_8b_demo,') }}
+        run: |
+          test -d "$MODEL_DIR"
+          { echo "HF_MODEL=$MODEL_DIR"; echo "LLAMA_DIR=$MODEL_DIR"; echo "TT_CACHE_PATH=$MODEL_DIR"; } >> "$GITHUB_ENV"
+
+      - name: Download the firmware bundle built by this run
+        if: ${{ env.POWER_CI_FIRMWARE == 'main' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-fw.outputs.combined-fwbundle-artifact }}
+          path: fw
+
+      - name: Flash the firmware
+        if: ${{ env.POWER_CI_FIRMWARE != 'none' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "$POWER_CI_FIRMWARE" != main ]; then
+            mkdir -p fw
+            # release asset fw_pack-<version>.fwbundle (no gh CLI in the image)
+            python3 - "$POWER_CI_FIRMWARE" "fw/fw_pack-${POWER_CI_FIRMWARE#v}.fwbundle" <<'PY'
+          import json, os, sys, urllib.request
+          tag, out = sys.argv[1:3]
+          hdr = {"Authorization": f"Bearer {os.environ['GH_TOKEN']}", "Accept": "application/vnd.github+json"}
+          rel = json.load(urllib.request.urlopen(urllib.request.Request(f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/releases/tags/{tag}", headers=hdr)))
+          url = next((a["url"] for a in rel.get("assets", []) if a["name"] == os.path.basename(out)), None)
+          if not url:
+              sys.exit(f"::error::release {tag} has no asset {os.path.basename(out)}")
+          with urllib.request.urlopen(urllib.request.Request(url, headers={**hdr, "Accept": "application/octet-stream"})) as r, open(out, "wb") as f:
+              f.write(r.read())
+          PY
+          fi
+          BUNDLE="$(find fw -name 'fw_pack*.fwbundle' | head -1)"
+          [ -f "$BUNDLE" ] || { echo "::error::no fw_pack*.fwbundle to flash"; exit 1; }
+          reset_board() { if [[ "$BOARD" == bh-galaxy* ]]; then tt-smi -glx_reset; else tt-smi -r; fi; }
+          ready() { tt-smi -f /tmp/smi.json >/dev/null 2>&1; }
+          # chips can still be initialising right after another job's reset: wait, reset once if needed
+          for i in $(seq 1 6); do ready && break; echo "chips not ready yet (attempt $i)"; sleep 10; done
+          if ! ready; then
+            echo "::warning::chips not initialised after 60 s; resetting before the flash"
+            reset_board || true
+            for i in $(seq 1 18); do sleep 10; ready && break; done
+            ready || { echo "::error::chips on $BOARD did not initialise after a reset"; exit 1; }
+          fi
+          ok=0
+          for attempt in 1 2 3; do
+            if tt-flash flash --force "$BUNDLE"; then ok=1; break; fi
+            echo "::warning::tt-flash attempt $attempt failed; retrying in 60 s"; sleep 60
+          done
+          [ "$ok" = 1 ] || { echo "::error::tt-flash failed three times on $BOARD"; exit 1; }
+          reset_board
+          for i in $(seq 1 18); do
+            sleep 10; ready && break
+            [ "$i" = 18 ] && { echo "::error::chips did not come back after the reset"; exit 1; }
+          done
+          python3 -c "import json; d=json.load(open('/tmp/smi.json')); print('fw after flash:', sorted({str(x.get('firmwares',{}).get('fw_bundle_version')) for x in d.get('device_info',[])}))" || true
+
+      - name: Record environment
+        # One snapshot per board job (tt-smi, host, Galaxy BMC inventory and cabling); copied into every workload folder.
+        run: |
+          set -uo pipefail
+          ENV_DIR="$GITHUB_WORKSPACE/telemetry_output/env"; mkdir -p "$ENV_DIR"
+          tt-smi -f "$ENV_DIR/tt-smi.json" >/dev/null 2>&1 || echo "::warning::tt-smi snapshot failed"
+          TT_FLASH_VERSION="$(tt-flash --version 2>/dev/null | grep -oE '[0-9]+(\.[0-9]+)+' | head -1 || true)"
+          TT_METAL_VERSION="$(python3 -c "from importlib.metadata import version; print(version('ttnn'))" 2>/dev/null || true)"
+          TT_METAL_COMMIT="$(git -C "$TT_METAL_DIR" rev-parse HEAD 2>/dev/null || echo "$TT_METAL_VERSION" | grep -oE '\+g[0-9a-f]{7,40}' | cut -c3- || true)"
+          BMC_VERSION=""; BMC_IP=""; INLET_C=""; FAN_RPMS=""; CPLD_JSON=""; CABLING_JSON="{}"; QSFP=""
+          if [ "$SYSTEM_POWER" = ipmi ] && [ -e /dev/ipmi0 ]; then
+            # BMC inventory in-band: mc info, lan print, sensors, CPLD versions (S7T register 0x04 via master write-read)
+            IPMI_OUT="$(bash -c 'ipmitool mc info; echo ===LAN===; ipmitool lan print 2>/dev/null; echo ===SDR===; ipmitool sdr elist; echo ===CPLD===;
+               for e in "MB 0x17 0x62" "PDB 0x09 0x62" "UBB1 0x0D 0x80" "UBB2 0x0F 0x80" "UBB3 0x11 0x80" "UBB4 0x13 0x80"; do set -- $e; echo "$1:$(ipmitool raw 0x06 0x52 $2 $3 0x04 0x00 2>/dev/null)"; done' 2>/dev/null || true)"
+            printf '%s\n' "$IPMI_OUT" > "$ENV_DIR/ipmi-inventory.txt"
+            CPLD_JSON="$(printf '%s\n' "$IPMI_OUT" | awk 'f && /^[A-Z0-9]+:/ {split($0,a,":"); v=a[2]; gsub(/^ +| +$/,"",v); n=split(v,b," "); if (n==4) s=s (c++?",":"") "\"" a[1] "\":\"V" substr(b[3],2,1) "." b[2] "." b[1] " (" b[4] ")\""} /===CPLD===/ {f=1} END {if (c) print "{" s "}"}')"
+            # BMC version as the team reads it: minor digit of "Firmware Revision" . first "Aux Firmware Rev Info" byte (0.05 + 0x19 -> 5.19)
+            FW_MAJOR="$(printf '%s\n' "$IPMI_OUT" | awk -F: '/Firmware Revision/ {split($2,a,"."); print a[2]+0; exit}')"
+            AUX_HEX="$(printf '%s\n' "$IPMI_OUT" | awk '/Aux Firmware Rev Info/ {getline; print $1; exit}' | tr -d '[:space:]')"
+            case "$AUX_HEX" in 0x*|0X*) [ -n "$FW_MAJOR" ] && BMC_VERSION="${FW_MAJOR}.${AUX_HEX#0[xX]}" ;; esac
+            BMC_IP="$(printf '%s\n' "$IPMI_OUT" | awk '/===SDR===/ {exit} /^IP Address  *:/ {sub(/^IP Address  *: */,""); print; exit}' | tr -d '[:space:]')"
+            INLET_C="$(printf '%s\n' "$IPMI_OUT" | awk -F'|' '/TEMP_INLET/ {gsub(/ degrees C/,"",$5); gsub(/ /,"",$5); print $5; exit}')"
+            FAN_RPMS="$(printf '%s\n' "$IPMI_OUT" | awk -F'|' '/RPM/ {gsub(/ RPM/,"",$5); gsub(/ /,"",$5); if ($5 ~ /^[0-9]+$/) printf "%s%s", (n++?",":""), $5}')"
+          fi
+          if [[ "$BOARD" == bh-galaxy* && "$POWER_CI_WORKLOADS" != validate ]]; then
+            # QSFP cabling: tt-metal's validator against the XY torus descriptor (what metal.yml checks), then XY+Z and mesh.
+            # --hard-fail makes it stop after validation instead of entering its link-retrain loop (which never returns here).
+            for topo in xy_torus:XY xy_torus_z_ports:XY+Z mesh:none; do
+              d="${topo%%:*}"; label="${topo#*:}"; log="$ENV_DIR/cabling_check_${d}.txt"
+              timeout -k 15 --preserve-status 240s bash -c "cd '$TT_METAL_DIR' && ./build/tools/scaleout/run_cluster_validation --cabling-descriptor-path tools/tests/scaleout/cabling_descriptors/bh_galaxy_${d}.textproto --hard-fail" >"$log" 2>&1 || true
+              if ! grep -q "Physical Discovery Complete" "$log"; then result="discovery did not complete"
+              else
+                missing=$(grep -oE 'found [0-9]+ missing port/cable connections' "$log" | grep -oE '[0-9]+' | head -1 || true)
+                extra=$(grep -oE 'found [0-9]+ extra port/cable connections' "$log" | grep -oE '[0-9]+' | head -1 || true)
+                if grep -q "All connections match" "$log"; then result="match"; [ -n "$QSFP" ] || QSFP="$label"
+                else result="${missing:-0} missing, ${extra:-0} extra"; fi
+              fi
+              echo "cabling check $d ($label): $result"
+              CABLING_JSON="$(echo "$CABLING_JSON" | jq -c --arg k "$d" --arg v "$result" '. + {($k): $v}')"
+            done
+            echo "QSFP cabling: ${QSFP:-unknown}"
+            # the aborted validator leaves the chips at Fmax: ask the firmware for long idle (what tt-metal sends on device close)
+            python3 - <<'PY' || echo "::warning::could not send go-idle after the cabling check"
+          import time, pyluwen
+          chips = [d for d in pyluwen.detect_chips_fallible() if d.have_comms()]
+          for d in chips:
+              try:
+                  d.force_upgrade().arc_msg(0x54, wait_for_done=True, use_second_mailbox=False, arg0=0, arg1=0, timeout=2.0)
+              except Exception as exc:
+                  print(f"go-idle failed on one chip: {exc}")
+          time.sleep(3)
+          clocks = sorted({d.force_upgrade().as_bh().get_telemetry().aiclk & 0xFFFF for d in chips})
+          print(f"AICLK after go-idle: {clocks} MHz")
+          PY
+          fi
+          MODELS_JSON="$(python3 - <<'PY'
+          import json, os
+          found = {}
+          for root in ("/opt/tenstorrent/hf-models", "/opt/tenstorrent/models", "/localdev", "/mnt/MLPerf"):
+              if not os.path.isdir(root):
+                  continue
+              for dirpath, dirs, files in os.walk(root):
+                  if dirpath[len(root):].count(os.sep) > 3:
+                      dirs[:] = []
+                      continue
+                  if any(f.endswith((".safetensors", ".bin", ".pth", ".gguf")) or f == "config.json" for f in files):
+                      found[dirpath] = round(sum(os.path.getsize(os.path.join(dirpath, f)) for f in files if os.path.exists(os.path.join(dirpath, f))) / 1e9, 1)
+                      dirs[:] = []
+          print(json.dumps(found))
+          PY
+          )"
+          export TT_FLASH_VERSION TT_METAL_COMMIT TT_METAL_VERSION BMC_VERSION BMC_IP INLET_C FAN_RPMS CPLD_JSON CABLING_JSON QSFP MODELS_JSON
+          python3 - "$ENV_DIR/host.json" <<'PY'
+          import json, os, sys
+          e = os.environ.get
+          def jload(s, default):
+              try:
+                  return json.loads(s) if s else default
+              except ValueError:
+                  return default
+          fans = [int(x) for x in e("FAN_RPMS", "").split(",") if x.strip().isdigit()]
+          try:
+              inlet = float(e("INLET_C")) if e("INLET_C") else None
+          except ValueError:
+              inlet = None
+          json.dump({
+              "host": e("RUNNER_NAME") or os.uname().nodename, "board": e("BOARD"), "runner": e("RUNNER_NAME"),
+              "kmd_version": open("/sys/module/tenstorrent/version").read().strip() if os.path.exists("/sys/module/tenstorrent/version") else "unknown",
+              "kernel": os.uname().release, "container_image": sys.argv[2] if len(sys.argv) > 2 else None,
+              "tt_flash_version": e("TT_FLASH_VERSION") or None, "tt_metal_commit": e("TT_METAL_COMMIT") or None, "tt_metal_version": e("TT_METAL_VERSION") or None,
+              "bmc_version": e("BMC_VERSION") or None, "bmc_ip": e("BMC_IP") or None, "inlet_temp_c": inlet,
+              "fan_rpm": fans or None, "fan_rpm_mean": (sum(fans) / len(fans)) if fans else None,
+              "cpld_versions": jload(e("CPLD_JSON"), None), "models": jload(e("MODELS_JSON"), {}),
+              "qsfp_config": e("QSFP") or None, "cabling_checks": jload(e("CABLING_JSON"), {}),
+              "fw_repo": e("GITHUB_REPOSITORY"), "fw_repo_sha": e("GITHUB_SHA"), "fw_repo_ref": e("GITHUB_REF_NAME"),
+              "run_id": e("GITHUB_RUN_ID"), "run_url": f"{e('GITHUB_SERVER_URL')}/{e('GITHUB_REPOSITORY')}/actions/runs/{e('GITHUB_RUN_ID')}",
+              "event": e("GITHUB_EVENT_NAME"), "tag": e("POWER_CI_TAG") or None, "requested_by": e("GITHUB_ACTOR"),
+          }, open(sys.argv[1], "w"), indent=2)
+          PY
+          sed -i "s|\"container_image\": null|\"container_image\": \"${{ matrix.config.metal-image }}\"|" "$ENV_DIR/host.json"
+          cat "$ENV_DIR/host.json"
+
+      - name: Run workloads
+        # Each workload: collect-only check, readers on (pyluwen chip telemetry; IPMI system power on Galaxy), idle window,
+        # the workload under `timeout`, cooldown, readers off, manifest. A failed workload does not stop the others.
+        run: |
+          set -uo pipefail
+          OUT="$GITHUB_WORKSPACE/telemetry_output"; SCRIPTS="$GITHUB_WORKSPACE/scripts"
+          cat > "$OUT/manifest.py" <<'PY'
+          """Write <dir>/manifest.json from the workload log, exit code and the telemetry report."""
+          import csv, glob, json, os, re, sys
+          d, wl, board, rc, started, ended, idle, cool, sys_power, reader_died, smi = sys.argv[1:12]
+          rc = int(rc)
+          note = []
+          def tail(path, n):
+              try:
+                  with open(path, "rb") as fh:
+                      fh.seek(0, 2); fh.seek(max(0, fh.tell() - n))
+                      return re.sub(r"\x1b\[[0-9;]*m", "", fh.read().decode("utf-8", "replace"))
+              except OSError:
+                  return ""
+          log = tail(f"{d}/workload.log", 4 * 1024 * 1024)
+          status = "passed" if rc == 0 else "failed"
+          if rc == 5:  # the collect-only check failed: nothing ran, the log holds the reason
+              json.dump({"schema": "power-ci-manifest/1", "workload": wl, "board": board, "host": os.environ.get("RUNNER_NAME", ""),
+                         "status": "failed", "exit_code": 5, "failure_summary": (log.strip() + "; exit code 5 (could not run in this image)")[:400],
+                         "run_id": os.environ.get("GITHUB_RUN_ID"), "fw_repo_sha": os.environ.get("GITHUB_SHA")}, open(f"{d}/manifest.json", "w"), indent=2)
+              print(f"{wl}: failed ({log.strip()[:200]})")
+              sys.exit(0)
+          try:
+              report = json.load(open(f"{d}/telemetry_report.json"))
+          except (OSError, ValueError):
+              report = {}
+          rows = {k: int(v) for k, v in (report.get("rows_per_chip") or {}).items()}
+          try:
+              expected = len(json.load(open(smi)).get("device_info") or [])
+          except (OSError, ValueError):
+              expected = 0
+          if sum(rows.values()) == 0:
+              note.append("no chip telemetry rows were captured")
+          elif reader_died == "1":
+              note.append(f"the telemetry reader exited before the workload ended ({sum(rows.values())} rows)")
+          elif expected and len(rows) < expected:
+              note.append(f"telemetry rows for only {len(rows)} of {expected} chips tt-smi reported")
+          elif rows and min(rows.values()) * 4 < max(rows.values()):
+              note.append(f"uneven capture: {min(rows.values())} rows on one chip, {max(rows.values())} on another")
+          if note and status == "passed":
+              status, rc = "failed", 6
+          summary = re.findall(r"(?m)^=+ (.*?) in [0-9.]+s", log)
+          if status == "passed" and summary:
+              last = summary[-1]
+              passed = sum(int(n) for n in re.findall(r"(\d+) passed", last))
+              failed = sum(int(n) for n in re.findall(r"(\d+) (?:failed|error)", last))
+              skipped = sum(int(n) for n in re.findall(r"(\d+) skipped", last))
+              if passed == 0 and failed == 0 and skipped > 0:  # pytest exits 0 but nothing ran
+                  reasons = re.findall(r"(?m)^SKIPPED \[\d+\] [^:]+:\d+: (.*)$", log)
+                  note.append(f"every selected test was skipped ({skipped}): {reasons[-1] if reasons else last}")
+                  status, rc = "failed", 7
+          ipmi_rows = 0
+          if sys_power == "ipmi":
+              try:
+                  ipmi_rows = max(0, sum(1 for _ in open(f"{d}/ipmi_power.csv")) - 1)
+              except OSError:
+                  pass
+              if ipmi_rows == 0:
+                  sys_power = "none"
+          failure = None
+          if status == "failed":
+              if note:
+                  failure = f"{note[-1]}; exit code {rc} ({ {6: 'incomplete telemetry', 7: 'nothing ran'}.get(rc, 'failed') })"
+              else:
+                  m = re.search(r"(?m)^E\s+((?:\w+\.)*\w+(?:Error|Exception|Interrupt|Exit)\b.{0,300})$", log)
+                  f = list(re.finditer(r"(?m)^(?:FAILED|ERROR)\s+(\S+?)(?:\s+-\s+(.{1,300}))?\s*$", log))
+                  if f:
+                      cause = f"{f[-1].group(1).split('::')[-1]}: {m.group(1).strip() if m else (f[-1].group(2) or '').strip()}".strip(": ")
+                  elif m:
+                      cause = m.group(1).strip()
+                  else:
+                      lines = [ln.strip() for ln in log.splitlines() if ln.strip()]
+                      cause = lines[-1] if lines else None
+                  meaning = {124: "killed by the workload timeout", 137: "killed (SIGKILL)", 143: "terminated (SIGTERM)", 5: "could not run in this image"}.get(rc)
+                  failure = (f"{cause}; " if cause else "") + f"exit code {rc}" + (f" ({meaning})" if meaning else "")
+          iv = report.get("interval") or {}
+          counters = report.get("counters_max") or {}
+          req = int(os.environ.get("POWER_CI_TELEM_INTERVAL_MS") or 0)
+          try:
+              command = open(f"{d}/command.sh").read().strip()
+          except OSError:
+              command = ""
+          e = os.environ.get
+          json.dump({
+              "schema": "power-ci-manifest/1", "workload": wl, "workload_label": "power_measurement_CI", "board": board,
+              "host": e("RUNNER_NAME") or os.uname().nodename, "status": status, "exit_code": rc,
+              "failure_summary": failure[:400] if failure else None, "notes": note,
+              "idle_seconds": int(idle), "cooldown_seconds": int(cool),
+              "system_power": sys_power, "system_power_note": "ipmi requested but no system power rows were captured" if sys_power == "none" and ipmi_rows == 0 and e("SYSTEM_POWER") == "ipmi" else "",
+              "telemetry_started_at": started, "workload_started_at": started, "workload_ended_at": ended,
+              "command": command, "run_id": e("GITHUB_RUN_ID"), "run_url": f"{e('GITHUB_SERVER_URL')}/{e('GITHUB_REPOSITORY')}/actions/runs/{e('GITHUB_RUN_ID')}",
+              "fw_repo_sha": e("GITHUB_SHA"),
+              "telem_interval_ms": req, "telem_interval_applied": bool(iv.get("applied")) if req else None,
+              "telem_interval_fw": next((v.get("fw_bundle") for v in (iv.get("per_chip") or {}).values() if v.get("fw_bundle")), None),
+              "dvfs_dropped_ticks": counters.get("dvfs_dropped_ticks"), "dvfs_max_period_us": counters.get("dvfs_max_period_us"), "dvfs_max_pass_us": counters.get("dvfs_max_pass_us"),
+              "chips_captured": len(rows), "chips_expected": expected, "telemetry_rows": sum(rows.values()), "ipmi_rows": ipmi_rows,
+          }, open(f"{d}/manifest.json", "w"), indent=2)
+          print(f"{wl}: {status}" + (f" ({failure})" if failure else ""))
+          PY
+
+          cd "$TT_METAL_DIR"
+          DIDT=(--determinism-check-interval 0 --timeout 0)
+          THROTTLE=(); [ "$POWER_CI_MM_THROTTLE" != off ] && THROTTLE=("TT_MM_THROTTLE_PERF=$POWER_CI_MM_THROTTLE")
+          # per form factor, as metal.yml's upstream test script: DeepSeek mesh and the Llama demo case / data-parallel
+          MESH=1chips; LLAMA=(-k "performance and ci-1")
+          case "$BOARD" in
+            bh-galaxy*) MESH=galaxy; LLAMA=(-k "performance and ci-32" --data_parallel 32) ;;
+            loudbox)    LLAMA=(-k "performance and ci-32" --data_parallel 8) ;;
+            quietbox2)  LLAMA=(-k "performance and ci-32" --data_parallel 4) ;;
+            p300a)      LLAMA=(-k "performance and ci-32" --data_parallel 2) ;;
+          esac
+          MAXUTIL=(MAX_UTIL_NUM_ITERATIONS="$POWER_CI_MAX_UTIL_ITERATIONS" MAX_UTIL_NUM_WL_LOOPS="$POWER_CI_MAX_UTIL_WL_LOOPS" MAX_UTIL_DUTY_CYCLE=100 MAX_UTIL_SUPER_SYNC=0)
+          # shellcheck disable=SC2016  # expanded when the command runs
+          MISSION='export TERM=xterm-256color COLUMNS=200 LINES=60; timeout --preserve-status "${POWER_CI_IDLE_RUN_SECONDS}s" script -qfec tt-smi /dev/null >/dev/null 2>&1; exit 0'
+
+          # define <workload>: PYTEST (selector, collect-only checked), EXISTS (file checked), CMD, TIMEOUT_MIN, IDLE, COOL
+          define() {
+            PYTEST=(); EXISTS=""; IDLE=$POWER_CI_IDLE_SECONDS; COOL=$POWER_CI_COOLDOWN_SECONDS; TIMEOUT_MIN=$POWER_CI_SUBTEST_TIMEOUT_MIN
+            case "$1" in
+              idle)         IDLE=0; COOL=0; TIMEOUT_MIN=30; CMD=(sleep "$POWER_CI_IDLE_RUN_SECONDS") ;;
+              mission_mode) TIMEOUT_MIN=30; CMD=(bash -c "$MISSION") ;;   # tt-smi open on the chips for the window
+              resnet_conv)  PYTEST=(tests/didt/test_resnet_conv.py::test_resnet_conv -k all); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              lm_head)      PYTEST=(tests/didt/test_lm_head_matmul.py::test_lm_head_matmul -k all); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              ff1_matmul_with_gelu) PYTEST=(tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "with_gelu and all"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_FF1_ITERATIONS" "${DIDT[@]}") ;;
+              ff1_matmul_no_gelu)   PYTEST=(tests/didt/test_ff1_matmul.py::test_ff1_matmul -k "all and not with_gelu"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_FF1_ITERATIONS" "${DIDT[@]}") ;;
+              bursty[1-6])  PYTEST=(tests/didt/test_duty_cycle.py::test_duty_cycle -k "all and rep-1000x and duty-${1#bursty}"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_BURSTY_ITERATIONS" "${DIDT[@]}") ;;
+              minimal_matmul) PYTEST=(tests/didt/test_minimal_matmul.py::test_minimal_matmul -k "all and bf16_HiFi2"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              sdpa_op)      PYTEST=(tests/didt/test_sdpa_op.py::test_sdpa_op -k "all and bf16_HiFi2"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              binary_mul)   PYTEST=(tests/didt/test_binary_mul.py::test_binary_mul -k "all and with_gelu"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              mla_sdpa)     PYTEST=(tests/didt/test_mla_sdpa.py::test_mla_sdpa -k all); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              deepseek_v3_mla_matmul)  PYTEST=(tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_mla_matmul -k "$MESH"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              deepseek_v3_gate_matmul) PYTEST=(tests/didt/test_deepseek_v3_128k_matmul.py::test_deepseek_v3_gate_matmul -k "$MESH"); CMD=(pytest "${PYTEST[@]}" --didt-workload-iterations "$POWER_CI_DIDT_ITERATIONS" "${DIDT[@]}") ;;
+              max_util)     EXISTS=build/test/didt/unit_tests_didt_max_util; TIMEOUT_MIN=90; CMD=(env "${MAXUTIL[@]}" MAX_UTIL_FPU_UTILIZATION_PCT=50 MAX_UTIL_DRAM_UTILIZATION_PCT=100 ./build/test/didt/unit_tests_didt_max_util --gtest_filter='*All*') ;;
+              max_util_fpu100_dram100) EXISTS=build/test/didt/unit_tests_didt_max_util; TIMEOUT_MIN=90; CMD=(env "${MAXUTIL[@]}" MAX_UTIL_FPU_UTILIZATION_PCT=100 MAX_UTIL_DRAM_UTILIZATION_PCT=100 ./build/test/didt/unit_tests_didt_max_util --gtest_filter='*All*') ;;
+              llama_8b_demo) PYTEST=(models/tt_transformers/demo/simple_text_demo.py "${LLAMA[@]}"); TIMEOUT_MIN=60; CMD=(pytest "${PYTEST[@]}" --timeout 1200) ;;
+              # tt-burnin (Mithu): power virus on every chip for POWER_CI_BURNIN_SECONDS; it stops on a keypress, so one is piped in.
+              # tt_burnin resets the board before and after (as the tool does by hand); tt_burnin_no_reset leaves the chips as they are.
+              tt_burnin)          EXISTS="$VENV/bin/tt-burnin"; TIMEOUT_MIN=40; CMD=(bash -c "(sleep \"$POWER_CI_BURNIN_SECONDS\"; echo) | tt-burnin") ;;
+              tt_burnin_no_reset) EXISTS="$VENV/bin/tt-burnin"; TIMEOUT_MIN=30; CMD=(bash -c "(sleep \"$POWER_CI_BURNIN_SECONDS\"; echo) | tt-burnin --no-reset") ;;
+              *) return 1 ;;
+            esac
+          }
+
+          # check: 0 = the image can run it; 1 = not (reason in CHECK_NOTE)
+          check() {
+            CHECK_NOTE=""
+            if [ -n "$EXISTS" ]; then
+              [ -e "$EXISTS" ] && return 0
+              CHECK_NOTE="$EXISTS is not in the image"; return 1
+            fi
+            [ ${#PYTEST[@]} -gt 0 ] || return 0
+            local out n
+            out=$(pytest --collect-only -q "${PYTEST[@]}" 2>&1 | tail -6)
+            n=$(echo "$out" | grep -oE '[0-9]+ tests? collected|[0-9]+/[0-9]+ tests? collected' | grep -oE '^[0-9]+' | head -1 || true)
+            [ -n "$n" ] || n=$(echo "$out" | grep -oE '[0-9]+ selected|collected [0-9]+' | grep -oE '[0-9]+' | tail -1 || true)
+            [ "${n:-0}" -gt 0 ] && return 0
+            CHECK_NOTE="nothing collected for ${PYTEST[*]}: $(echo "$out" | tail -2 | tr '\n' ' ')"; return 1
+          }
+
+          stop_reader() {  # <pidfile> <signal> <seconds>; returns 1 when the process was already gone
+            local pid; pid="$(cat "$1" 2>/dev/null || true)"; [ -n "$pid" ] || return 0
+            kill -0 "$pid" 2>/dev/null || return 1
+            kill "-$2" "$pid" 2>/dev/null || true
+            for _ in $(seq 1 "$3"); do kill -0 "$pid" 2>/dev/null || return 0; sleep 1; done
+            kill -KILL "$pid" 2>/dev/null || true
+          }
+
+          FAILED=(); SUMMARY=()
+          run_workload() {
+            local wl=$1 d="$OUT/$1" rc started ended died=0
+            mkdir -p "$d"
+            echo "::group::$wl"
+            define "$wl" || { echo "::error::unknown workload $wl"; FAILED+=("$wl"); echo "::endgroup::"; return; }
+            if ! check; then
+              echo "::error::$wl: $CHECK_NOTE"
+              echo "$CHECK_NOTE" > "$d/workload.log"
+              python3 "$OUT/manifest.py" "$d" "$wl" "$BOARD" 5 "" "" "$IDLE" "$COOL" none 0 "$OUT/env/tt-smi.json"
+              FAILED+=("$wl"); SUMMARY+=("| $wl | failed | - | $CHECK_NOTE |"); echo "::endgroup::"; return
+            fi
+            if [ "$SYSTEM_POWER" = ipmi ] && [ -e /dev/ipmi0 ]; then
+              nohup python3 "$SCRIPTS/poll_ipmi_power.py" --out "$d/ipmi_power.csv" --interval 2 >"$d/ipmi.log" 2>&1 </dev/null &
+              echo $! > "$d/ipmi.pid"
+              for _ in $(seq 1 45); do [ "$(wc -l < "$d/ipmi_power.csv" 2>/dev/null || echo 0)" -ge 2 ] && break; sleep 1; done
+            fi
+            started=$(date -u +%FT%TZ)
+            nohup "$VENV/bin/python3" "$SCRIPTS/read_telemetry.py" --csv "$d/telemetry" --workload "$wl" \
+                --interval-ms "$POWER_CI_TELEM_INTERVAL_MS" --report "$d/telemetry_report.json" >"$d/telemetry.log" 2>&1 </dev/null &
+            echo $! > "$d/telemetry.pid"
+            sleep 5
+            if ! kill -0 "$(cat "$d/telemetry.pid")" 2>/dev/null; then
+              echo "::error::$wl: telemetry reader did not start"; cat "$d/telemetry.log"
+              stop_reader "$d/ipmi.pid" TERM 20 || true
+              FAILED+=("$wl"); SUMMARY+=("| $wl | failed | - | telemetry reader did not start |"); echo "::endgroup::"; return
+            fi
+            [ "$IDLE" -gt 0 ] && sleep "$IDLE"
+            printf '%q ' env "${THROTTLE[@]}" "${CMD[@]}" > "$d/command.sh"
+            echo "running: $(cat "$d/command.sh")"
+            timeout --preserve-status "${TIMEOUT_MIN}m" env "${THROTTLE[@]}" "${CMD[@]}" 2>&1 | tee "$d/workload.log"
+            rc=${PIPESTATUS[0]}
+            ended=$(date -u +%FT%TZ)
+            [ "$COOL" -gt 0 ] && sleep "$COOL"
+            stop_reader "$d/telemetry.pid" INT 30 || died=1
+            stop_reader "$d/ipmi.pid" TERM 20 || true
+            cp "$OUT"/env/*.json "$OUT"/env/*.txt "$d"/ 2>/dev/null || true
+            cat "$d/telemetry.log"
+            python3 "$OUT/manifest.py" "$d" "$wl" "$BOARD" "$rc" "$started" "$ended" "$IDLE" "$COOL" "$SYSTEM_POWER" "$died" "$OUT/env/tt-smi.json"
+            local st; st=$(python3 -c "import json,sys; m=json.load(open(sys.argv[1])); print(m['status'], '|', m.get('failure_summary') or '')" "$d/manifest.json")
+            [ "${st%% |*}" = passed ] || { FAILED+=("$wl"); echo "::error::$wl ${st#*| }"; }
+            SUMMARY+=("| $wl | ${st%% |*} | $(( $(date -d "$ended" +%s) - $(date -d "$started" +%s) )) s | ${st#*| } |")
+            # keep the artifact small: head and tail of a huge log, gzip the CSVs
+            if [ "$(stat -c %s "$d/workload.log")" -gt $((25 * 1024 * 1024)) ]; then
+              { head -c $((5 * 1024 * 1024)) "$d/workload.log"; printf '\n\n... middle of the log dropped before upload ...\n\n'; tail -c $((20 * 1024 * 1024)) "$d/workload.log"; } > "$d/workload.log.trim"
+              mv "$d/workload.log.trim" "$d/workload.log"
+            fi
+            gzip -6 "$d"/*.csv 2>/dev/null || true
+            rm -f "$d"/*.pid
+            echo "::endgroup::"
+          }
+
+          ALL="idle,mission_mode,resnet_conv,ff1_matmul_with_gelu,ff1_matmul_no_gelu,lm_head,bursty1,bursty2,bursty3,bursty4,bursty5,bursty6,minimal_matmul,sdpa_op,binary_mul,mla_sdpa,deepseek_v3_mla_matmul,deepseek_v3_gate_matmul,max_util,max_util_fpu100_dram100,llama_8b_demo,tt_burnin_no_reset,tt_burnin"
+          if [ "$POWER_CI_WORKLOADS" = validate ]; then
+            rc=0
+            for wl in ${ALL//,/ }; do
+              define "$wl"
+              if check; then echo "OK   $wl"; else echo "::error::$wl: $CHECK_NOTE"; rc=1; fi
+            done
+            exit $rc
+          fi
+          WORKLOADS="$POWER_CI_WORKLOADS"
+          [ "$WORKLOADS" = all ] && WORKLOADS="$ALL"
+          for wl in ${WORKLOADS//,/ }; do run_workload "$wl"; done
+          {
+            echo "## Power CI on $BOARD"; echo; echo "| workload | status | duration | note |"; echo "|---|---|---|---|"
+            printf '%s\n' "${SUMMARY[@]}"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ ${#FAILED[@]} -eq 0 ] || { echo "::error::failed workloads: ${FAILED[*]}"; exit 1; }
+
+      - name: Upload telemetry
+        if: ${{ always() && env.POWER_CI_WORKLOADS != 'validate' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: power_CI_telemetry-${{ matrix.config.board }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            telemetry_output/*/*.csv.gz
+            telemetry_output/*/*.json
+            telemetry_output/*/*.log
+            telemetry_output/*/*.txt
+            telemetry_output/*/command.sh
+            !telemetry_output/env
+
+      - name: cleanup
+        if: ${{ always() }}
+        run: |
+          pkill -f scripts/read_telemetry.py 2>/dev/null || true
+          pkill -f scripts/poll_ipmi_power.py 2>/dev/null || true
+          # never leave the firmware at a short telemetry interval
+          [ "${POWER_CI_TELEM_INTERVAL_MS:-0}" -gt 0 ] && [ -x "${VENV:-}/bin/python3" ] && "$VENV/bin/python3" scripts/read_telemetry.py --restore-interval >/dev/null 2>&1 || true
+          [ -f /tmp/network-keepalive.pid ] && kill "$(cat /tmp/network-keepalive.pid)" 2>/dev/null || true
+          rm -rf telemetry_output .venv fw
