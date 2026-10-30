@@ -13,3 +13,4 @@ Firmware Services
    telemetry/index.rst
    runtime_telemetry/index.rst
    pldm/index.rst
+   eth_330g/index.rst
