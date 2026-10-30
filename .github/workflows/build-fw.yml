@@ -3,8 +3,9 @@ name: Build
 on:
   workflow_call:
     secrets:
+      # Optional: without it, images are signed with MCUboot's dev key
       SIGNATURE_KEY:
-        required: true
+        required: false
     outputs:
       combined-fwbundle-artifact:
         description: "The combined firmware bundle artifact name"

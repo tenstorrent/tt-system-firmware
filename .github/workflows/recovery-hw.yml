@@ -22,11 +22,11 @@ on:
   pull_request:
     types:
       - labeled
-  # Nightly schedule stays off until this has been run by hand against a
-  # board. Enable once proven; 03:00 is ahead of HW Soak (05:00) so a
-  # bricked board is known before the long tests queue onto it.
-  # schedule:
-  #   - cron: "0 3 * * *"
+  # 02:00 leaves three hours for the image build, recovery and restore
+  # before HW Soak (05:00) needs the same runner, so a bricked board is
+  # known before the long tests queue onto it.
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       board:
@@ -40,6 +40,12 @@ on:
         required: false
         type: boolean
         default: false
+
+# Explicit bash gives -eo pipefail, so a failing command piped into tee
+# fails the step instead of being masked by tee's exit status.
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   # Destructive runs cannot stop half way through
@@ -82,55 +88,45 @@ jobs:
             echo "no ci_boards.json entry matched $ENABLED"; exit 1; }
           echo "matrix-config=$CONFIG" | tee -a "$GITHUB_OUTPUT"
 
-  # Produce production firmware, to restore boards after recovery
+  # Produce firmware to restore boards after recovery. Deliberately unsigned
+  # (MCUboot dev key), like the recovery image below: PR code must not run
+  # with the production key. The two must match, since recovery installs an
+  # MCUboot that only accepts updates signed with the bundle's key.
   build-fw-artifact:
     needs: should-run
     uses: ./.github/workflows/build-fw.yml
-    secrets:
-      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
 
-  # Build the recovery bundle from the tree under test, not from a release.
-  # The whole point of a nightly is to catch a bundle that is broken now.
-  build-bundle:
-    needs: gen-config
+  # Build the recovery image from the tree under test, the same way a release
+  # does, so the Dockerfile, the bundle inside it and the image's python
+  # environment are all exercised. Only the source differs: this checkout
+  # instead of a clone of a release tag.
+  build-image:
+    needs: should-run
     runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        config: ${{ fromJson(needs.gen-config.outputs.matrix-config) }}
     steps:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
-      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
-        with:
-          app-path: tt-system-firmware
 
-      - name: Stage the signing key
-        shell: bash
+      - name: Build recovery image
         run: |
-          SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -gt 42 ]; then
-            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
-          fi
+          # No signing key: images are signed with MCUboot's dev key
+          docker build \
+            --build-context repo-src=tt-system-firmware \
+            -t recovery-image:ci \
+            tt-system-firmware/scripts/tooling/blackhole_recovery
 
-      - name: Build recovery bundle
-        run: |
-          python3 tt-system-firmware/scripts/tooling/blackhole_recovery/prepare-recovery-bundle.py \
-            --board ${{ matrix.config.board }} \
-            --signing-key "$SIGNATURE_KEY_FILE" \
-            recovery-${{ matrix.config.board }}.tar.gz
+      - name: Export recovery image
+        run: docker save recovery-image:ci | gzip > recovery-image.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
-          name: recovery-bundle-${{ matrix.config.board }}
-          path: recovery-${{ matrix.config.board }}.tar.gz
+          name: recovery-image
+          path: recovery-image.tar.gz
 
   recover:
     name: Recover ${{ matrix.config.board }}
-    needs: [gen-config, build-bundle, build-fw-artifact]
+    needs: [gen-config, build-image, build-fw-artifact]
     strategy:
       fail-fast: false
       matrix:
@@ -147,6 +143,9 @@ jobs:
         # card re-enumerating mid-recovery would never reappear as
         # /dev/tenstorrent/<n>. recover-blackhole.sh does the same thing.
         - /dev:/dev
+        # Recovery runs through recover-blackhole.sh, which starts the
+        # recovery image with docker. Use the runner host's docker daemon.
+        - /var/run/docker.sock:/var/run/docker.sock
       options: '--device /dev/tenstorrent --device /dev/bus/usb --privileged'
     steps:
       - name: Cleanup state
@@ -162,9 +161,26 @@ jobs:
           app-path: tt-system-firmware
           kmd-version: ${{ matrix.config.kmd_build }}
 
+      - name: Install docker CLI
+        run: |
+          # Client only; the daemon is the host's, via the mounted socket
+          if ! command -v docker >/dev/null 2>&1; then
+            curl -fsSL https://download.docker.com/linux/static/stable/x86_64/docker-27.3.1.tgz \
+              | tar xz --strip-components=1 -C /usr/local/bin docker/docker
+          fi
+          docker version
+
       - uses: actions/download-artifact@v4
         with:
-          name: recovery-bundle-${{ matrix.config.board }}
+          name: recovery-image
+
+      - name: Load recovery image
+        run: |
+          gunzip -c recovery-image.tar.gz | docker load
+          # Pull the bundle out of the image so stages B-D can inspect exactly
+          # what recovery will flash
+          docker run --rm recovery-image:ci cat /recovery.tar.gz \
+            > recovery-${{ matrix.config.board }}.tar.gz
 
       # ---- STAGE A: preflight -------------------------------------------
       # Red here means the lab, not the code. Without this a board left wedged
@@ -262,11 +278,13 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           set -o pipefail
+          # Same entry point users run, against the image built above.
           # --no-prompt is mandatory: without it the tool blocks forever
           # waiting for an interactive probe choice.
-          python3 tt-system-firmware/scripts/tooling/blackhole_recovery/recover-blackhole.py \
-            recovery-${{ matrix.config.board }}.tar.gz ${{ matrix.config.board }} \
-            --force --no-prompt -vv 2>&1 | tee /tmp/recovery.log
+          SKIP_PULL=1 IMAGE_URL=recovery-image IMAGE_TAG=ci \
+          FIRMWARE_REPO=tt-system-firmware \
+            tt-system-firmware/scripts/tooling/blackhole_recovery/recover-blackhole.sh \
+            ${{ matrix.config.board }} --force --no-prompt -vv 2>&1 | tee /tmp/recovery.log
 
       - name: 'C2: recovery reported success'
         if: ${{ !inputs.dry_run }}
@@ -378,7 +396,9 @@ jobs:
         if: ${{ always() && !inputs.dry_run }}
         run: |
           tt-flash *.fwbundle --force
-          tt-smi -r || true
+          # A failed reset leaves the shared runner unusable; fail loudly.
+          # Diagnostics still run, they are if: always().
+          tt-smi -r
 
       # ---- diagnostics ---------------------------------------------------
 

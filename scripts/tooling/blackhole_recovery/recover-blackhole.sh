@@ -9,7 +9,10 @@ IMAGE_TAG=${IMAGE_TAG:-"v19.5.0"}
 # Tags v19.6.0 and earlier were published as ghcr.io/tenstorrent/tt-zephyr-platforms/recovery-image
 # with scripts under /tt-zephyr-platforms; newer releases replace "tt-zephyr-platforms"
 # with "tt-system-firmware"
-if [ "$IMAGE_TAG" == "v19.6.0-rc1" ]; then
+if [[ -n $FIRMWARE_REPO ]]; then
+    # Set by the caller, e.g. CI running an image it built locally
+    :
+elif [ "$IMAGE_TAG" == "v19.6.0-rc1" ]; then
     # Special case for 19.6.0-rc1, since sort -V doesn't order semver pre-release tags correctly.
     FIRMWARE_REPO="tt-zephyr-platforms"
 elif [ "$IMAGE_TAG" = "$(printf '%s\n' "$IMAGE_TAG" "v19.6.0" | sort -V | head -n1)" ]; then
@@ -51,8 +54,11 @@ if ! docker info >/dev/null 2>&1; then
     exit 1
 fi
 
-# Pull the latest image
-docker pull $IMAGE_URL:$IMAGE_TAG
+# Pull the latest image. SKIP_PULL=1 uses an image that only exists locally,
+# e.g. one CI just built from the tree under test.
+if [[ -z $SKIP_PULL ]]; then
+    docker pull $IMAGE_URL:$IMAGE_TAG
+fi
 
 echo "Launching docker container to recover blackhole device..."
 # Bind mount /dev so the container tracks hotplug events. Docker otherwise gives

@@ -3,6 +3,20 @@
 # necessary recovery scripts
 
 ARG ZEP_CONTAINER=v0.29.1
+
+# Source tree the image is built from. By default this clones REPO_URL at
+# REPO_REV (how releases are built). To build from a local checkout instead,
+# e.g. to test a PR end to end, override this stage with a named context:
+#   docker build --build-context repo-src=<checkout> ...
+FROM ghcr.io/zephyrproject-rtos/zephyr-build:${ZEP_CONTAINER} AS repo-clone
+USER root
+ARG REPO_REV=main
+ARG REPO_URL=https://github.com/tenstorrent/tt-system-firmware
+RUN git clone --branch ${REPO_REV} ${REPO_URL} /src
+
+FROM scratch AS repo-src
+COPY --from=repo-clone /src /
+
 FROM ghcr.io/zephyrproject-rtos/zephyr-build:${ZEP_CONTAINER} AS build-image
 
 USER root
@@ -14,27 +28,27 @@ RUN sed -i -e 's/http/https/g' /etc/apt/sources.list && \
 # Install Zephyr Cmake package for root
 RUN cp /home/user/.cmake/ ~ -r
 
-ARG REPO_REV=main
-ARG REPO_URL=https://github.com/tenstorrent/tt-system-firmware
-
 ENV ZEPHYR_BASE=/tt-zephyr/zephyr
 
-# Parse signing key secret
+# Parse signing key secret, if one was provided. Without it, images are
+# signed with MCUboot's default development key (e.g. CI test builds).
 RUN --mount=type=secret,id=signing_key \
-    cat /run/secrets/signing_key | base64 -d > /signing_key.pem
+    if [ -s /run/secrets/signing_key ]; then \
+        base64 -d /run/secrets/signing_key > /signing_key.pem; \
+    fi
 
-# Clone the tt-system-firmware repo and install dependencies
+# Set up a west workspace around the tt-system-firmware tree and install dependencies
+COPY --from=repo-src / /tt-zephyr/tt-system-firmware
 RUN pip install west && \
-    west init -m ${REPO_URL} --mr ${REPO_REV} /tt-zephyr && \
+    west init -l /tt-zephyr/tt-system-firmware && \
     cd /tt-zephyr/tt-system-firmware && \
     west update && \
     west packages pip --install
 
 # Build the blackhole recovery image
-RUN --mount=type=secret,id=signing_key \
-    cd /tt-zephyr/tt-system-firmware && \
+RUN cd /tt-zephyr/tt-system-firmware && \
     python3 ./scripts/tooling/blackhole_recovery/prepare-recovery-bundle.py /recovery.tar.gz \
-        --signing-key /signing_key.pem
+        $([ -s /signing_key.pem ] && echo --signing-key /signing_key.pem)
 
 # Start a new stage, and copy the built recovery bundle
 FROM ubuntu:24.04
@@ -42,8 +56,6 @@ LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-system-f
 COPY --from=build-image /recovery.tar.gz /recovery.tar.gz
 
 ARG PYTHON_VENV_PATH=/opt/python/venv
-ARG REPO_REV=main
-ARG REPO_URL=https://github.com/tenstorrent/tt-system-firmware
 
 # Install python and create a venv
 RUN apt-get update && \
@@ -62,6 +74,5 @@ RUN pip install pyocd pyluwen pyyaml pykwalify protobuf imgtool \
         jsonschema intelhex pyusb && \
     pyocd pack install STM32G0B1CEUx
 
-# Clone the tt-system-firmware repo to get recovery scripts
-RUN apt-get install -y git && \
-    git clone --branch ${REPO_REV} ${REPO_URL} /tt-system-firmware
+# Recovery scripts come from the same tree the bundle was built from
+COPY --from=repo-src / /tt-system-firmware
