@@ -77,15 +77,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Job-container tools: kmod for rmmod/insmod, curl to fetch a Docker CLI.
+NEED_PKGS=()
+command -v insmod >/dev/null 2>&1 || NEED_PKGS+=(kmod)
+if ! command -v docker >/dev/null 2>&1 && ! command -v curl >/dev/null 2>&1; then
+	NEED_PKGS+=(ca-certificates curl)
+fi
+if [ ${#NEED_PKGS[@]} -gt 0 ]; then
+	"${SUDO[@]}" apt-get update -qq
+	"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive \
+		apt-get install -y -qq --no-install-recommends "${NEED_PKGS[@]}"
+fi
+
 # The job image may not ship a Docker client; fetch the static one if needed.
 if command -v docker >/dev/null 2>&1; then
 	DOCKER=(docker)
 else
-	if ! command -v curl >/dev/null 2>&1; then
-		"${SUDO[@]}" apt-get update -qq
-		"${SUDO[@]}" env DEBIAN_FRONTEND=noninteractive \
-			apt-get install -y -qq --no-install-recommends ca-certificates curl
-	fi
 	echo "Fetching Docker CLI ${DOCKER_CLI_VERSION}"
 	curl -fsSL \
 		"https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
