@@ -9,6 +9,7 @@
 #include "harvesting.h"
 #include "noc.h"
 #include "noc2axi.h"
+#include "noc_init.h"
 
 /* TLB 0: broadcast write. TLB 1: unicast readback. */
 #define BCAST_TLB 0
@@ -69,4 +70,16 @@ ZTEST(noc2axi_broadcast, test_broadcast_reaches_all_unharvested_tensixes)
 	}
 }
 
-ZTEST_SUITE(noc2axi_broadcast, NULL, NULL, NULL, NULL, NULL);
+/*
+ * The host (tt-kmd with power_policy enabled) may send a POWER_SETTING
+ * message during boot that clock-gates the Tensix tiles when no client has
+ * requested them. L1 accesses to a clock-gated tile never complete, so
+ * make sure the tiles are powered before touching them.
+ */
+static void *noc2axi_broadcast_setup(void)
+{
+	set_tensix_enable(true);
+	return NULL;
+}
+
+ZTEST_SUITE(noc2axi_broadcast, NULL, noc2axi_broadcast_setup, NULL, NULL, NULL);
