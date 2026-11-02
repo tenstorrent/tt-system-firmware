@@ -58,6 +58,13 @@ static uint32_t io_ops;
 
 LOG_MODULE_REGISTER(jtag_bitbang, CONFIG_JTAG_LOG_LEVEL);
 
+/*
+ * Protects the shared JTAG GPIOs. setup() acquires it and teardown() releases it, so a full
+ * session is held by one thread; setup/teardown must be called from the same thread. Individual
+ * operations also lock it (k_mutex is recursive), which keeps standalone calls safe.
+ */
+static K_MUTEX_DEFINE(jtag_mutex);
+
 #ifdef CONFIG_JTAG_USE_MMAPPED_IO
 
 #define TCK_BSSR(config) (config->tck_reg + 6)
@@ -165,6 +172,8 @@ static ALWAYS_INLINE void jtag_bitbang_tick(const struct device *dev, uint32_t c
 
 int jtag_bitbang_reset(const struct device *dev)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	const struct jtag_config *config = dev->config;
 
 	if (config->trst.port != NULL) {
@@ -180,6 +189,8 @@ int jtag_bitbang_reset(const struct device *dev)
 	CLR_TMS(config);
 
 	jtag_bitbang_tick(dev, 1);
+
+	k_mutex_unlock(&jtag_mutex);
 
 	return 0;
 }
@@ -298,15 +309,22 @@ static ALWAYS_INLINE void jtag_bitbang_update_dr(const struct device *dev, uint3
 
 int jtag_bitbang_read_id(const struct device *dev, uint32_t *id)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	uint32_t tap_addr = 6;
 
 	jtag_bitbang_update_ir(dev, 24, tap_addr);
 	*id = jtag_bitbang_capture_dr_idle(dev, 32, 0);
+
+	k_mutex_unlock(&jtag_mutex);
+
 	return 0;
 }
 
 int jtag_bitbang_setup(const struct device *dev)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	const struct jtag_config *config = dev->config;
 	int ret = gpio_pin_configure_dt(&config->tck, GPIO_OUTPUT_ACTIVE) ||
 		  gpio_pin_configure_dt(&config->tdi, GPIO_OUTPUT_ACTIVE) ||
@@ -317,6 +335,7 @@ int jtag_bitbang_setup(const struct device *dev)
 		ret = gpio_pin_configure_dt(&config->trst, GPIO_OUTPUT_ACTIVE);
 	}
 	if (ret) {
+		k_mutex_unlock(&jtag_mutex);
 		return ret;
 	}
 
@@ -346,6 +365,7 @@ static int jtag_bitbang_teardown(const struct device *dev)
 		ret = gpio_pin_configure_dt(&config->trst, GPIO_INPUT);
 	}
 	if (ret) {
+		k_mutex_unlock(&jtag_mutex);
 		return ret;
 	}
 
@@ -361,6 +381,7 @@ static int jtag_bitbang_teardown(const struct device *dev)
 	*TMS_SPEED = *TMS_SPEED | (0b00 << (config->tms.pin * 2));
 #endif /* CONFIG_JTAG_USE_MMAPPED_IO */
 
+	k_mutex_unlock(&jtag_mutex);
 	return 0;
 }
 
@@ -426,13 +447,19 @@ static ALWAYS_INLINE uint32_t jtag_rd_tensix_sm_rtap_tdr(const struct device *de
 
 void jtag_req_clear(const struct device *dev)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	jtag_setup_access(dev, TENSIX_SM_RTAP);
 
 	jtag_wr_tensix_sm_rtap_tdr_idle(dev, 2, AXI_CNTL_CLEAR);
+
+	k_mutex_unlock(&jtag_mutex);
 }
 
 int jtag_axiread(const struct device *dev, uint32_t addr, uint32_t *result)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	jtag_setup_access(dev, TENSIX_SM_RTAP);
 
 	jtag_wr_tensix_sm_rtap_tdr(dev, ARC_AXI_ADDR_TDR, addr);
@@ -452,11 +479,16 @@ int jtag_axiread(const struct device *dev, uint32_t addr, uint32_t *result)
 	uint32_t axi_rddata = jtag_rd_tensix_sm_rtap_tdr_idle(dev, ARC_AXI_DATA_TDR);
 
 	*result = axi_rddata;
+
+	k_mutex_unlock(&jtag_mutex);
+
 	return (axi_status & 0xF) != 0 ? 0 : -1;
 }
 
 int jtag_axiwrite(const struct device *dev, uint32_t addr, uint32_t value)
 {
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	jtag_setup_access(dev, TENSIX_SM_RTAP);
 
 	jtag_wr_tensix_sm_rtap_tdr(dev, ARC_AXI_ADDR_TDR, addr);
@@ -466,9 +498,14 @@ int jtag_axiwrite(const struct device *dev, uint32_t addr, uint32_t value)
 
 	/* Upper 16 bits contain write status; if first bit 1 then we passed otherwsie */
 	/* fail */
-	return ((jtag_rd_tensix_sm_rtap_tdr_idle(dev, ARC_AXI_CONTROL_STATUS_TDR) >> 16) & 1) != 1
-		       ? 0
-		       : -1;
+	int result =
+		((jtag_rd_tensix_sm_rtap_tdr_idle(dev, ARC_AXI_CONTROL_STATUS_TDR) >> 16) & 1) != 1
+			? 0
+			: -1;
+
+	k_mutex_unlock(&jtag_mutex);
+
+	return result;
 }
 
 int jtag_axi_blockwrite(const struct device *dev, uint32_t addr, const uint32_t *value,
@@ -476,11 +513,24 @@ int jtag_axi_blockwrite(const struct device *dev, uint32_t addr, const uint32_t 
 {
 	int result = 0;
 
+	k_mutex_lock(&jtag_mutex, K_FOREVER);
+
 	CYCLES_ENTRY();
 	for (int i = 0; i < len; ++i) {
-		result |= jtag_axiwrite(dev, addr + (4 * i), value[i]);
+		/* Call the internal write without re-locking */
+		jtag_setup_access(dev, TENSIX_SM_RTAP);
+		jtag_wr_tensix_sm_rtap_tdr(dev, ARC_AXI_ADDR_TDR, addr + (4 * i));
+		jtag_wr_tensix_sm_rtap_tdr(dev, ARC_AXI_DATA_TDR, value[i]);
+		jtag_wr_tensix_sm_rtap_tdr(dev, ARC_AXI_CONTROL_STATUS_TDR, AXI_CNTL_WRITE);
+
+		if (((jtag_rd_tensix_sm_rtap_tdr_idle(dev, ARC_AXI_CONTROL_STATUS_TDR) >> 16) &
+		     1) == 1) {
+			result |= -1;
+		}
 	}
 	CYCLES_EXIT();
+
+	k_mutex_unlock(&jtag_mutex);
 
 	return result;
 }

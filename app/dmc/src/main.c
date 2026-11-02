@@ -471,11 +471,12 @@ static void handle_watchdog_reset(void)
 			LOG_WRN("ARC watchdog expired, resetting chip");
 			bh_chip_cancel_bus_transfer_clear(chip);
 			/* Read PC from ARC and record it */
-			jtag_setup(chip->config.jtag);
-			jtag_reset(chip->config.jtag);
-			jtag_axi_read32(chip->config.jtag, RESET_UNIT_ARC_PC_CORE_0,
-					&chip->data.arc_hang_pc);
-			jtag_teardown(chip->config.jtag);
+			if (jtag_setup(chip->config.jtag) == 0) {
+				jtag_reset(chip->config.jtag);
+				jtag_axi_read32(chip->config.jtag, RESET_UNIT_ARC_PC_CORE_0,
+						&chip->data.arc_hang_pc);
+				jtag_teardown(chip->config.jtag);
+			}
 			/* Clear watchdog state */
 			chip->data.auto_reset_timeout = 0;
 
@@ -511,10 +512,14 @@ static void handle_perst(void)
 			bh_chip_cancel_bus_transfer_clear(chip);
 
 			bharc_disable_i2cbus(&chip->config.arc);
-			jtag_bootrom_reset_asic(chip);
-			jtag_bootrom_set_cable_power_limit(chip, chip->data.cable_power_limit);
-			jtag_bootrom_soft_reset_arc(chip);
-			jtag_bootrom_teardown(chip);
+			if (jtag_bootrom_reset_asic(chip) == 0) {
+				jtag_bootrom_set_cable_power_limit(chip,
+								   chip->data.cable_power_limit);
+				jtag_bootrom_soft_reset_arc(chip);
+				jtag_bootrom_teardown(chip);
+			} else {
+				LOG_ERR("PERST: JTAG setup failed");
+			}
 			bharc_enable_i2cbus(&chip->config.arc);
 
 			/*
