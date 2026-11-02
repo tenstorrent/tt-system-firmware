@@ -14,3 +14,8 @@ storage_partition: &storage {
 	rx-cap = <1024>;
 	tx-cap = <(3036 + 4096)>;
 };
+
+/* Raise CSM to 320KB: this test does not fit in the 256KB board default */
+&csm {
+	reg = <0x10000000 0x50000>;
+};
