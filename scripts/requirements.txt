@@ -3,6 +3,7 @@ cmsis-pack-manager>=0.6.0
 grpcio-tools
 protobuf
 pytest-repeat
+tqdm
 west
 # zephyr-keep-sorted-stop
 
