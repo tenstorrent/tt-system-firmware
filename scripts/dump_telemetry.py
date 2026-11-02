@@ -35,7 +35,7 @@ TABLE_TAG_TABLE_OFFSET = 0x8
 MAX_ENTRY_COUNT = 1024
 
 TELEMETRY_HEADER = (
-    Path(__file__).resolve().parent.parent / "lib/tenstorrent/bh_arc/telemetry.h"
+    Path(__file__).resolve().parent.parent / "lib/tenstorrent/fw_common/telemetry.h"
 )
 
 
