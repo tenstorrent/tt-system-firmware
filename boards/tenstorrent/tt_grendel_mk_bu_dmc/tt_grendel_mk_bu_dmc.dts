@@ -46,6 +46,47 @@
 	status = "okay";
 };
 
+&gpioa {
+	status = "okay";
+
+	/* BRING-UP: MCU_BP_RESET_Z is the DMC hook that releases the ASIC from
+	 * reset. The _Z suffix on the net means the signal is active low in
+	 * hardware: GND holds the chip in reset, VDD releases it.
+	 *
+	 * The hog is still declared GPIO_ACTIVE_HIGH on purpose. Zephyr's gpio
+	 * shell drives pins through the logical API (gpio_pin_set()), which
+	 * inverts on GPIO_ACTIVE_LOW, so declaring the schematic polarity here
+	 * would flip every value typed at the shell. Active high keeps shell
+	 * values reading as volts, which is what bring-up by hand wants:
+	 *
+	 *   gpio set <dev> 2 0 = GND = chip HELD in reset
+	 *   gpio set <dev> 2 1 = VDD = chip RELEASED
+	 *
+	 * output-low is that same 0, so the pin parks at GND and the ASIC stays
+	 * in reset until something deliberately releases it.
+	 */
+	bp-reset-hold {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+};
+
+&gpioc {
+	status = "okay";
+
+	/* BRING-UP: BP_VDDCORE_POWERGOOD arrives here.
+	 *
+	 * GPIO_ACTIVE_HIGH, and here that also matches the schematic: the net
+	 * carries no _Z, so it is active high.
+	 */
+	bp-vddcore-powergood {
+		gpio-hog;
+		gpios = <14 GPIO_ACTIVE_HIGH>;
+		input;
+	};
+};
+
 &clk_msis {
 	status = "okay";
 	/* BRING-UP: msi-pll-mode removed with clk_lse disabled -- MSI PLL-mode
