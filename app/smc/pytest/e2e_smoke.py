@@ -2099,7 +2099,6 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int, board_name)
     result = subprocess.run(
         [
             bh_mod,
-            "--reset-timeout=60s",
             "set",
             f"chip_limits.tdp_limit={tdp_target}",
             "feature_enable.kernel_throttler_at_floor_en=true",
@@ -2145,7 +2144,6 @@ def test_ccfgovr_bh_mod(unlaunched_dut: DeviceAdapter, asic_id: int, board_name)
     restore = subprocess.run(
         [
             bh_mod,
-            "--reset-timeout=60s",
             "set",
             f"chip_limits.tdp_limit={tdp_baseline}",
             f"feature_enable.kernel_throttler_at_floor_en={'true' if kt_baseline & 1 else 'false'}",
@@ -2210,7 +2208,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     )
 
     write = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "set", f"{ETH_SPEED_PATH}={speed}"],
+        [bh_mod, "set", f"{ETH_SPEED_PATH}={speed}"],
         capture_output=True,
         check=False,
     )
@@ -2227,7 +2225,7 @@ def test_ccfgovr_eth_speed_override(arc_chip_dut, asic_id, board_name):
     # Warn (don't fail) if this doesn't succeed, so a stale flash state can't
     # flake later tests / CI runs.
     restore = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "res", ETH_SPEED_PATH],
+        [bh_mod, "res", ETH_SPEED_PATH],
         capture_output=True,
         check=False,
     )
@@ -2308,7 +2306,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id, board_name):
         pytest.skip("no PCIe endpoint instance in cmfwcfg")
 
     write = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "set", f"{path}=4"],
+        [bh_mod, "set", f"{path}=4"],
         capture_output=True,
         check=False,
     )
@@ -2334,7 +2332,7 @@ def test_ccfgovr_pcie_gen_override(arc_chip_dut, asic_id, board_name):
     assert str(row.get("override")) == "4", f"expected override {path}=4, got {row!r}"
 
     restore = subprocess.run(
-        [bh_mod, "--reset-timeout=60s", "res", path],
+        [bh_mod, "res", path],
         capture_output=True,
         check=False,
     )
@@ -2379,7 +2377,7 @@ def test_ccfgovr_bypass_cable_fault_override(arc_chip_dut, asic_id, board_name):
     ERROR_STATUS0_CABLE_FAULT = 1 << 1
 
     write = subprocess.run(
-        [*bh_mod_cmd, "--reset-timeout=60s", "set", f"{BYPASS_PATH}=true"],
+        [*bh_mod_cmd, "set", f"{BYPASS_PATH}=true"],
         capture_output=True,
         check=False,
     )
@@ -2421,7 +2419,7 @@ def test_ccfgovr_bypass_cable_fault_override(arc_chip_dut, asic_id, board_name):
         # (don't fail) if this doesn't succeed, so a stale flash state can't
         # flake later tests / CI runs.
         restore = subprocess.run(
-            [*bh_mod_cmd, "--reset-timeout=60s", "res", BYPASS_PATH],
+            [*bh_mod_cmd, "res", BYPASS_PATH],
             capture_output=True,
             check=False,
         )
