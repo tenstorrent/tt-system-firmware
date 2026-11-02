@@ -5,8 +5,8 @@ import argparse
 from intelhex import IntelHex
 from pathlib import Path
 import subprocess
-import sys
 import re
+from tqdm import tqdm
 
 # Command code constants
 NETFN = 0x32  # OEM NetFn 2 (used for flash operations)
@@ -100,14 +100,6 @@ def send_raw_ipmi_command(
         return {"success": False, "completion_code": None, "data": b"", "error": str(e)}
 
 
-def report_progress(operation, addr, bytes_done, bytes_total):
-    print(
-        f"{operation} at 0x{addr:x} ({bytes_done}/{bytes_total} bytes, {bytes_done * 100 / bytes_total:.1f}%)\r",
-        end="",
-    )
-    sys.stdout.flush()
-
-
 def read_flash(ubb_idx, asic_idx, address, length, progress_print=False):
     """
     Read data from flash memory at specified address
@@ -124,35 +116,36 @@ def read_flash(ubb_idx, asic_idx, address, length, progress_print=False):
     if read_addr % 256 != 0:
         raise ValueError("Read address must be aligned to 256 bytes")
 
-    while read_len > 0:
-        if read_addr % SPI_BLOCK_SIZE == 0:
-            # Report progress every 4K block
-            if progress_print:
-                report_progress("Reading", read_addr, len(read_data), length)
-        result = send_raw_ipmi_command(
-            NETFN,
-            CMD_READ_FLASH,
-            data=[
-                ubb_idx,  # arg0: UBB index
-                asic_idx,  # arg1: ASIC index
-                (read_addr & 0xFF),  # arg2: Address low byte
-                ((read_addr >> 8) & 0xFF),  # arg3: Address mid byte
-                ((read_addr >> 16) & 0xFF),  # arg4: Address high byte
-                0x0,  # arg5: bytes to read (1-256, 0 means 256 bytes)
-            ],
-        )
-        if not result["success"]:
-            raise RuntimeError(
-                f"Failed to read flash block at 0x{read_addr:x}: {result['error']}"
+    with tqdm(
+        total=length,
+        desc="Reading",
+        unit="B",
+        unit_scale=True,
+        disable=not progress_print,
+    ) as pbar:
+        while read_len > 0:
+            result = send_raw_ipmi_command(
+                NETFN,
+                CMD_READ_FLASH,
+                data=[
+                    ubb_idx,  # arg0: UBB index
+                    asic_idx,  # arg1: ASIC index
+                    (read_addr & 0xFF),  # arg2: Address low byte
+                    ((read_addr >> 8) & 0xFF),  # arg3: Address mid byte
+                    ((read_addr >> 16) & 0xFF),  # arg4: Address high byte
+                    0x0,  # arg5: bytes to read (1-256, 0 means 256 bytes)
+                ],
             )
+            if not result["success"]:
+                raise RuntimeError(
+                    f"Failed to read flash block at 0x{read_addr:x}: {result['error']}"
+                )
 
-        read_data.extend(result["data"])
-        read_addr += 256
-        read_len -= 256
+            read_data.extend(result["data"])
+            pbar.update(min(256, read_len))
+            read_addr += 256
+            read_len -= 256
 
-    if progress_print:
-        report_progress("Reading", read_addr, len(read_data), length)
-        print("\nRead complete")
     return bytes(read_data[:length])
 
 
@@ -214,61 +207,56 @@ def write_flash(ubb_idx, asic_idx, ih):
     @ return None, or raise exception on failure
     """
     total_len = sum(segment[1] - segment[0] for segment in ih.segments())
-    total_written = 0
 
-    for segment in ih.segments():
-        write_len = segment[1] - segment[0]
-        write_addr = segment[0]
+    with tqdm(total=total_len, desc="Writing", unit="B", unit_scale=True) as pbar:
+        for segment in ih.segments():
+            write_len = segment[1] - segment[0]
+            write_addr = segment[0]
 
-        # Program segment in 3 phases:
-        # 1. Unaligned section before first 4K boundary (if needed)
-        # 2. Aligned 4K blocks
-        # 3. Unaligned section after last 4K boundary (if needed)
+            # Program segment in 3 phases:
+            # 1. Unaligned section before first 4K boundary (if needed)
+            # 2. Aligned 4K blocks
+            # 3. Unaligned section after last 4K boundary (if needed)
 
-        # Phase 1: Handle unaligned start address by programming up to next 4K block boundary
-        if write_addr % SPI_BLOCK_SIZE != 0:
-            # Program up to 4K block boundary
-            block_boundary = (write_addr + 4095) // SPI_BLOCK_SIZE * SPI_BLOCK_SIZE
-            phase1_len = min(write_len, block_boundary - write_addr)
-            flash_data = read_flash(
-                ubb_idx, asic_idx, block_boundary - SPI_BLOCK_SIZE, SPI_BLOCK_SIZE
-            )
-            flash_data = bytes(
-                flash_data[0 : write_addr - block_boundary + SPI_BLOCK_SIZE]
-            ) + ih.tobinarray(start=write_addr, size=phase1_len)
-            program_flash_block(
-                ubb_idx, asic_idx, block_boundary - SPI_BLOCK_SIZE, flash_data
-            )
-            write_addr = block_boundary
-            write_len -= phase1_len
-            total_written += phase1_len
+            # Phase 1: Handle unaligned start address by programming up to next 4K block boundary
+            if write_addr % SPI_BLOCK_SIZE != 0:
+                # Program up to 4K block boundary
+                block_boundary = (write_addr + 4095) // SPI_BLOCK_SIZE * SPI_BLOCK_SIZE
+                phase1_len = min(write_len, block_boundary - write_addr)
+                flash_data = read_flash(
+                    ubb_idx, asic_idx, block_boundary - SPI_BLOCK_SIZE, SPI_BLOCK_SIZE
+                )
+                flash_data = bytes(
+                    flash_data[0 : write_addr - block_boundary + SPI_BLOCK_SIZE]
+                ) + ih.tobinarray(start=write_addr, size=phase1_len)
+                program_flash_block(
+                    ubb_idx, asic_idx, block_boundary - SPI_BLOCK_SIZE, flash_data
+                )
+                write_addr = block_boundary
+                write_len -= phase1_len
+                pbar.update(phase1_len)
 
-        # Phase 2: Aligned 4K blocks
-        while (
-            write_addr < ((segment[1] // SPI_BLOCK_SIZE) * SPI_BLOCK_SIZE)
-            and write_len >= SPI_BLOCK_SIZE
-        ):
-            # Program 4K blocks
-            # Report progress every 4K block
-            report_progress("Writing", write_addr, total_written, total_len)
-            flash_data = ih.tobinarray(write_addr, size=SPI_BLOCK_SIZE)
-            program_flash_block(ubb_idx, asic_idx, write_addr, flash_data)
-            write_addr += SPI_BLOCK_SIZE
-            write_len -= SPI_BLOCK_SIZE
-            total_written += SPI_BLOCK_SIZE
+            # Phase 2: Aligned 4K blocks
+            while (
+                write_addr < ((segment[1] // SPI_BLOCK_SIZE) * SPI_BLOCK_SIZE)
+                and write_len >= SPI_BLOCK_SIZE
+            ):
+                # Program 4K blocks
+                flash_data = ih.tobinarray(write_addr, size=SPI_BLOCK_SIZE)
+                program_flash_block(ubb_idx, asic_idx, write_addr, flash_data)
+                write_addr += SPI_BLOCK_SIZE
+                write_len -= SPI_BLOCK_SIZE
+                pbar.update(SPI_BLOCK_SIZE)
 
-        # Phase 3: Handle unaligned programming after 4K boundary
-        if write_len > 0:
-            flash_data = read_flash(ubb_idx, asic_idx, write_addr, SPI_BLOCK_SIZE)
-            flash_data = (
-                bytes(ih.tobinarray(start=write_addr, size=write_len))
-                + flash_data[write_len:SPI_BLOCK_SIZE]
-            )
-            program_flash_block(ubb_idx, asic_idx, write_addr, flash_data)
-            total_written += write_len
-
-        report_progress("Writing", write_addr, total_written, total_len)
-    print("\nWrite complete")
+            # Phase 3: Handle unaligned programming after 4K boundary
+            if write_len > 0:
+                flash_data = read_flash(ubb_idx, asic_idx, write_addr, SPI_BLOCK_SIZE)
+                flash_data = (
+                    bytes(ih.tobinarray(start=write_addr, size=write_len))
+                    + flash_data[write_len:SPI_BLOCK_SIZE]
+                )
+                program_flash_block(ubb_idx, asic_idx, write_addr, flash_data)
+                pbar.update(write_len)
 
 
 def check_bmc_version():

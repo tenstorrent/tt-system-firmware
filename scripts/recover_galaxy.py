@@ -3,6 +3,7 @@
 
 import pyluwen
 from galaxy_flash import write_flash
+from pcie_utils import rescan_pcie
 import subprocess
 import sys
 import signal
@@ -113,10 +114,20 @@ def list_missing_asics():
     return missing_coords
 
 
-def sigint_handler(sig, frame):
-    print("Caught SIGINT, clearing IPMI reset")
+def release_reset():
+    print("Releasing ASIC reset...")
     subprocess.run("ipmitool raw 0x30 0x8b 0xf 0xff 0x2 0xf".split(), check=True)
     subprocess.run("ipmitool raw 0x30 0x8b 0xf 0xff 0x0 0xf".split(), check=True)
+    print("Waiting 5s for ASICs to boot...")
+    time.sleep(5)
+    print("Rescanning PCIe bus...")
+    rescan_pcie()
+
+
+def sigint_handler(sig, frame):
+    print("Caught SIGINT, clearing IPMI reset")
+    release_reset()
+    sys.exit(1)
 
 
 def main():
@@ -126,6 +137,9 @@ def main():
     ih = IntelHex()
     ih.loadhex(sys.argv[1])
     missing = list_missing_asics()
+    if len(missing) == 0:
+        print("All ASICs are alive, skipping programming")
+        sys.exit(0)
     print(f"{len(missing)} ASIC(s) not alive")
     # Hold ASICs in reset while we program
     signal.signal(signal.SIGINT, sigint_handler)  # In case we are interrupted
@@ -135,9 +149,7 @@ def main():
         print("Programming Flash...")
         write_flash(coord[0], coord[1], ih)
     # Release reset
-    subprocess.run("ipmitool raw 0x30 0x8b 0xf 0xff 0x2 0xf".split(), check=True)
-    subprocess.run("ipmitool raw 0x30 0x8b 0xf 0xff 0x0 0xf".split(), check=True)
-    time.sleep(5)
+    release_reset()
     missing = list_missing_asics()
     if len(missing) > 0:
         print(f"Error, {len(missing)} asics still offline. Try a reboot?")
@@ -153,10 +165,10 @@ def main():
         if expected != real:
             print(f"Chip location should be {expected}, it is {real}")
             table["asic_location"] = expected
+            print("Writing new boardcfg with correct location...")
             chip.as_bh().encode_and_write_boot_fs_table(table, "boardcfg")
 
-    subprocess.run("ipmitool raw 0x30 0x8b 0xf 0xff 0x0 0xf".split(), check=True)
-    time.sleep(5)
+    print("You should now use tt-flash with --force to flash FW to ensure consistency")
 
 
 if __name__ == "__main__":
