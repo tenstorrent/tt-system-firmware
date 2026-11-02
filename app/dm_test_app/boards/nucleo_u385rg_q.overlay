@@ -1,0 +1,72 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* GLX2 CMB stand-in. i2c3 and i2c2 SMBA use other pins: the CMB pads are not on LQFP64. */
+
+/* Pins reused for I2C. */
+&spi1 {
+	status = "disabled";
+};
+
+&spi3 {
+	status = "disabled";
+};
+
+/* i3c1 SCL moved off PB2, which i2c3 SMBA uses. */
+&i3c1 {
+	pinctrl-0 = <&i3c1_scl_pb13 &i3c1_sda_pc1>;
+};
+
+&i2c1 {
+	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7 &i2c1_smba_pb5>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&i2c2 {
+	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pa1>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&i2c3 {
+	pinctrl-0 = <&i2c3_scl_pa7 &i2c3_sda_pb4 &i2c3_smba_pb2>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+/* SMBus over each I2C bus. The driver needs its own pinctrl-0. */
+/ {
+	smbus1: smbus1 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c1>;
+		pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7 &i2c1_smba_pb5>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+
+	smbus2: smbus2 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c2>;
+		pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pa1>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+
+	smbus3: smbus3 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c3>;
+		pinctrl-0 = <&i2c3_scl_pa7 &i2c3_sda_pb4 &i2c3_smba_pb2>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
