@@ -9,3 +9,7 @@ project(dmc)
 
 FILE(GLOB app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
+
+# status_reg.h is SoC-owned; DMC SOC_FULL_DIR is STM32, so add Blackhole include/.
+target_include_directories(app PRIVATE
+  ${CMAKE_CURRENT_LIST_DIR}/../../soc/tenstorrent/tt_blackhole/include)
