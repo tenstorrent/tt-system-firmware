@@ -18,6 +18,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef CONFIG_UART_TT_VIRT_TX_BLOCK
+#include <zephyr/kernel.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -200,7 +204,9 @@ static inline int tt_vuart_poll_in(volatile struct tt_vuart *vuart, unsigned cha
  * If the buffer is empty, this method simply returns.
  *
  * If writing to the virtual UART results in buffer overflow, the overflow counter is incremented
- * and the data is discarded.
+ * and the data is discarded, unless CONFIG_UART_TT_VIRT_TX_BLOCK is enabled, in which case the
+ * device waits for CONFIG_UART_TT_VIRT_TX_BLOCK_TIMEOUT_MS for the host to free space before
+ * incrementing the overflow counter and discarding the data.
  *
  * @param vuart Pointer to the virtual UART buffer descriptor
  * @param out_char The byte to transmit
@@ -214,6 +220,11 @@ static inline void tt_vuart_poll_out(volatile struct tt_vuart *vuart, unsigned c
 	uint32_t offs;
 	uint32_t tail;
 	volatile atomic_uint *tailp;
+
+#ifdef CONFIG_UART_TT_VIRT_TX_BLOCK
+	const uint32_t tx_block_deadline =
+		k_uptime_get_32() + CONFIG_UART_TT_VIRT_TX_BLOCK_TIMEOUT_MS;
+#endif
 
 	do {
 		if (role == TT_VUART_ROLE_DEVICE) {
@@ -234,8 +245,16 @@ static inline void tt_vuart_poll_out(volatile struct tt_vuart *vuart, unsigned c
 		}
 
 		if ((role == TT_VUART_ROLE_DEVICE) && tt_vuart_buf_full(head, tail, cap)) {
+#ifdef CONFIG_UART_TT_VIRT_TX_BLOCK
+			if ((int32_t)(k_uptime_get_32() - tx_block_deadline) >= 0) {
+				++vuart->tx_oflow;
+				return;
+			}
+			continue;
+#else
 			++vuart->tx_oflow;
 			return;
+#endif
 		}
 
 		if (atomic_compare_exchange_strong(tailp, &tail, tail + 1)) {
