@@ -17,8 +17,8 @@ config LOG_BACKEND_TT_VIRT
 	bool
 	default n
 
-# Use immediate logging mode, otherwise logs will often be lost in simulation
 choice LOG_MODE
+	default LOG_MODE_MINIMAL if LOG_DEFAULT_MINIMAL
 	default LOG_MODE_IMMEDIATE
 endchoice
 
