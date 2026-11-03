@@ -19,3 +19,21 @@ config UART_TT_VIRT_INTERRUPT_INTERVAL
 	  hardware interrupts. Therefore we use a software timer on a set
 	  interval to fake this support where required. This setting
 	  allows adjusting the interval of the software timer.
+
+config UART_TT_VIRT_TX_BLOCK
+	bool "Block on a full TX buffer instead of dropping output"
+	depends on UART_TT_VIRT
+	help
+	  By default, output written while the TX ring is full is discarded and
+	  counted in tx_oflow, so the firmware never stalls without a host reader.
+	  Enable this to wait for the host to drain the ring before dropping
+	  output, so test logs are lossless when the host is responsive.
+
+config UART_TT_VIRT_TX_BLOCK_TIMEOUT_MS
+	int "TX buffer block timeout (in ms)"
+	default 1000
+	range 0 2147483647
+	depends on UART_TT_VIRT_TX_BLOCK
+	help
+	  Maximum time to wait for the host to drain a full TX ring before
+	  dropping the byte and incrementing tx_oflow.
