@@ -187,8 +187,15 @@ static inline int tt_vuart_poll_in(volatile struct tt_vuart *vuart, unsigned cha
 			return -1;
 		}
 
+		/*
+		 * Read before publishing the advanced head. Otherwise a producer can
+		 * observe the freed slot and overwrite it before it is consumed.
+		 */
+		atomic_thread_fence(memory_order_acquire);
+		unsigned char ch = vuart->buf[offs + (head % cap)];
+
 		if (atomic_compare_exchange_strong(headp, &head, head + 1)) {
-			*p_char = vuart->buf[offs + (head % cap)];
+			*p_char = ch;
 			return *p_char;
 		}
 	} while (true);
@@ -207,6 +214,9 @@ static inline int tt_vuart_poll_in(volatile struct tt_vuart *vuart, unsigned cha
  * and the data is discarded, unless CONFIG_UART_TT_VIRT_TX_BLOCK is enabled, in which case the
  * device waits for CONFIG_UART_TT_VIRT_TX_BLOCK_TIMEOUT_MS for the host to free space before
  * incrementing the overflow counter and discarding the data.
+ *
+ * Each ring must have a single producer at a time; concurrent producers must be
+ * serialized by the caller.
  *
  * @param vuart Pointer to the virtual UART buffer descriptor
  * @param out_char The byte to transmit
@@ -257,10 +267,13 @@ static inline void tt_vuart_poll_out(volatile struct tt_vuart *vuart, unsigned c
 #endif
 		}
 
-		if (atomic_compare_exchange_strong(tailp, &tail, tail + 1)) {
-			vuart->buf[offs + (tail % cap)] = out_char;
-			return;
-		}
+		/*
+		 * Store the byte before publishing the new tail, so a consumer that
+		 * observes the tail also observes the data.
+		 */
+		vuart->buf[offs + (tail % cap)] = out_char;
+		atomic_store_explicit(tailp, tail + 1, memory_order_release);
+		return;
 	} while (true);
 }
 
