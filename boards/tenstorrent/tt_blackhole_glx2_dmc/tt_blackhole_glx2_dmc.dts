@@ -204,6 +204,24 @@
 	};
 };
 
+/ {
+	smbus2: smbus2 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c2>;
+		pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pb12>;
+		pinctrl-names = "default";
+		status = "okay";
+
+		pmbus_sensor: sensor@40 {
+			compatible = "pmbus,sensor";
+			reg = <0x40>;
+			status = "okay";
+		};
+	};
+};
+
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pb12>;
 	pinctrl-names = "default";
