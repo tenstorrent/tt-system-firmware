@@ -19,6 +19,7 @@
 #include "chip_info.h"
 #include "gddr.h"
 #include "bh_reset.h"
+#include "l2cpu.h"
 
 LOG_MODULE_REGISTER(power, CONFIG_TT_APP_LOG_LEVEL);
 static const struct device *pll4 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(pll4));
@@ -33,6 +34,21 @@ static bool power_state[BH_POWER_DOMAIN_COUNT] = {
 int32_t bh_set_l2cpu_enable(bool enable)
 {
 	int32_t ret = 0;
+	uint8_t released = l2cpu_released_mask();
+
+	/*
+	 * Clock_control_on/off power-cycles the PLL, which stalls the harts with
+	 * NOC/AXI transactions in flight, wedges the fabric and the cluster is prevented
+	 * from restarting afterward. Power settings that would gate it are refused, a
+	 * request to enable is already satisfied.
+	 */
+	if (released != 0) {
+		if (!enable) {
+			LOG_WRN("L2CPU power-off refused: cluster(s) 0x%x are running", released);
+			return -EBUSY;
+		}
+		return 0;
+	}
 
 	if (enable) {
 		ret = clock_control_on(
@@ -100,8 +116,11 @@ static int32_t apply_power_settings(const struct power_setting_rqst *power_setti
 	}
 	if (power_setting->power_flags_valid > BH_POWER_DOMAIN_L2CPU) {
 		ret = bh_set_l2cpu_enable(power_setting->power_flags_bitfield.l2cpu_enable);
-		power_state[BH_POWER_DOMAIN_L2CPU] =
-			power_setting->power_flags_bitfield.l2cpu_enable;
+		/* A refused power-off leaves the clocks (and the tracked state) on */
+		if (ret == 0) {
+			power_state[BH_POWER_DOMAIN_L2CPU] =
+				power_setting->power_flags_bitfield.l2cpu_enable;
+		}
 	}
 
 	if (power_setting->power_flags_valid > BH_POWER_DOMAIN_MRISC) {
