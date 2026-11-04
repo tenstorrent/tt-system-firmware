@@ -52,4 +52,11 @@
 		reg = <0x0 0xc000280c 0x0 0x4>;
 		status = "okay";
 	};
+
+	/* Cold Scratch 4 */
+	telemetry_info: scratch-reg@c0002810 {
+		compatible = "tenstorrent,scratch-reg";
+		reg = <0x0 0xc0002810 0x0 0x4>;
+		status = "okay";
+	};
 };

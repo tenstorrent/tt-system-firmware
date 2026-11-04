@@ -501,9 +501,6 @@ typedef union {
  */
 #define TAG_COUNT 81
 
-/* Telemetry tags are at offset `tag` in the telemetry buffer */
-#define TELEM_OFFSET(tag) (tag)
-
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100
 

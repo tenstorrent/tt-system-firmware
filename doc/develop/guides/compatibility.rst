@@ -30,7 +30,7 @@ Interface Rules
 Telemetry Interface
 ~~~~~~~~~~~~~~~~~~~
 
-The telemetry interface is defined in ``lib/tenstorrent/bh_arc/telemetry.h``.
+The telemetry interface is defined in ``lib/tenstorrent/fw_common/telemetry.h``.
 
 Compatibility Discovery
 ***********************
