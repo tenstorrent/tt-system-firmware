@@ -76,6 +76,58 @@ ZTEST(clock_control_rate, test_set_rate_aiclk)
 	}
 }
 
+ZTEST(clock_control_rate, test_set_rate_l2cpu)
+{
+	const struct device *pll = DEVICE_DT_GET(DT_NODELABEL(pll4));
+	static const uint32_t targets[] = {200, 1750, 1000, 800};
+	static const enum clock_control_tt_bh_clock outputs[] = {
+		CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0, CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_1,
+		CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_2, CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_3};
+	uint32_t rate;
+	int ret;
+
+	zassert_true(device_is_ready(pll), "pll4 not ready");
+
+	ARRAY_FOR_EACH(targets, t) {
+		ret = clock_control_set_rate(
+			pll, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0,
+			(clock_control_subsys_rate_t)targets[t]);
+		zassert_ok(ret, "set_rate(L2CPUCLK, %u) failed with %d", targets[t], ret);
+
+		ARRAY_FOR_EACH(outputs, o) {
+			ret = clock_control_get_rate(pll, (clock_control_subsys_t)outputs[o],
+						     &rate);
+			zassert_ok(ret, "get_rate(L2CPUCLK_%zu) failed with %d", o, ret);
+			if (rate == 0) {
+				/* Output gated off; set_rate leaves it alone */
+				continue;
+			}
+			zassert_equal(rate, targets[t], "L2CPUCLK_%zu: expected %u MHz, got %u", o,
+				      targets[t], rate);
+		}
+	}
+}
+
+ZTEST(clock_control_rate, test_set_rate_l2cpu_out_of_range_fails)
+{
+	const struct device *pll = DEVICE_DT_GET(DT_NODELABEL(pll4));
+	const clock_control_subsys_t l2cpuclk =
+		(clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0;
+	uint32_t before, after;
+	int ret;
+
+	zassert_ok(clock_control_get_rate(pll, l2cpuclk, &before));
+
+	/* 3000 MHz needs a VCO above its maximum even at the smallest postdiv */
+	ret = clock_control_set_rate(pll, l2cpuclk, (clock_control_subsys_rate_t)3000);
+	zassert_equal(-ERANGE, ret, "Expected -ERANGE but got %d", ret);
+
+	/* Rejected requests must not touch the dividers */
+	zassert_ok(clock_control_get_rate(pll, l2cpuclk, &after));
+	zassert_equal(before, after, "Rate changed from %u to %u on rejected request", before,
+		      after);
+}
+
 ZTEST(clock_control_rate, test_set_rate_out_of_range_fails)
 {
 	const struct device *pll = DEVICE_DT_GET(DT_NODELABEL(pll0));
