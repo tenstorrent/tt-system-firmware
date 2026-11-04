@@ -52,6 +52,7 @@ struct bh_chip BH_CHIPS[BH_CHIP_COUNT] = {DT_FOREACH_PROP_ELEM(DT_PATH(chips), c
 static const struct gpio_dt_spec board_fault_led =
 	GPIO_DT_SPEC_GET_OR(DT_PATH(board_fault_led), gpios, {0});
 static const struct device *const ina228 = DEVICE_DT_GET_OR_NULL(DT_NODELABEL(ina228));
+static const struct device *const pmbus_sensor = DEVICE_DT_GET_ANY(pmbus_sensor);
 static const struct device *const max6639_pwm_dev =
 	DEVICE_DT_GET_OR_NULL(DT_NODELABEL(max6639_pwm));
 static const struct device *const max6639_sensor_dev =
@@ -288,12 +289,15 @@ void process_cm2dm_message(struct bh_chip *chip)
 	}
 }
 
-void ina228_power_update(void)
+static void board_power_update_sensor(const struct device *sensor)
 {
 	struct sensor_value sensor_val;
 
-	sensor_sample_fetch_chan(ina228, SENSOR_CHAN_POWER);
-	sensor_channel_get(ina228, SENSOR_CHAN_POWER, &sensor_val);
+	if (sensor_sample_fetch_chan(sensor, SENSOR_CHAN_POWER) != 0 ||
+	    sensor_channel_get(sensor, SENSOR_CHAN_POWER, &sensor_val) != 0) {
+		LOG_ERR("Failed to read board input power");
+		return;
+	}
 
 	/* Only use integer part of sensor value */
 	int16_t power = sensor_val.val1 & 0xFFFF;
@@ -559,8 +563,10 @@ static void send_init_data(void)
 
 static void board_power_update(void)
 {
-	if (IS_ENABLED(CONFIG_INA228)) {
-		ina228_power_update();
+	if (pmbus_sensor != NULL) {
+		board_power_update_sensor(pmbus_sensor);
+	} else if (IS_ENABLED(CONFIG_INA228)) {
+		board_power_update_sensor(ina228);
 	}
 }
 
