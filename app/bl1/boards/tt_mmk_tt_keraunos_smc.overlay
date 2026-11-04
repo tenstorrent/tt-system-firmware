@@ -24,6 +24,7 @@
 	grendel_i3c_controller_m0: grendel-i3c-controller-m0 {
 		compatible = "tenstorrent,grendel-i3c-controller";
 		i3c-device = <&remoteproc_m0>;
+		status = "disabled";
 	};
 
 	grendel_i3c_controller_m1: grendel-i3c-controller-m1 {
