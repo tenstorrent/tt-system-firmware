@@ -103,7 +103,8 @@ TT_BH_ETH_RESET_POST_INIT = TT_BH_ETH_TILE_MASK | TT_BH_ETH_RISC_MASK
 TT_BH_DDR_TILE_MASK = 0x000000FF  # bits [7:0]
 TT_BH_DDR_RISC_MASK = 0xFFFFFF00  # bits [31:8]
 TT_BH_DDR_RESET_POST_INIT = TT_BH_DDR_TILE_MASK | TT_BH_DDR_RISC_MASK
-TT_BH_L2CPU_TILE_MASK = 0x0000000F  # bits [3:0]; RISC [7:4] stay asserted (BH-25/28)
+TT_BH_L2CPU_TILE_MASK = 0x0000000F  # bits [3:0]
+TT_BH_L2CPU_RISC_SHIFT = 4  # RISC [7:4]: only the cluster the SMC parks is released
 TT_BH_ALL_LINES_DEASSERTED = 0xFFFFFFFF
 
 # Functional efuse MMIO mapping (32-bit words)
@@ -638,11 +639,6 @@ def test_reset_unit_post_init(arc_chip_dut, asic_id):
         ),
         ("eth_reset", RESET_UNIT_ETH_RESET_ADDR, TT_BH_ETH_RESET_POST_INIT),
         ("ddr_reset", RESET_UNIT_DDR_RESET_ADDR, TT_BH_DDR_RESET_POST_INIT),
-        (
-            "l2cpu_reset",
-            RESET_UNIT_L2CPU_RESET_ADDR,
-            TT_BH_L2CPU_TILE_MASK,
-        ),
     ]
     for i in range(NUM_TENSIX_RESET_BANKS):
         checks.append(
@@ -668,6 +664,25 @@ def test_reset_unit_post_init(arc_chip_dut, asic_id):
         )
         if actual != expected:
             failures.append(f"{name}: got 0x{actual:08x}, want 0x{expected:08x}")
+
+    # All L2CPU tiles come out of reset. The SMC then parks one cluster in its resident
+    # stub, which releases that cluster's RISC line alone; the rest stay asserted.
+    actual = arc_chip.axi_read32(RESET_UNIT_L2CPU_RESET_ADDR)
+    tiles = actual & TT_BH_L2CPU_TILE_MASK
+    riscs = (actual >> TT_BH_L2CPU_RISC_SHIFT) & TT_BH_L2CPU_TILE_MASK
+    logger.info(
+        "l2cpu_reset @ 0x%08x = 0x%08x (tiles 0x%x, risc 0x%x)",
+        RESET_UNIT_L2CPU_RESET_ADDR,
+        actual,
+        tiles,
+        riscs,
+    )
+    if tiles != TT_BH_L2CPU_TILE_MASK:
+        failures.append(
+            f"l2cpu_reset: tiles 0x{tiles:x}, want 0x{TT_BH_L2CPU_TILE_MASK:x}"
+        )
+    if bin(riscs).count("1") > 1:
+        failures.append(f"l2cpu_reset: risc 0x{riscs:x}, want at most one cluster")
 
     assert not failures, "Reset-unit post-init mismatch:\n  " + "\n  ".join(failures)
 
