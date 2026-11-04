@@ -30,6 +30,10 @@ CONFIG_FLASH=y
 CONFIG_FLASH_MSPI_NOR_LAYOUT_PAGE_SIZE=4096
 # flash.c reports the JEDEC ID of the detected flash chip in telemetry
 CONFIG_FLASH_JESD216_API=y
+# Busy-wait through the ~35 us data phase instead of blocking
+# a truncated page program is still detected by the driver and
+# retried by the flash driver
+CONFIG_MSPI_DW_PIO_TX_SPIN_MAX_US=50
 
 # enable the bh_arc library
 CONFIG_TT_BH_ARC=y
