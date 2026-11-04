@@ -21,9 +21,9 @@ manifest:
       path: modules/lib/librpmi
       revision: 23e94f7007731e91be4de7c1d9c8c48b2173f6a2
     - name: zephyr
-      remote: tenstorrent
-      repo-path: zephyr-fork
-      revision: ea2ac9af2d0e2e021f88a2cbf1b6bbad7a0d8940
+      # TEMP
+      url: https://github.com/alayander/zephyr
+      revision: af3d80bc634eea6d6fdd1853a7452c8020f52a44
       import:
         name-allowlist:
           - cmsis_6
