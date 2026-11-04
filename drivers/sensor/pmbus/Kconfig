@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig PMBUS_SENSOR
+	bool "Generic PMBus sensor"
+	default y
+	depends on DT_HAS_PMBUS_SENSOR_ENABLED
+	depends on SMBUS
+	help
+	  Enable the generic PMBus sensor driver.
+
+if PMBUS_SENSOR
+
+config PMBUS_SENSOR_INIT_PRIORITY
+	int "PMBus sensor init priority"
+	default 80
+	help
+	  Initialization priority for the PMBus sensor.
+
+endif
