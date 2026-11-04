@@ -17,7 +17,8 @@ jobs:
     if: >
       github.event_name == 'schedule'          ||
       github.event_name == 'workflow_dispatch' ||
-      github.event.label.name == 'metal-tests'
+      github.event.label.name == 'metal-tests' ||
+      github.event.label.name == 'whgx-nightly'
     runs-on: ubuntu-24.04
     steps:
       - run: echo "Metal tests will run."
@@ -34,11 +35,21 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.gen-matrix.outputs.matrix }}
+      deploy-matrix: ${{ steps.gen-matrix.outputs.deploy-matrix }}
     steps:
       - uses: actions/checkout@v4
       - id: gen-matrix
+        env:
+          LABEL: ${{ github.event.label.name }}
         run: |
-          echo "matrix=$(jq -c '[.[][] | select(has("metal-image"))]' .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          # The whgx-nightly label runs only on the WH Galaxy.
+          if [ "$LABEL" = "whgx-nightly" ]; then
+            BOARD_FILTER='select(.board == "whgx")'
+          else
+            BOARD_FILTER='.'
+          fi
+          echo "matrix=$(jq -c "[.[][] | select(has(\"metal-image\")) | $BOARD_FILTER]" .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
+          echo "deploy-matrix=$(jq -c "[.bh[] | select(has(\"metal-image\")) | $BOARD_FILTER]" .github/ci_boards.json)" | tee -a $GITHUB_OUTPUT
 
   metal-test:
     name: Metal Test on ${{ matrix.config.board }}
@@ -166,10 +177,11 @@ jobs:
   metal-deploy-test:
     name: Metal Deploy Test on ${{ matrix.config.board }}
     needs: [build-fw-artifact, generate-matrix]
+    if: needs.generate-matrix.outputs.deploy-matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+        config: ${{ fromJson(needs.generate-matrix.outputs.deploy-matrix) }}
     runs-on: ${{ matrix.config.board }}
     container:
       image: ${{ matrix.config.metal-image }}
