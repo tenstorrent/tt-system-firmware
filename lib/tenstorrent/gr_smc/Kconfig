@@ -15,6 +15,16 @@ config TT_GR_SMC_ERR_STR
 	  Compile grendel_err_to_str from the grendel-sival-sdk tarball's
 	  common/src/err.c
 
+config TT_GR_SMC_AVS
+	bool "Grendel SMC AVSBus voltage regulator telemetry"
+	depends on TT_GR_SMC && TT_TELEMETRY
+	default y if SOC_TT_KERAUNOS_SMC
+	help
+	  Read the core rail voltage, current and temperature from the board
+	  voltage regulator over the SMC AVSBus controller and report them in
+	  the VCORE, TDC, TDP and VREG_TEMPERATURE telemetry tags. The tags are
+	  always present; without this option they read 0.
+
 config TT_GR_SMC_LOG_BRIDGE
 	bool "Grendel SMC log bridge"
 	depends on LOG
