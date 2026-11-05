@@ -1229,6 +1229,10 @@ def test_tensix_reset_single(arc_chip_dut, asic_id):
 
 
 def test_aiclk(arc_chip_dut, asic_id):
+    """
+    Validates that forcing AICLK to target frequencies (1350, 800, and 200 MHz)
+    succeeds and reports the expected clock frequency.
+    """
     arc_chip = pyluwen.detect_chips()[asic_id]
     TARGET_AICLKS = [
         1350,  # Max value we rise to with GO_BUSY

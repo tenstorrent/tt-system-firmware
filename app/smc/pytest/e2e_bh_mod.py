@@ -479,6 +479,10 @@ def _out_of_range_test(asic_id, board_name, path, value, check=None):
 def test_ccfgovr_out_of_range_value(
     arc_chip_dut, asic_id, board_name, path, value, check
 ):
+    """
+    Injects out-of-range ccfgovr values directly to SPI flash and verifies that
+    ARC still boots and that bh-mod can clear the override.
+    """
     _out_of_range_test(asic_id, board_name, path, value, check)
 
 
@@ -487,6 +491,10 @@ def test_ccfgovr_out_of_range_value(
 @pytest.mark.stress
 @pytest.mark.parametrize("value", [0, 6, 0xFFFFFFFF], ids=lambda v: f"{v:#x}")
 def test_ccfgovr_out_of_range_pcie_speed(arc_chip_dut, asic_id, board_name, value):
+    """
+    Injects out-of-range PCIe endpoint speed overrides directly to SPI flash
+    and verifies that ARC still boots and that bh-mod can clear the override.
+    """
     path = _pcie_ep_speed_path(asic_id)
     if path is None:
         pytest.skip("no PCIe endpoint instance in cmfwcfg")
