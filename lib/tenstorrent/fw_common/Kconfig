@@ -28,9 +28,10 @@ config TT_MSGQUEUE
 
 config TT_MSGQUEUE_NUM_MSG_CODES
 	int "Number of message codes"
-	default 200
+	default 201
 	depends on TT_MSGQUEUE
 	help
-	  Size of the message handler table (message code range).
+	  Size of the message handler table. Must be greater than the
+	  highest TT_SMC_MSG_* command code.
 
 endif

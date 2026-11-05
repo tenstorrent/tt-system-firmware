@@ -31,6 +31,7 @@ enum tt_event {
 	TT_EVENT_FAN_RPM_TO_SMC = BIT(5),     /**< @brief 20ms: fan RPM sense & send to smc */
 	TT_EVENT_CM2DM_POLL = BIT(6),         /**< @brief 20ms: CM2DM message polling */
 	TT_EVENT_LOGS_TO_SMC = BIT(7),        /**< @brief 20ms: send log chunk to smc */
+	TT_EVENT_QSFP_POLL = BIT(8),          /**< @brief ~1s: re-probe QSFP-DD cage status */
 	TT_EVENT_WAKE = BIT(31),              /**< @brief Wake firmware for a generic reason */
 };
 
