@@ -30,7 +30,8 @@
       "metal-target": "blackhole",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.11.0"
+      "kmd_build": "2.11.0",
+      "power-ci-label": "p150a-power-CI"
     },
     {
       "board": "p300a",
@@ -39,7 +40,8 @@
       "metal-target": "blackhole_p300",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.11.0"
+      "kmd_build": "2.11.0",
+      "power-ci-label": "p300a-power-CI"
     },
     {
       "board": "quietbox2",
@@ -47,7 +49,8 @@
       "metal-target": "blackhole_qb_ge",
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
-      "kmd_build": "2.11.0"
+      "kmd_build": "2.11.0",
+      "power-ci-label": "quietbox2-power-CI"
     },
     {
       "board": "loudbox",
@@ -57,7 +60,6 @@
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --user=root",
       "kmd_build": "2.11.0"
     },
-
     {
       "board": "bh-galaxy-revc",
       "metal-image": "ghcr.io/tenstorrent/tt-metal/upstream-tests-bh-glx:v0.78.0",
@@ -65,7 +67,9 @@
       "arch-name": "blackhole",
       "metal-options": "--cap-add SYS_MODULE --device /dev/tenstorrent --device /dev/ipmi0 --user=root",
       "metal-deploy-run-eth": true,
-      "kmd_build": "2.11.0"
+      "kmd_build": "2.11.0",
+      "power-ci-label": "bh-galaxy-power-CI",
+      "system-power": "ipmi"
     }
   ]
 }
