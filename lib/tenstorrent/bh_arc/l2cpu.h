@@ -110,6 +110,16 @@ int l2cpu_start(uint8_t l2cpu, uint64_t entry, uint32_t run_clk_mhz);
  */
 uint8_t l2cpu_released_mask(void);
 
+/**
+ * @brief Bitmask of GDDR instances backing the DRAM of clusters that have left the stub.
+ *
+ * A parked cluster runs entirely out of its L3 and needs nothing from its GDDR instance.
+ * Once any hart has jumped, the payload runs from DRAM, so from then on the instance must
+ * stay out of PHY powerdown. set_mrisc_power_setting() consults this; it reads the
+ * mailbox of each released cluster over the NOC.
+ */
+uint32_t l2cpu_running_gddr_mask(void);
+
 #ifdef __cplusplus
 }
 #endif

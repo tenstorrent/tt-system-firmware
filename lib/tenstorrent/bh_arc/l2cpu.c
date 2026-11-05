@@ -82,6 +82,20 @@ uint8_t l2cpu_released_mask(void)
 	return released_mask;
 }
 
+uint32_t l2cpu_running_gddr_mask(void)
+{
+	const uint8_t all_harts = BIT_MASK(L2CPU_NUM_HARTS);
+	uint32_t gddr_mask = 0;
+
+	for (uint8_t i = 0; i < L2CPU_NUM_CLUSTERS; i++) {
+		if ((released_mask & BIT(i)) && l2cpu_resident_ready_mask(i) != all_harts) {
+			gddr_mask |= BIT(kL2CpuGddrInst[i]);
+		}
+	}
+
+	return gddr_mask;
+}
+
 void l2cpu_get_noc_coords(uint8_t l2cpu, uint8_t *x, uint8_t *y)
 {
 	__ASSERT_NO_MSG(l2cpu < L2CPU_NUM_CLUSTERS);
