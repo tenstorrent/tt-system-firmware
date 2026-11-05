@@ -7,3 +7,5 @@ Testing
    :maxdepth: 1
 
    local.rst
+   ci.rst
+   suites.rst
