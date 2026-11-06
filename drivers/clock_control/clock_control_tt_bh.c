@@ -44,6 +44,12 @@ LOG_MODULE_REGISTER(clock_control_tt_bh);
 
 #define VCO_MIN_FREQ                            1600
 #define VCO_MAX_FREQ                            5000
+#define NUM_EXT_POSTDIVS                        4
+/* External postdiv register range over which the divide ratio is value + 1 */
+#define EXT_POSTDIV_LINEAR_MIN                  1
+#define EXT_POSTDIV_LINEAR_MAX                  16
+/* Settle time between single-step divider writes (matches AICLK stepping) */
+#define DIVIDER_STEP_SETTLE_NS                  100
 #define CLK_COUNTER_REFCLK_PERIOD               1000
 #define PLL_CNTL_WRAPPER_PLL_LOCK_REG_ADDR      0x80020040
 #define PLL_CNTL_WRAPPER_REFCLK_PERIOD_REG_ADDR 0x8002002C
@@ -461,6 +467,128 @@ static enum clock_control_status clock_control_tt_bh_get_status(const struct dev
 	return CLOCK_CONTROL_STATUS_UNKNOWN;
 }
 
+static uint8_t ext_postdiv_get(const union tt_bh_pll_cntl_5_reg *reg, uint8_t index)
+{
+	switch (index) {
+	case 0:
+		return reg->f.postdiv0;
+	case 1:
+		return reg->f.postdiv1;
+	case 2:
+		return reg->f.postdiv2;
+	default:
+		return reg->f.postdiv3;
+	}
+}
+
+static void ext_postdiv_set(union tt_bh_pll_cntl_5_reg *reg, uint8_t index, uint8_t value)
+{
+	switch (index) {
+	case 0:
+		reg->f.postdiv0 = value;
+		break;
+	case 1:
+		reg->f.postdiv1 = value;
+		break;
+	case 2:
+		reg->f.postdiv2 = value;
+		break;
+	default:
+		reg->f.postdiv3 = value;
+		break;
+	}
+}
+
+static int l2cpu_select_dividers(const struct clock_control_tt_bh_config *config,
+				 union tt_bh_pll_cntl_1_reg pll_cntl_1, uint8_t cur_postdiv,
+				 uint32_t target_mhz, uint32_t *fbdiv_out, uint8_t *postdiv_out)
+{
+	uint8_t postdiv = cur_postdiv;
+	uint32_t vco_mhz = target_mhz * (postdiv + 1);
+
+	if (!IN_RANGE(postdiv, EXT_POSTDIV_LINEAR_MIN, EXT_POSTDIV_LINEAR_MAX) ||
+	    !IN_RANGE(vco_mhz, VCO_MIN_FREQ, VCO_MAX_FREQ)) {
+		for (postdiv = EXT_POSTDIV_LINEAR_MIN; postdiv <= EXT_POSTDIV_LINEAR_MAX;
+		     postdiv++) {
+			vco_mhz = target_mhz * (postdiv + 1);
+			if (IN_RANGE(vco_mhz, VCO_MIN_FREQ, VCO_MAX_FREQ)) {
+				break;
+			}
+		}
+		if (postdiv > EXT_POSTDIV_LINEAR_MAX) {
+			return -ERANGE;
+		}
+	}
+
+	*fbdiv_out = target_mhz * pll_cntl_1.f.refdiv * (postdiv + 1) / config->refclk_rate;
+	*postdiv_out = postdiv;
+
+	return 0;
+}
+
+/*
+ * Glitch-free re-rate of PLL4, which feeds L2CPUCLK0..3 from a shared VCO. The output is
+ * ramped one divider step at a time without a PLL power cycle, so a running L2CPU keeps a
+ * valid clock throughout.
+ */
+static int clock_control_tt_bh_set_rate_l2cpu(const struct clock_control_tt_bh_config *config,
+					      struct clock_control_tt_bh_data *data, uint8_t output,
+					      uint32_t target_mhz)
+{
+	union tt_bh_pll_cntl_1_reg pll_cntl_1;
+	union tt_bh_pll_cntl_5_reg pll_cntl_5;
+	uint32_t target_fbdiv;
+	uint8_t target_postdiv;
+	int ret;
+
+	pll_cntl_1.val = clock_control_tt_bh_read_reg(config, PLL_CNTL_1_OFFSET);
+	pll_cntl_5.val = clock_control_tt_bh_read_reg(config, PLL_CNTL_5_OFFSET);
+
+	ret = l2cpu_select_dividers(config, pll_cntl_1, ext_postdiv_get(&pll_cntl_5, output),
+				    target_mhz, &target_fbdiv, &target_postdiv);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* 1. Increase postdivs (output slows down) */
+	for (uint8_t i = 0; i < NUM_EXT_POSTDIVS; i++) {
+		uint8_t postdiv = ext_postdiv_get(&pll_cntl_5, i);
+
+		while (postdiv != 0 && postdiv < target_postdiv) {
+			ext_postdiv_set(&pll_cntl_5, i, ++postdiv);
+			clock_control_tt_bh_write_reg(config, PLL_CNTL_5_OFFSET, pll_cntl_5.val);
+			k_busy_wait_ns(DIVIDER_STEP_SETTLE_NS);
+		}
+	}
+
+	/* 2. Walk fbdiv to the target VCO */
+	while (pll_cntl_1.f.fbdiv != target_fbdiv) {
+		if (target_fbdiv > pll_cntl_1.f.fbdiv) {
+			pll_cntl_1.f.fbdiv += 1;
+		} else {
+			pll_cntl_1.f.fbdiv -= 1;
+		}
+		clock_control_tt_bh_write_reg(config, PLL_CNTL_1_OFFSET, pll_cntl_1.val);
+		k_busy_wait_ns(DIVIDER_STEP_SETTLE_NS);
+	}
+
+	/* 3. Decrease postdivs (output speeds up) */
+	for (uint8_t i = 0; i < NUM_EXT_POSTDIVS; i++) {
+		uint8_t postdiv = ext_postdiv_get(&pll_cntl_5, i);
+
+		while (postdiv != 0 && postdiv > target_postdiv) {
+			ext_postdiv_set(&pll_cntl_5, i, --postdiv);
+			clock_control_tt_bh_write_reg(config, PLL_CNTL_5_OFFSET, pll_cntl_5.val);
+			k_busy_wait_ns(DIVIDER_STEP_SETTLE_NS);
+		}
+	}
+
+	data->settings.pll_cntl_1 = pll_cntl_1;
+	data->settings.pll_cntl_5 = pll_cntl_5;
+
+	return 0;
+}
+
 static int clock_control_tt_bh_set_rate(const struct device *dev, clock_control_subsys_t sys,
 					clock_control_subsys_rate_t rate)
 {
@@ -522,6 +650,18 @@ static int clock_control_tt_bh_set_rate(const struct device *dev, clock_control_
 
 		clock_control_tt_bh_update(config, data, &settings);
 		clock_control_enable_clk_counters(config);
+	} else if (clock == CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0 ||
+		   clock == CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_1 ||
+		   clock == CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_2 ||
+		   clock == CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_3) {
+		/* All four L2CPU clocks share the VCO and are re-rated together */
+		int ret = clock_control_tt_bh_set_rate_l2cpu(
+			config, data, clock - CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_0, (uint32_t)rate);
+
+		if (ret < 0) {
+			k_spin_unlock(&data->lock, key);
+			return ret;
+		}
 	} else {
 		k_spin_unlock(&data->lock, key);
 		return -ENOTSUP;

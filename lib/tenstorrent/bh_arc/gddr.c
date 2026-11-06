@@ -10,6 +10,7 @@
 #include "gddr_cal.h"
 #include "harvesting.h"
 #include "init.h"
+#include "l2cpu.h"
 #include "noc.h"
 #include "noc_init.h"
 #include "noc2axi.h"
@@ -896,9 +897,22 @@ int32_t set_mrisc_power_setting(bool on)
 	}
 
 	uint32_t op_code = on ? MRISC_MSG_TYPE_PHY_WAKEUP : MRISC_MSG_TYPE_PHY_POWERDOWN;
+	uint32_t dram_mask = GetDramMask();
 
-	return mrisc_message(op_code, GetDramMask(), MRISC_POWER_SETTING_TIMEOUT_MS,
-			     "power_setting");
+	if (!on) {
+		uint32_t keep = l2cpu_running_gddr_mask() & dram_mask;
+
+		if (keep != 0) {
+			LOG_WRN_ONCE("Keeping GDDR 0x%x awake: backs running L2CPU cluster(s)",
+				     keep);
+		}
+		dram_mask &= ~keep;
+		if (dram_mask == 0) {
+			return 0;
+		}
+	}
+
+	return mrisc_message(op_code, dram_mask, MRISC_POWER_SETTING_TIMEOUT_MS, "power_setting");
 }
 
 SYS_INIT_APP(gddr_training);

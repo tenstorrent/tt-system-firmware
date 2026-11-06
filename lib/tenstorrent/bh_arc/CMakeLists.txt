@@ -79,6 +79,7 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
     gddr.c
     gddr_cal.c
     i2c_messages.c
+    l2cpu.c
     pcie_dma.c
     pvt.c
     regulator.c
@@ -95,4 +96,37 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
   zephyr_library_sources_ifdef(CONFIG_BH_FWTABLE chip_info_fwtable.c)
   zephyr_library_sources_ifdef(CONFIG_TT_SHELL tt_shell.c)
   zephyr_library_add_dependencies(nanopb_generated_headers)
+
+  # The L2CPU resident stub is RISC-V code carried inside the ARC image. Assemble it with
+  # the SDK's riscv64 toolchain and embed the flat binary via an include file
+  if(NOT DEFINED ZEPHYR_SDK_INSTALL_DIR)
+    # Host-toolchain builds (native_sim) never load the Zephyr SDK, but the stub still
+    # needs its riscv64 cross compiler. Resolve the SDK from the CMake package registry.
+    find_package(Zephyr-sdk 1.0 QUIET CONFIG HINTS $ENV{ZEPHYR_SDK_INSTALL_DIR})
+  endif()
+  set(riscv64_bin_hint ${ZEPHYR_SDK_INSTALL_DIR}/gnu/riscv64-zephyr-elf/bin)
+  find_program(RISCV64_GCC riscv64-zephyr-elf-gcc HINTS ${riscv64_bin_hint} REQUIRED)
+  find_program(RISCV64_OBJCOPY riscv64-zephyr-elf-objcopy HINTS ${riscv64_bin_hint} REQUIRED)
+
+  set(l2cpu_gen_dir ${ZEPHYR_BINARY_DIR}/misc/generated)
+  set(l2cpu_stub_src ${CMAKE_CURRENT_SOURCE_DIR}/l2cpu_resident.S)
+  set(l2cpu_stub_obj ${CMAKE_CURRENT_BINARY_DIR}/l2cpu_resident.o)
+  set(l2cpu_stub_bin ${CMAKE_CURRENT_BINARY_DIR}/l2cpu_resident.bin)
+
+  add_custom_command(
+    OUTPUT ${l2cpu_stub_bin}
+    COMMAND ${RISCV64_GCC} -x assembler-with-cpp -march=rv64i_zicsr_zifencei -mabi=lp64
+            -I${CMAKE_CURRENT_SOURCE_DIR} -c ${l2cpu_stub_src} -o ${l2cpu_stub_obj}
+    COMMAND ${RISCV64_OBJCOPY} -O binary -j .text ${l2cpu_stub_obj} ${l2cpu_stub_bin}
+    DEPENDS ${l2cpu_stub_src} ${CMAKE_CURRENT_SOURCE_DIR}/l2cpu.h
+    COMMENT "Assembling L2CPU resident stub"
+    VERBATIM
+  )
+
+  generate_inc_file_for_target(
+    ${ZEPHYR_CURRENT_LIBRARY}
+    ${l2cpu_stub_bin}
+    ${l2cpu_gen_dir}/l2cpu_resident.inc
+  )
+  zephyr_library_include_directories(${l2cpu_gen_dir})
 endif()
