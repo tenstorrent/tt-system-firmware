@@ -9,8 +9,9 @@ inputs:
     description: 'Path to the Zephyr application to build'
     required: true
   kmd-version:
-    description: 'Version of tt-kmd to use'
-    required: true
+    description: 'Version of tt-kmd to use. Leave empty to skip loading tt-kmd (e.g. no Tenstorrent card attached)'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -62,6 +63,7 @@ runs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Build and load tt-kmd
+      if: inputs.kmd-version != ''
       shell: bash
       run: |
         bash "${{ inputs.app-path }}/scripts/ci/build-and-load-kmd.sh" \
@@ -122,4 +124,4 @@ runs:
         echo "Cargo: $( which cargo ) $( cargo --version )"
         echo "PIP packages:"
         pip3 freeze
-        echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
+        echo "tt-kmd version: $(cat /sys/module/tenstorrent/version 2>/dev/null || echo 'not loaded')"
