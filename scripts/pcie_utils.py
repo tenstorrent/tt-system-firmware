@@ -3,10 +3,12 @@
 
 import logging
 import os
+import re
 import subprocess
 import time
 
 from pathlib import Path
+from typing import Optional
 
 TT_PCIE_VID = "0x1e52"
 
@@ -16,6 +18,33 @@ DMC_PING_MSG = 0xC0
 
 # Common SMC register used for connectivity checks
 SMC_POSTCODE_REG = 0x80030060
+
+# lspci LnkSta speed for each PCIe generation
+PCIE_GEN_SPEED = {
+    1: "2.5GT/s",
+    2: "5GT/s",
+    3: "8GT/s",
+    4: "16GT/s",
+    5: "32GT/s",
+}
+
+# Link width expected when none is given
+PCIE_DEFAULT_WIDTH = 16
+
+# Expected PCIe link per board: the generation, and the link widths that are
+# accepted. "widths_behind_bus" overrides expected "widths" for certain bdfs
+BOARD_PCIE_EXPECTATIONS = {
+    "bh-galaxy-revc": {
+        "gen": 5,
+        "widths": (1,),
+        "widths_behind_bus": {"0000:06": (8,)},
+    },
+    "quietbox2": {"gen": 4, "widths": (4, 8)},
+    "loudbox": {"gen": 5, "widths": (16,)},
+}
+
+# lspci fields that check_link reads.
+LSPCI_FIELDS = ("LnkSta", "DevSta", "CESta", "UESta", "LaneErrStat")
 
 logger = logging.getLogger(Path(__file__).stem)
 
@@ -195,3 +224,109 @@ def wait_for_enum(asic_id=0, timeout=60, delay=2):
         "Timed out after %ds waiting for card %d to enumerate", timeout, asic_id
     )
     return False
+
+
+def check_link(
+    bdf: str,
+    lspci_out: str,
+    gen: int,
+    widths: tuple[int, ...] = (PCIE_DEFAULT_WIDTH,),
+) -> tuple[bool, list[str]]:
+    """
+    Check the PCIe link of one device.
+
+    @param bdf: PCI address of the device, for example "0000:01:00.0"
+    @param lspci_out: output of `lspci -s <bdf> -vvv`
+    @param gen: expected PCIe generation, 1 to 5
+    @param widths: link widths that are accepted
+    Returns (ok, report lines). A wrong link speed or width is not ok.
+    Set error bits only add a warning to the report.
+    """
+    fields = {}
+    for name in LSPCI_FIELDS:
+        match = re.search(rf"^\s*{name}:.*$", lspci_out, re.MULTILINE)
+        fields[name] = match.group(0).strip() if match else None
+
+    lnk_sta = fields["LnkSta"]
+    if lnk_sta is None:
+        # No LnkSta usually means lspci could not read the extended config
+        # space, so show the uid and effective capabilities to help debug that.
+        cap_eff = ""
+        try:
+            with open("/proc/self/status") as f:
+                cap_eff = next(l.split()[1] for l in f if l.startswith("CapEff"))
+        except (OSError, StopIteration):
+            pass
+        return False, [
+            f"ERROR: no LnkSta for {bdf} (id: {os.getuid()}, caps: {cap_eff})."
+            " Raw output:",
+            lspci_out,
+        ]
+
+    lines = [f"BusID: {bdf}", lnk_sta]
+    speed = f"Speed {PCIE_GEN_SPEED[gen]}"
+    if speed not in lnk_sta or not any(
+        re.search(rf"Width x{w}\b", lnk_sta) for w in widths
+    ):
+        expected = " or ".join(f"Width x{w}" for w in widths)
+        lines.append(f"ERROR: Observed: {lnk_sta}  Expected: {speed}  {expected}")
+        return False, lines
+    lines.append("Correct values")
+
+    for name in ("DevSta", "CESta", "UESta"):
+        lines.append(fields[name] or f"{name}: not reported")
+        if fields[name] and "+" in fields[name]:
+            lines.append("WARNING: Should be all negative(-)")
+    lane_err = fields["LaneErrStat"]
+    if lane_err is not None:
+        lines.append(lane_err)
+        if lane_err.split(":", 1)[1].strip() != "0":
+            lines.append("WARNING: Should be 0")
+    return True, lines
+
+
+def check_all_pcie(
+    expect: dict, bdf: Optional[str] = None, log_dir: str = "logs"
+) -> bool:
+    """
+    Check the PCIe link of every Tenstorrent device, or only of bdf.
+
+    The function checks all devices, also after a failure. It writes the
+    report of each device to <log_dir>/pci-width-<bdf>.log.
+
+    @param expect: expected link, in the format of BOARD_PCIE_EXPECTATIONS
+    @param bdf: PCI address of one device. If None, check all devices.
+    @param log_dir: directory for the report files
+    Returns True only if every device passed.
+    """
+    bdfs = [bdf] if bdf else sorted(Path(d).name for d in find_tt_devs())
+    if not bdfs:
+        print("No Tenstorrent devices found")
+        return False
+
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    all_ok = True
+    for dev in bdfs:
+        widths = expect["widths"]
+        sysfs_path = os.path.realpath(f"/sys/bus/pci/devices/{dev}")
+        for bus, bus_widths in expect.get("widths_behind_bus", {}).items():
+            if f"/{bus}:" in sysfs_path:
+                widths = bus_widths
+
+        # Keep stderr so sudo/lspci failures are visible in CI logs
+        lspci_out = subprocess.run(
+            ["sudo", "lspci", "-s", dev, "-vvv"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        ).stdout
+        ok, lines = check_link(dev, lspci_out, expect["gen"], widths)
+        if not ok:
+            lines.append(f"{dev} FAILED")
+            all_ok = False
+
+        report = "\n".join(lines)
+        print(f"::group::{dev}\n{report}\n::endgroup::")
+        log = Path(log_dir) / f"pci-width-{dev.replace(':', '_')}.log"
+        log.write_text(report + "\n")
+    return all_ok
