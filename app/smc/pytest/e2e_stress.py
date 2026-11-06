@@ -301,6 +301,10 @@ def test_dmc_ping(arc_chip_dut, asic_id):
 def test_upgrade_from_18x(
     tmp_path: Path, board_name, unlaunched_dut, arc_chip_dut, asic_id
 ):
+    """
+    Validates firmware upgrades to the current bundle from v18.10.0, v18.11.0,
+    and v18.12.0 releases.
+    """
     upgrade_from_version_test(
         arc_chip_dut,
         tmp_path,
@@ -338,6 +342,9 @@ def test_upgrade_from_18x(
 def test_upgrade_from_19_00(
     arc_chip_dut, tmp_path: Path, board_name, unlaunched_dut, asic_id
 ):
+    """
+    Validates firmware upgrade to the current bundle from v19.0.0.
+    """
     upgrade_from_version_test(
         arc_chip_dut,
         tmp_path,
@@ -352,6 +359,10 @@ def test_upgrade_from_19_00(
 
 
 def test_temperature_sensors(arc_chip_dut, asic_id):
+    """
+    Repeatedly validates that temperature sensor readings (READ_TS) succeed and
+    stay within expected bounds across stress iterations.
+    """
     test_name = "Temperature sensor test"
     total_tries = min(MAX_TEST_ITERATIONS, 100)
     fail_count = 0
@@ -364,6 +375,10 @@ def test_temperature_sensors(arc_chip_dut, asic_id):
 
 
 def test_process_detectors(arc_chip_dut, asic_id):
+    """
+    Repeatedly validates that process detector readings (READ_PD) succeed and
+    stay within expected bounds across stress iterations.
+    """
     test_name = "Process detector test"
     total_tries = min(MAX_TEST_ITERATIONS, 50)
     fail_count = 0
@@ -379,6 +394,10 @@ def test_process_detectors(arc_chip_dut, asic_id):
 
 
 def test_voltage_monitors(arc_chip_dut, asic_id):
+    """
+    Repeatedly validates that voltage monitor readings (READ_VM) succeed and
+    stay within expected bounds across stress iterations.
+    """
     test_name = "Voltage monitor test"
     total_tries = min(MAX_TEST_ITERATIONS, 100)
     fail_count = 0
@@ -394,6 +413,10 @@ def test_voltage_monitors(arc_chip_dut, asic_id):
 
 
 def test_pvt_comprehensive(arc_chip_dut, asic_id):
+    """
+    Repeatedly validates temperature, process detector, and voltage monitor
+    readings (READ_TS, READ_PD, READ_VM) across stress iterations.
+    """
     test_name = "Comprehensive PVT test"
     total_tries = min(MAX_TEST_ITERATIONS, 20)
     fail_count = 0
@@ -409,6 +432,10 @@ def test_pvt_comprehensive(arc_chip_dut, asic_id):
 
 
 def test_power_state_toggle(arc_chip_dut, asic_id, board_name):
+    """
+    Repeatedly toggles between high and low power states and verifies the
+    expected TDP delta across stress iterations.
+    """
     test_name = "Power state toggle test"
     total_tries = min(MAX_TEST_ITERATIONS, 100)
     fail_count = 0

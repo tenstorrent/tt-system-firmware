@@ -223,6 +223,9 @@ def test_upgrade_from_19_0(
     unlaunched_dut,
     asic_id,
 ):
+    """
+    Validates firmware upgrade to the current bundle from the v19.0.0 release.
+    """
     upgrade_from_version_test(
         arc_chip_dut,
         tmp_path,
@@ -299,6 +302,10 @@ def test_smi_reset(arc_chip_dut, asic_id):
 
 
 def test_aiclk(arc_chip_dut, asic_id):
+    """
+    Validates that forcing AICLK to target frequencies (1000, 800, and 250 MHz)
+    succeeds and reports the expected clock frequency.
+    """
     arc_chip = pyluwen.detect_chips()[asic_id]
     TARGET_AICLKS = [
         1000,
