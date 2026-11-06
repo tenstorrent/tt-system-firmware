@@ -7,6 +7,16 @@ tqdm
 west
 # zephyr-keep-sorted-stop
 
+# Python modules imported directly by the flashing/utility scripts in this
+# directory (e.g. smc_spi_flash.py, pyocd_utils.py, tt_boot_fs.py)
+# zephyr-keep-sorted-start
+imgtool>=2.1.0
+intelhex>=2.3.0
+jsonschema>=4.17.0
+pyocd>=0.34.0
+pyusb>=1.2.1
+# zephyr-keep-sorted-stop
+
 # zephyr-keep-sorted-start
 pyluwen>=0.8.1; sys_platform == "linux"
 tt-burnin>=0.4.0; sys_platform == "linux"
