@@ -113,6 +113,32 @@ EFUSE_BOX_FUNC = 2
 
 FUSE_ASIC_ID_LOW_START_BIT = 1600
 FUSE_ASIC_ID_HIGH_START_BIT = 5568
+FUSE_ASIC_ID_OLD_START_BIT = 1056
+FUSE_ASIC_ID_OLD_END_BIT = 1071
+FUSE_ATE_TENSIX_ROW0_TEST_STATUS_START_BIT = 3168
+FUSE_ATE_TENSIX_ROW_STRIDE = 32
+NUM_TENSIX_ROWS = 10
+FUSE_SLT_ATE_SLT_STATUS_START_BIT = 4160
+FUSE_SLT_ATE_SLT_STATUS_END_BIT = 4161
+FUSE_SLT_FUSE_MAP_VERSION_START_BIT = 4162
+FUSE_SLT_FUSE_MAP_VERSION_END_BIT = 4191
+FUSE_SLT_HARVESTED_TENSIX_COLUMNS_START_BIT = 5536
+FUSE_SLT_HARVESTED_TENSIX_COLUMNS_END_BIT = 5551
+FUSE_ATE_DDR_TEST_STATUS_START_BIT = 3504
+FUSE_ATE_DDR_TEST_STATUS_END_BIT = 3511
+FUSE_SLT_DDR_TEST_STATUS_16G_START_BIT = 5472
+FUSE_SLT_DDR_TEST_STATUS_16G_END_BIT = 5479
+FUSE_SLT_DDR_TEST_STATUS_14G_START_BIT = 5480
+FUSE_SLT_DDR_TEST_STATUS_14G_END_BIT = 5487
+FUSE_SLT_DDR_TEST_STATUS_12G_START_BIT = 5488
+FUSE_SLT_DDR_TEST_STATUS_12G_END_BIT = 5495
+FUSE_ATE_ETH_CTRL_TEST_STATUS_START_BIT = 3536
+FUSE_ATE_ETH_CTRL_TEST_STATUS_END_BIT = 3551
+FUSE_SLT_ETH_CTRL_TEST_STATUS_START_BIT = 5520
+FUSE_SLT_ETH_CTRL_TEST_STATUS_END_BIT = 5535
+FUSE_ATE_RISCV_L2_TEST_STATUS_START_BIT = 3520
+FUSE_ATE_RISCV_L2_TEST_STATUS_END_BIT = 3535
+NUM_L2CPU_CLUSTERS = 4
 
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
@@ -150,12 +176,19 @@ TAG_TDP = 7
 TAG_DM_APP_FW_VERSION = 26
 TAG_ETH_LIVE_STATUS = 21
 TAG_CM_FW_VERSION = 29
+TAG_ENABLED_TENSIX_COL = 34
 TAG_ENABLED_ETH = 35
+TAG_ENABLED_GDDR = 36
+TAG_ENABLED_L2CPU = 37
 TAG_INPUT_POWER = 54
 TAG_ASIC_ID_HIGH = 61
 TAG_ASIC_ID_LOW = 62
 TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
+TAG_EFUSE_HARVESTED_TENSIX_COL = 86
+TAG_EFUSE_HARVESTED_GDDR = 87
+TAG_EFUSE_HARVESTED_ETH = 88
+TAG_EFUSE_HARVESTED_L2CPU = 89
 
 NUM_PD = 16
 NUM_VM = 8
@@ -174,6 +207,39 @@ def read_telem(arc_chip, telem_idx):
 def read_functional_efuse_word(arc_chip, word_idx):
     func_base = EFUSE_DFT0_MEM_BASE_ADDR + EFUSE_BOX_FUNC * EFUSE_BOX_ADDR_ALIGN
     return arc_chip.axi_read32(func_base + word_idx * 4)
+
+
+def read_functional_efuse_field(arc_chip, start_bit, end_bit):
+    """Reads an efuse field of up to 32 bits that may span two words"""
+    word_idx = start_bit // 32
+    data = read_functional_efuse_word(arc_chip, word_idx) | (
+        read_functional_efuse_word(arc_chip, word_idx + 1) << 32
+    )
+    return (data >> (start_bit % 32)) & ((1 << (end_bit - start_bit + 1)) - 1)
+
+
+def harvest_fuses_valid(arc_chip):
+    """Firmware ignores harvesting fuses on parts fused before the ASIC ID moved"""
+    return (
+        read_functional_efuse_field(
+            arc_chip, FUSE_ASIC_ID_OLD_START_BIT, FUSE_ASIC_ID_OLD_END_BIT
+        )
+        == 0
+    )
+
+
+def slt_fuse_map_version(arc_chip):
+    """Returns the SLT fuse map version, or 0 if the SLT fuses are invalid"""
+    slt_status = read_functional_efuse_field(
+        arc_chip, FUSE_SLT_ATE_SLT_STATUS_START_BIT, FUSE_SLT_ATE_SLT_STATUS_END_BIT
+    )
+    if not slt_status & 0x2:
+        return 0
+    return read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_FUSE_MAP_VERSION_START_BIT,
+        FUSE_SLT_FUSE_MAP_VERSION_END_BIT,
+    )
 
 
 def convert_telemetry_to_float(value):
@@ -1226,6 +1292,207 @@ def test_tensix_reset_single(arc_chip_dut, asic_id):
         )
 
     assert failed == 0, f"{failed}/{len(all_tiles)} tiles failed"
+
+
+def test_tensix_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_TENSIX_COL matches the Tensix columns
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    column.
+    """
+    TENSIX_COL_MASK = 0x3FFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_TENSIX_COL)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_TENSIX_COL)
+
+    logger.info(
+        f"Tensix columns enabled: {enabled:#06x}, efuse harvested: {efuse:#06x}, "
+        f"soft harvested: {TENSIX_COL_MASK & ~(enabled | efuse):#06x}"
+    )
+
+    assert (efuse & ~TENSIX_COL_MASK) == 0, "Efuse mask outside Tensix columns"
+    assert (enabled & efuse) == 0, "Enabled column reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = 0
+    for row in range(NUM_TENSIX_ROWS):
+        start = (
+            FUSE_ATE_TENSIX_ROW0_TEST_STATUS_START_BIT
+            + row * FUSE_ATE_TENSIX_ROW_STRIDE
+        )
+        ate |= read_functional_efuse_field(
+            arc_chip, start, start + FUSE_ATE_TENSIX_ROW_STRIDE - 1
+        )
+    ate &= TENSIX_COL_MASK
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_HARVESTED_TENSIX_COLUMNS_START_BIT,
+        FUSE_SLT_HARVESTED_TENSIX_COLUMNS_END_BIT,
+    )
+    logger.info(
+        f"ATE columns: {ate:#06x}, SLT fuse map v{slt_version}, SLT columns: {slt:#06x}"
+    )
+
+    if slt_version == 0:
+        expected = ate
+    elif slt_version == 1:
+        # Fuse map v1 stores NOC X coordinates and infers a column from the
+        # binning fuse (SYS-1035), so only bound the result
+        assert (ate & ~efuse) == 0, "ATE-harvested column missing from efuse mask"
+        return
+    else:
+        expected = ate | (slt & TENSIX_COL_MASK)
+
+    assert efuse == expected, (
+        f"Efuse mask {efuse:#06x} does not match fuses {expected:#06x}"
+    )
+
+
+def test_gddr_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_GDDR matches the GDDR instances
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    instance.
+    """
+    GDDR_MASK = 0xFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_GDDR)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_GDDR)
+
+    logger.info(
+        f"GDDR enabled: {enabled:#04x}, efuse harvested: {efuse:#04x}, "
+        f"soft harvested: {GDDR_MASK & ~(enabled | efuse):#04x}"
+    )
+
+    assert (efuse & ~GDDR_MASK) == 0, "Efuse mask outside GDDR instances"
+    assert (enabled & efuse) == 0, "Enabled instance reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip, FUSE_ATE_DDR_TEST_STATUS_START_BIT, FUSE_ATE_DDR_TEST_STATUS_END_BIT
+    )
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = 0
+    for start, end in (
+        (FUSE_SLT_DDR_TEST_STATUS_12G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_12G_END_BIT),
+        (FUSE_SLT_DDR_TEST_STATUS_14G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_14G_END_BIT),
+        (FUSE_SLT_DDR_TEST_STATUS_16G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_16G_END_BIT),
+    ):
+        slt |= read_functional_efuse_field(arc_chip, start, end)
+    logger.info(
+        f"ATE instances: {ate:#04x}, SLT fuse map v{slt_version}, SLT instances: {slt:#04x}"
+    )
+
+    if slt_version == 0:
+        expected = ate
+    else:
+        if slt_version <= 2:
+            # Firmware ignores SLT GDDR3 failures for fuse map <= v2 (SYS-1065)
+            slt &= ~(1 << 3)
+        expected = ate | slt
+
+    assert efuse == expected & GDDR_MASK, (
+        f"Efuse mask {efuse:#04x} does not match fuses {expected & GDDR_MASK:#04x}"
+    )
+
+
+def test_eth_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_ETH matches the Ethernet instances
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    instance.
+    """
+    ETH_MASK = 0x3FFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_ETH)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_ETH)
+
+    logger.info(
+        f"ETH enabled: {enabled:#06x}, efuse harvested: {efuse:#06x}, "
+        f"soft harvested: {ETH_MASK & ~(enabled | efuse):#06x}"
+    )
+
+    assert (efuse & ~ETH_MASK) == 0, "Efuse mask outside ETH instances"
+    assert (enabled & efuse) == 0, "Enabled instance reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip,
+        FUSE_ATE_ETH_CTRL_TEST_STATUS_START_BIT,
+        FUSE_ATE_ETH_CTRL_TEST_STATUS_END_BIT,
+    )
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_ETH_CTRL_TEST_STATUS_START_BIT,
+        FUSE_SLT_ETH_CTRL_TEST_STATUS_END_BIT,
+    )
+    logger.info(
+        f"ATE instances: {ate:#06x}, SLT fuse map v{slt_version}, SLT instances: {slt:#06x}"
+    )
+
+    expected = ate if slt_version == 0 else ate | slt
+
+    assert efuse == expected & ETH_MASK, (
+        f"Efuse mask {efuse:#06x} does not match fuses {expected & ETH_MASK:#06x}"
+    )
+
+
+def test_l2cpu_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_L2CPU matches the L2CPU clusters
+    harvested by the ATE efuse, and that it never reports an enabled cluster.
+    """
+    L2CPU_MASK = 0xF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_L2CPU)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_L2CPU)
+
+    logger.info(
+        f"L2CPU enabled: {enabled:#03x}, efuse harvested: {efuse:#03x}, "
+        f"soft harvested: {L2CPU_MASK & ~(enabled | efuse):#03x}"
+    )
+
+    assert (efuse & ~L2CPU_MASK) == 0, "Efuse mask outside L2CPU clusters"
+    assert (enabled & efuse) == 0, "Enabled cluster reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip,
+        FUSE_ATE_RISCV_L2_TEST_STATUS_START_BIT,
+        FUSE_ATE_RISCV_L2_TEST_STATUS_END_BIT,
+    )
+    logger.info(f"ATE L2CPU fuse: {ate:#06x}")
+
+    # ATE only fuses the first core bit of each 4-core cluster
+    expected = 0
+    for cluster in range(NUM_L2CPU_CLUSTERS):
+        if ate & (1 << (cluster * 4)):
+            expected |= 1 << cluster
+
+    assert efuse == expected, (
+        f"Efuse mask {efuse:#03x} does not match fuses {expected:#03x}"
+    )
 
 
 def test_aiclk(arc_chip_dut, asic_id):

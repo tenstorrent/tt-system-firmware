@@ -12,6 +12,11 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+- Add the `TAG_EFUSE_HARVESTED_TENSIX_COL` (86) telemetry entry, a bitmap of the Tensix columns harvested by efuse.
+- Add the `TAG_EFUSE_HARVESTED_GDDR` (87) telemetry entry, a bitmap of the GDDR instances harvested by efuse.
+- Add the `TAG_EFUSE_HARVESTED_ETH` (88) telemetry entry, a bitmap of the Ethernet instances harvested by efuse.
+- Add the `TAG_EFUSE_HARVESTED_L2CPU` (89) telemetry entry, a bitmap of the L2CPU clusters harvested by efuse.
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->

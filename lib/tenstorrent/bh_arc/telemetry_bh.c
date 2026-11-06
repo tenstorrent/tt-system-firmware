@@ -183,6 +183,11 @@ static struct telemetry_table telemetry_table = {
 		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
 		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
 		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
+		[81] = {TAG_EFUSE_HARVESTED_TENSIX_COL,
+			TELEM_OFFSET(TAG_EFUSE_HARVESTED_TENSIX_COL)},
+		[82] = {TAG_EFUSE_HARVESTED_GDDR, TELEM_OFFSET(TAG_EFUSE_HARVESTED_GDDR)},
+		[83] = {TAG_EFUSE_HARVESTED_ETH, TELEM_OFFSET(TAG_EFUSE_HARVESTED_ETH)},
+		[84] = {TAG_EFUSE_HARVESTED_L2CPU, TELEM_OFFSET(TAG_EFUSE_HARVESTED_L2CPU)},
 	},
 };
 /* clang-format on */
@@ -386,9 +391,13 @@ void telemetry_platform_write_static(uint32_t app_version)
 
 	/* Tile enablement / harvesting information */
 	telemetry[TAG_ENABLED_TENSIX_COL] = tile_enable.tensix_col_enabled;
+	telemetry[TAG_EFUSE_HARVESTED_TENSIX_COL] = tile_enable.tensix_col_efuse_harvested;
 	telemetry[TAG_ENABLED_ETH] = tile_enable.eth_enabled;
+	telemetry[TAG_EFUSE_HARVESTED_ETH] = tile_enable.eth_efuse_harvested;
 	telemetry[TAG_ENABLED_GDDR] = tile_enable.gddr_enabled;
+	telemetry[TAG_EFUSE_HARVESTED_GDDR] = tile_enable.gddr_efuse_harvested;
 	telemetry[TAG_ENABLED_L2CPU] = tile_enable.l2cpu_enabled;
+	telemetry[TAG_EFUSE_HARVESTED_L2CPU] = tile_enable.l2cpu_efuse_harvested;
 	telemetry[TAG_PCIE_USAGE] =
 		((tile_enable.pcie_usage[1] & 0x3) << 2) | (tile_enable.pcie_usage[0] & 0x3);
 	/* telemetry[TAG_NOC_TRANSLATION] assumes zero-init, see also
