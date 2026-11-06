@@ -201,7 +201,9 @@ jobs:
         - /dev/hugepages-1G:/dev/hugepages-1G
         - /dev/hugepages:/dev/hugepages
         - /opt/tenstorrent/hf-models/:/opt/tenstorrent/hf-models/
-        - /opt/tenstorrent/kmd-builds/:/opt/tenstorrent/kmd-builds/
+        # Host kernel build tree, required to compile tt-kmd in-container (same as metal.yml).
+        - /lib/modules:/lib/modules:ro
+        - /usr/src:/usr/src:ro
       options: ${{ matrix.config.metal-options }}
     defaults:
       run:
@@ -229,23 +231,6 @@ jobs:
       POWER_CI_BURNIN_SECONDS: "300"
       TT_BURNIN_VERSION: v0.4.4
     steps:
-      - name: Select tt-kmd
-        run: |
-          sudo apt update || true
-          sudo apt install -y kmod
-          KO=/opt/tenstorrent/kmd-builds/${{ matrix.config.kmd_build }}/tenstorrent.ko
-          if [ -f "$KO" ]; then
-            sudo rmmod tenstorrent || true
-            if ! sudo insmod "$KO"; then
-              echo "::warning::could not load $KO; reloading the host's driver"
-              sudo modprobe tenstorrent
-            fi
-          else
-            echo "::warning::$KO not on this runner; keeping the host's driver"
-          fi
-          [ -e /sys/module/tenstorrent ] || { echo "::error::no tenstorrent driver loaded"; exit 1; }
-          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
-
       - name: Install ipmitool
         if: ${{ env.SYSTEM_POWER == 'ipmi' }}
         run: |
@@ -257,6 +242,12 @@ jobs:
         with:
           sparse-checkout: scripts
           sparse-checkout-cone-mode: false
+
+      # Same driver setup as metal.yml: build the board's kmd_build tag against the running kernel and load it.
+      - name: Build and load tt-kmd
+        run: |
+          sudo bash scripts/ci/build-and-load-kmd.sh "${{ matrix.config.kmd_build }}"
+          echo "tt-kmd version: $(cat /sys/module/tenstorrent/version)"
 
       - name: Set up tools venv
         run: |

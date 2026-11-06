@@ -21,9 +21,9 @@ import argparse
 import csv
 import glob
 import json
+import multiprocessing
 import os
 import signal
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -40,7 +40,9 @@ GDDR_TEMP_TAGS = {
     6: "GDDR67_TEMP",
     7: "GDDR67_TEMP",
 }
-INVALID_FLOAT_TELEMETRY = 0x80000000  # firmware ConvertFloatToTelemetry(): not a valid float
+INVALID_FLOAT_TELEMETRY = (
+    0x80000000  # firmware ConvertFloatToTelemetry(): not a valid float
+)
 
 # Telemetry tag ids (include/tenstorrent/telemetry_tags.h). AICLK_ARB_MAX = arb_max_freq | (arbiter << 16).
 ARB_TAGS = {
@@ -58,14 +60,18 @@ SUBMSG_SET_TELEM_INTERVAL = 0x05
 MSG_COUNTER = 0x35
 COUNTER_CMD_GET, COUNTER_CMD_CLEAR = 0, 1
 COUNTER_BANK_DVFS = 1
-DVFS_COUNTERS = {"dvfs_dropped_ticks": 0, "dvfs_max_period_us": 1, "dvfs_max_pass_us": 2}
+DVFS_COUNTERS = {
+    "dvfs_dropped_ticks": 0,
+    "dvfs_max_period_us": 1,
+    "dvfs_max_pass_us": 2,
+}
 DEFAULT_INTERVAL_MS = 100
 # A board reset mid-capture (tt_burnin, tt-smi -r) leaves pyluwen hung inside a read, which no signal interrupts,
 # so the sampling runs in a child process: the parent restarts it when the CSVs stop growing.
-STALL_S = (
-    10  # no new CSV bytes for this long: kill and restart the sampler (it re-detects the chips)
+STALL_S = 10  # no new CSV bytes for this long: kill and restart the sampler (it re-detects the chips)
+START_GRACE_S = (
+    60  # a fresh sampler gets this long to detect the chips and apply the interval
 )
-START_GRACE_S = 60  # a fresh sampler gets this long to detect the chips and apply the interval
 GIVE_UP_S = 300  # no reading at all for this long: the capture is dead
 
 STOP = False
@@ -145,9 +151,15 @@ class ArbReader:
         if not addrs:
             return {}
         try:
-            return {name: int(self.chips[pci].axi_read32(addr)) for name, addr in addrs.items()}
+            return {
+                name: int(self.chips[pci].axi_read32(addr))
+                for name, addr in addrs.items()
+            }
         except Exception as exc:  # noqa: BLE001
-            print(f"arbiter read failed on pci:{pci}; disabled for this device ({exc})", flush=True)
+            print(
+                f"arbiter read failed on pci:{pci}; disabled for this device ({exc})",
+                flush=True,
+            )
             self.addrs[pci] = {}
             return {}
 
@@ -160,29 +172,38 @@ def arc_msg(chip, words: list[int], timeout: float = 2.0):
     response word 0 nonzero = rejected or unknown (tt_shell.c makes the same check)."""
     resp = chip.arc_msg_buf((words + [0] * 8)[:8], timeout=timeout)
     if resp and int(resp[0]) != 0:
-        raise RuntimeError(f"ARC request 0x{words[0] & 0xFF:02x} rejected (status {int(resp[0])})")
+        raise RuntimeError(
+            f"ARC request 0x{words[0] & 0xFF:02x} rejected (status {int(resp[0])})"
+        )
     return resp
 
 
 def set_interval(chip, ms: int):
-    return arc_msg(chip, [MSG_CHARACTERISATION | (SUBMSG_SET_TELEM_INTERVAL << 8), int(ms)])
+    return arc_msg(
+        chip, [MSG_CHARACTERISATION | (SUBMSG_SET_TELEM_INTERVAL << 8), int(ms)]
+    )
 
 
 def counter_get(chip, index: int) -> int | None:
     resp = arc_msg(
-        chip, [MSG_COUNTER, COUNTER_CMD_GET | (COUNTER_BANK_DVFS << 8) | (index << 16), 0]
+        chip,
+        [MSG_COUNTER, COUNTER_CMD_GET | (COUNTER_BANK_DVFS << 8) | (index << 16), 0],
     )
     return int(resp[2]) if resp else None
 
 
 def counter_clear(chip, mask: int = 0x7):
-    return arc_msg(chip, [MSG_COUNTER, COUNTER_CMD_CLEAR | (COUNTER_BANK_DVFS << 8), mask & 0xFFFF])
+    return arc_msg(
+        chip, [MSG_COUNTER, COUNTER_CMD_CLEAR | (COUNTER_BANK_DVFS << 8), mask & 0xFFFF]
+    )
 
 
 def fw_version(chip) -> str | None:
     v = read_tag(chip, TAG_FW_BUNDLE_VERSION)
     return (
-        None if v is None else f"{(v >> 24) & 0xFF}.{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}.{v & 0xFF}"
+        None
+        if v is None
+        else f"{(v >> 24) & 0xFF}.{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}.{v & 0xFF}"
     )
 
 
@@ -239,23 +260,35 @@ def chip_row(raw: dict, pci: int, workload: str, arb: dict) -> dict:
         v = raw.get(name)
         return default if v is None else int(v, 16)
 
-    def avail(name, default=0):  # all-ones = not available on this board (e.g. FAN_RPM on Galaxy)
+    def avail(
+        name, default=0
+    ):  # all-ones = not available on this board (e.g. FAN_RPM on Galaxy)
         v = hexval(name)
         return default if v is None or v == 0xFFFFFFFF else v
 
     def temp(name):  # 0 = not implemented, all-ones = unavailable: both -1, never 0.0 C
         v = hexval(name)
-        return -1 if v in (None, 0, 0xFFFFFFFF, INVALID_FLOAT_TELEMETRY) else signed_16_16(v)
+        return (
+            -1
+            if v in (None, 0, 0xFFFFFFFF, INVALID_FLOAT_TELEMETRY)
+            else signed_16_16(v)
+        )
 
     row = {
-        "TIMESTAMP": datetime.now(timezone.utc).isoformat(sep=" ", timespec="milliseconds"),
+        "TIMESTAMP": datetime.now(timezone.utc).isoformat(
+            sep=" ", timespec="milliseconds"
+        ),
         "WORKLOAD": workload,
         "PCI_INDEX": pci,  # on Galaxy every chip reports the same BOARD_ID; this tells the 32 chips apart
-        "BOARD_ID": raw.get("BOARD_ID", "-1"),  # hex string, as in every earlier capture
+        "BOARD_ID": raw.get(
+            "BOARD_ID", "-1"
+        ),  # hex string, as in every earlier capture
         "VCORE": hexval("VCORE", -1000) / 1000,
         "TDC": hexval("TDC", -1) & 0xFFFF if raw.get("TDC") is not None else -1,
         "TDP": hexval("TDP") & 0xFFFF if raw.get("TDP") is not None else -1,
-        "INPUT_POWER": hexval("INPUT_POWER") & 0xFFFF if raw.get("INPUT_POWER") is not None else -1,
+        "INPUT_POWER": hexval("INPUT_POWER") & 0xFFFF
+        if raw.get("INPUT_POWER") is not None
+        else -1,
         "ASIC_TEMP": signed_16_16(hexval("ASIC_TEMPERATURE"))
         if raw.get("ASIC_TEMPERATURE") is not None
         else -1,
@@ -346,6 +379,28 @@ def write_report(path: str, report: dict) -> None:
             json.dump(report, f, indent=2)
 
 
+def _sampler_entry(args: argparse.Namespace, report_path: str) -> None:
+    """Body of the sampler process: a fork of the supervisor, no command line involved."""
+    global STOP
+    STOP = False
+    _die_with_parent()
+    signal.signal(signal.SIGINT, _stop)
+    signal.signal(signal.SIGTERM, _stop)
+    args = argparse.Namespace(**vars(args))
+    args.report = report_path
+    sys.exit(sample(args))
+
+
+def start_sampler(
+    args: argparse.Namespace, report_path: str
+) -> multiprocessing.Process:
+    child = multiprocessing.get_context("fork").Process(
+        target=_sampler_entry, args=(args, report_path), name="sampler"
+    )
+    child.start()
+    return child
+
+
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         description="Read Blackhole chip telemetry to CSV", allow_abbrev=False
@@ -364,12 +419,17 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="firmware telemetry interval for the capture (0 = leave the default)",
     )
-    ap.add_argument("--report", default="", help="JSON report written when the capture stops")
-    ap.add_argument("--no-arb", action="store_true", help="skip the AICLK arbiter / throttler tags")
     ap.add_argument(
-        "--restore-interval", action="store_true", help="restore the firmware interval and exit"
+        "--report", default="", help="JSON report written when the capture stops"
     )
-    ap.add_argument("--sampler", action="store_true", help=argparse.SUPPRESS)  # the child process
+    ap.add_argument(
+        "--no-arb", action="store_true", help="skip the AICLK arbiter / throttler tags"
+    )
+    ap.add_argument(
+        "--restore-interval",
+        action="store_true",
+        help="restore the firmware interval and exit",
+    )
     return ap.parse_args()
 
 
@@ -401,7 +461,9 @@ def sample(args: argparse.Namespace) -> int:
         report["interval"] = applied
         if applied["applied"]:
             if args.delay is None:
-                delay = max(0.002, args.interval_ms / 2000)  # two reads per firmware refresh
+                delay = max(
+                    0.002, args.interval_ms / 2000
+                )  # two reads per firmware refresh
         else:
             print(
                 f"::warning::telemetry interval {args.interval_ms} ms applied on {applied['applied_chips']}/{len(bh_chips)} "
@@ -421,7 +483,9 @@ def sample(args: argparse.Namespace) -> int:
                 time.monotonic() - reported > 5
             ):  # a sampler killed mid-reset still leaves a recent count
                 report["rows_per_chip"] = {str(k): v for k, v in sorted(rows.items())}
-                report["read_failures"] = {str(k): v for k, v in sorted(failures.items())}
+                report["read_failures"] = {
+                    str(k): v for k, v in sorted(failures.items())
+                }
                 write_report(args.report, report)
                 reported = time.monotonic()
             for pci, dev in zip(pci_ids, devices):
@@ -442,7 +506,9 @@ def sample(args: argparse.Namespace) -> int:
                             raw[key.upper()] = hex(int(v))
                         except (TypeError, ValueError):
                             pass
-                sink.write(chip_row(raw, pci, args.workload, arb.read(pci) if arb else {}))
+                sink.write(
+                    chip_row(raw, pci, args.workload, arb.read(pci) if arb else {})
+                )
                 rows[pci] = rows.get(pci, 0) + 1
             time.sleep(delay)
     except Exception as exc:  # noqa: BLE001  a collector that died must not look like a complete measurement
@@ -472,11 +538,15 @@ def sample(args: argparse.Namespace) -> int:
     return rc
 
 
-def _die_with_parent() -> None:  # Linux: SIGKILL the sampler if the supervisor is killed
+def _die_with_parent() -> (
+    None
+):  # Linux: SIGKILL the sampler if the supervisor is killed
     try:
         import ctypes
 
-        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(
+            1, signal.SIGKILL
+        )  # PR_SET_PDEATHSIG
     except (OSError, AttributeError):
         pass
 
@@ -488,7 +558,9 @@ def merge_report(total: dict, path: str) -> None:
         os.remove(path)
     except (OSError, ValueError):
         return
-    total["chips_detected"] = max(total["chips_detected"], part.get("chips_detected", 0))
+    total["chips_detected"] = max(
+        total["chips_detected"], part.get("chips_detected", 0)
+    )
     for key in ("rows_per_chip", "read_failures"):
         for k, v in (part.get(key) or {}).items():
             total[key][k] = total[key].get(k, 0) + int(v)
@@ -504,14 +576,6 @@ def supervise(args: argparse.Namespace) -> int:
     """Run sample() in a child and restart it when the CSVs stop growing (a board reset hangs pyluwen reads)."""
     report = new_report()
     part_path = (args.report or f"{args.csv}_report.json") + ".part"
-    cmd = [
-        sys.executable,
-        os.path.abspath(__file__),
-        *sys.argv[1:],
-        "--sampler",
-        "--report",
-        part_path,
-    ]
 
     def csv_bytes() -> int:
         return sum(os.path.getsize(f) for f in glob.glob(f"{args.csv}_*.csv"))
@@ -524,7 +588,7 @@ def supervise(args: argparse.Namespace) -> int:
         if child is None:
             if STOP:
                 break
-            child = subprocess.Popen(cmd, preexec_fn=_die_with_parent)
+            child = start_sampler(args, part_path)
             started = progressed = time.monotonic()
             size = csv_bytes()
         time.sleep(0.5)
@@ -532,21 +596,24 @@ def supervise(args: argparse.Namespace) -> int:
         cur = csv_bytes()
         if cur != size:
             size, progressed, last_rows_at = cur, now, now
-        ret = child.poll()
+        ret = None if child.is_alive() else child.exitcode
         if STOP and ret is None:
-            child.send_signal(signal.SIGINT)
-            try:
-                ret = child.wait(20)
-            except subprocess.TimeoutExpired:
+            os.kill(child.pid, signal.SIGINT)
+            child.join(20)
+            if child.is_alive():
                 child.kill()
-                ret = child.wait()
-        elif ret is None and now - started > START_GRACE_S and now - progressed > STALL_S:
+                child.join()
+            ret = child.exitcode
+        elif (
+            ret is None and now - started > START_GRACE_S and now - progressed > STALL_S
+        ):
             print(
                 f"no telemetry written for {STALL_S} s (board reset?); restarting the sampler",
                 flush=True,
             )
             child.kill()
-            ret = child.wait()
+            child.join()
+            ret = child.exitcode
         if ret is None:
             continue
         merge_report(report, part_path)
@@ -583,7 +650,7 @@ def main() -> int:
         write_report(args.report, report)
         print(json.dumps(report["interval"], indent=1))
         return 0
-    return sample(args) if args.sampler else supervise(args)
+    return supervise(args)
 
 
 if __name__ == "__main__":

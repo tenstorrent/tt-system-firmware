@@ -21,7 +21,9 @@ import sys
 import time
 
 STOP = False
-_CHILD: subprocess.Popen | None = None  # the ipmitool call in flight, so a stop signal ends it too
+_CHILD: subprocess.Popen | None = (
+    None  # the ipmitool call in flight, so a stop signal ends it too
+)
 
 
 def _stop(signum, frame):  # noqa: ARG001
@@ -71,7 +73,9 @@ def sdr_list(timeout: float) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(allow_abbrev=False, description="Poll IPMI Power_* sensors to CSV")
+    ap = argparse.ArgumentParser(
+        allow_abbrev=False, description="Poll IPMI Power_* sensors to CSV"
+    )
     ap.add_argument("--out", default="ipmi_power.csv")
     ap.add_argument(
         "--interval",
@@ -80,7 +84,9 @@ def main() -> int:
         help="seconds between polls (one SDR walk takes a few seconds on Galaxy)",
     )
     ap.add_argument("--prefix", default="Power_", help="sensor name prefix to keep")
-    ap.add_argument("--timeout", type=float, default=30.0, help="ipmitool timeout per poll")
+    ap.add_argument(
+        "--timeout", type=float, default=30.0, help="ipmitool timeout per poll"
+    )
     args = ap.parse_args()
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
@@ -94,12 +100,16 @@ def main() -> int:
             if any(v is not None for v in values.values()):
                 if writer is None:
                     writer = csv.DictWriter(
-                        fh, fieldnames=["Timestamp", *sorted(values)], extrasaction="ignore"
+                        fh,
+                        fieldnames=["Timestamp", *sorted(values)],
+                        extrasaction="ignore",
                     )
                     writer.writeheader()
                 writer.writerow(
                     {
-                        "Timestamp": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                        "Timestamp": dt.datetime.now(dt.timezone.utc).isoformat(
+                            timespec="seconds"
+                        ),
                         **values,
                     }
                 )
