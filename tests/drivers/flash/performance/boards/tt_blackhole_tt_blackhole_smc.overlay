@@ -9,7 +9,7 @@ storage_partition: &storage {
 	reg = <0x600000 DT_SIZE_K(32)>;
 };
 
-/* Raise CSM to 256KB */
+/* Raise CSM to 320KB: this test holds two TEST_AREA_SIZE (32KB) buffers */
 &csm {
-	reg = <0x10000000 0x40000>;
+	reg = <0x10000000 0x50000>;
 };

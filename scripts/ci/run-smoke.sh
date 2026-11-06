@@ -90,6 +90,7 @@ if [[ "$TEST_SET" == *"dmc"* ]]; then
 		--device-serial-pty "$TT_Z_P_ROOT/scripts/dmc_rtt.py" \
 		--flash-before \
 		--device-flash-timeout 240 \
+		--overflow-as-errors \
 		--tag smoke \
 		--alt-config-root "$TT_Z_P_ROOT/test-conf/samples" \
 		--alt-config-root "$TT_Z_P_ROOT/test-conf/tests" \
@@ -111,6 +112,7 @@ if [[ "$TEST_SET" == *"smc"* ]]; then
 		--west-flash \
 		--flash-before \
 		--device-flash-timeout 240 \
+		--overflow-as-errors \
 		-T "$TT_Z_P_ROOT/app" \
 		--outdir "$ZEPHYR_BASE/twister-dmc-e2e" \
 		"$@"
@@ -124,6 +126,7 @@ if [[ "$TEST_SET" == *"smc"* ]]; then
 		--west-flash="--no-prompt" \
 		--west-runner tt_bootstrap \
 		--device-flash-timeout 120 \
+		--overflow-as-errors \
 		--tag smoke \
 		--alt-config-root "$TT_Z_P_ROOT/test-conf/samples" \
 		--alt-config-root "$TT_Z_P_ROOT/test-conf/tests" \
