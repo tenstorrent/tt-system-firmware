@@ -136,6 +136,9 @@ FUSE_ATE_ETH_CTRL_TEST_STATUS_START_BIT = 3536
 FUSE_ATE_ETH_CTRL_TEST_STATUS_END_BIT = 3551
 FUSE_SLT_ETH_CTRL_TEST_STATUS_START_BIT = 5520
 FUSE_SLT_ETH_CTRL_TEST_STATUS_END_BIT = 5535
+FUSE_ATE_RISCV_L2_TEST_STATUS_START_BIT = 3520
+FUSE_ATE_RISCV_L2_TEST_STATUS_END_BIT = 3535
+NUM_L2CPU_CLUSTERS = 4
 
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
@@ -176,6 +179,7 @@ TAG_CM_FW_VERSION = 29
 TAG_ENABLED_TENSIX_COL = 34
 TAG_ENABLED_ETH = 35
 TAG_ENABLED_GDDR = 36
+TAG_ENABLED_L2CPU = 37
 TAG_INPUT_POWER = 54
 TAG_ASIC_ID_HIGH = 61
 TAG_ASIC_ID_LOW = 62
@@ -184,6 +188,7 @@ TAG_KERNEL_THROTTLER = 75
 TAG_EFUSE_HARVESTED_TENSIX_COL = 86
 TAG_EFUSE_HARVESTED_GDDR = 87
 TAG_EFUSE_HARVESTED_ETH = 88
+TAG_EFUSE_HARVESTED_L2CPU = 89
 
 NUM_PD = 16
 NUM_VM = 8
@@ -1446,6 +1451,47 @@ def test_eth_efuse_harvested(arc_chip_dut, asic_id):
 
     assert efuse == expected & ETH_MASK, (
         f"Efuse mask {efuse:#06x} does not match fuses {expected & ETH_MASK:#06x}"
+    )
+
+
+def test_l2cpu_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_L2CPU matches the L2CPU clusters
+    harvested by the ATE efuse, and that it never reports an enabled cluster.
+    """
+    L2CPU_MASK = 0xF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_L2CPU)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_L2CPU)
+
+    logger.info(
+        f"L2CPU enabled: {enabled:#03x}, efuse harvested: {efuse:#03x}, "
+        f"soft harvested: {L2CPU_MASK & ~(enabled | efuse):#03x}"
+    )
+
+    assert (efuse & ~L2CPU_MASK) == 0, "Efuse mask outside L2CPU clusters"
+    assert (enabled & efuse) == 0, "Enabled cluster reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip,
+        FUSE_ATE_RISCV_L2_TEST_STATUS_START_BIT,
+        FUSE_ATE_RISCV_L2_TEST_STATUS_END_BIT,
+    )
+    logger.info(f"ATE L2CPU fuse: {ate:#06x}")
+
+    # ATE only fuses the first core bit of each 4-core cluster
+    expected = 0
+    for cluster in range(NUM_L2CPU_CLUSTERS):
+        if ate & (1 << (cluster * 4)):
+            expected |= 1 << cluster
+
+    assert efuse == expected, (
+        f"Efuse mask {efuse:#03x} does not match fuses {expected:#03x}"
     )
 
 

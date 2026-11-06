@@ -546,12 +546,19 @@ typedef union {
  */
 #define TAG_EFUSE_HARVESTED_ETH 88
 
+/** @brief L2CPU clusters harvested by efuse.
+ *
+ * Bit positions match @ref TAG_ENABLED_L2CPU. Only the ATE fuse is used; SLT
+ * does not harvest L2CPU clusters.
+ */
+#define TAG_EFUSE_HARVESTED_L2CPU 89
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 89
+#define TAG_COUNT 90
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100

@@ -38,6 +38,7 @@ TileEnable tile_enable = {
 	.gddr_enabled = BIT_MASK(8),
 	.gddr_efuse_harvested = 0,
 	.l2cpu_enabled = BIT_MASK(4),
+	.l2cpu_efuse_harvested = 0,
 	.pcie_enabled = BIT_MASK(2),
 };
 
@@ -203,6 +204,7 @@ static int CalculateHarvesting(void)
 	tile_enable.gddr_enabled = BIT_MASK(8);
 	tile_enable.gddr_efuse_harvested = 0;
 	tile_enable.l2cpu_enabled = BIT_MASK(4);
+	tile_enable.l2cpu_efuse_harvested = 0;
 	tile_enable.pcie_enabled = BIT_MASK(2);
 
 	if (tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.harvesting_en) {
@@ -213,6 +215,8 @@ static int CalculateHarvesting(void)
 				BIT_MASK(14) & ~tile_enable.tensix_col_enabled;
 			tile_enable.gddr_efuse_harvested = BIT_MASK(8) & ~tile_enable.gddr_enabled;
 			tile_enable.eth_efuse_harvested = BIT_MASK(14) & ~tile_enable.eth_enabled;
+			tile_enable.l2cpu_efuse_harvested =
+				BIT_MASK(4) & ~tile_enable.l2cpu_enabled;
 		}
 
 		/* Eth handling */
