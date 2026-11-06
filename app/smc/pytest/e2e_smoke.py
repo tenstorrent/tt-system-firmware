@@ -132,6 +132,10 @@ FUSE_SLT_DDR_TEST_STATUS_14G_START_BIT = 5480
 FUSE_SLT_DDR_TEST_STATUS_14G_END_BIT = 5487
 FUSE_SLT_DDR_TEST_STATUS_12G_START_BIT = 5488
 FUSE_SLT_DDR_TEST_STATUS_12G_END_BIT = 5495
+FUSE_ATE_ETH_CTRL_TEST_STATUS_START_BIT = 3536
+FUSE_ATE_ETH_CTRL_TEST_STATUS_END_BIT = 3551
+FUSE_SLT_ETH_CTRL_TEST_STATUS_START_BIT = 5520
+FUSE_SLT_ETH_CTRL_TEST_STATUS_END_BIT = 5535
 
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
@@ -179,6 +183,7 @@ TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
 TAG_EFUSE_HARVESTED_TENSIX_COL = 86
 TAG_EFUSE_HARVESTED_GDDR = 87
+TAG_EFUSE_HARVESTED_ETH = 88
 
 NUM_PD = 16
 NUM_VM = 8
@@ -1394,6 +1399,53 @@ def test_gddr_efuse_harvested(arc_chip_dut, asic_id):
 
     assert efuse == expected & GDDR_MASK, (
         f"Efuse mask {efuse:#04x} does not match fuses {expected & GDDR_MASK:#04x}"
+    )
+
+
+def test_eth_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_ETH matches the Ethernet instances
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    instance.
+    """
+    ETH_MASK = 0x3FFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_ETH)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_ETH)
+
+    logger.info(
+        f"ETH enabled: {enabled:#06x}, efuse harvested: {efuse:#06x}, "
+        f"soft harvested: {ETH_MASK & ~(enabled | efuse):#06x}"
+    )
+
+    assert (efuse & ~ETH_MASK) == 0, "Efuse mask outside ETH instances"
+    assert (enabled & efuse) == 0, "Enabled instance reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip,
+        FUSE_ATE_ETH_CTRL_TEST_STATUS_START_BIT,
+        FUSE_ATE_ETH_CTRL_TEST_STATUS_END_BIT,
+    )
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_ETH_CTRL_TEST_STATUS_START_BIT,
+        FUSE_SLT_ETH_CTRL_TEST_STATUS_END_BIT,
+    )
+    logger.info(
+        f"ATE instances: {ate:#06x}, SLT fuse map v{slt_version}, SLT instances: {slt:#06x}"
+    )
+
+    expected = ate if slt_version == 0 else ate | slt
+
+    assert efuse == expected & ETH_MASK, (
+        f"Efuse mask {efuse:#06x} does not match fuses {expected & ETH_MASK:#06x}"
     )
 
 

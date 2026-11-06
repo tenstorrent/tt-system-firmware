@@ -20,6 +20,7 @@ typedef struct {
 	uint16_t eth_enabled; /* Bitmap 0-13. 1 = Allowed to use, not necessarily connected outside
 			       * of chip
 			       */
+	uint16_t eth_efuse_harvested; /* Bitmap 0-13 */
 	bool eth5_serdes;     /* False = serdes2 lane 0-3, True = serdes2 lane 4-7 */
 	bool eth8_serdes;     /* False = serdes5 lane 7-4, True = serdes5 lane 3-0 */
 	uint16_t eth_serdes_connected; /* Bitmap 0-11. 1 = Expect an outside board connection */

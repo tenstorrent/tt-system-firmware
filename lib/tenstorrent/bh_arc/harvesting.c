@@ -31,6 +31,7 @@ TileEnable tile_enable = {
 	.tensix_col_enabled = BIT_MASK(14),
 	.tensix_col_efuse_harvested = 0,
 	.eth_enabled = BIT_MASK(14),
+	.eth_efuse_harvested = 0,
 	.eth5_serdes = true,
 	.eth8_serdes = true,
 	.eth_serdes_connected = BIT_MASK(12),
@@ -195,6 +196,7 @@ static int CalculateHarvesting(void)
 	tile_enable.tensix_col_enabled = BIT_MASK(14);
 	tile_enable.tensix_col_efuse_harvested = 0;
 	tile_enable.eth_enabled = BIT_MASK(14);
+	tile_enable.eth_efuse_harvested = 0;
 	tile_enable.eth5_serdes = true;
 	tile_enable.eth8_serdes = true;
 	tile_enable.eth_serdes_connected = BIT_MASK(12);
@@ -210,6 +212,7 @@ static int CalculateHarvesting(void)
 			tile_enable.tensix_col_efuse_harvested =
 				BIT_MASK(14) & ~tile_enable.tensix_col_enabled;
 			tile_enable.gddr_efuse_harvested = BIT_MASK(8) & ~tile_enable.gddr_enabled;
+			tile_enable.eth_efuse_harvested = BIT_MASK(14) & ~tile_enable.eth_enabled;
 		}
 
 		/* Eth handling */
