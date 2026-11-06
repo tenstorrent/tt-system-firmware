@@ -1,0 +1,11 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+config TT_USB_SHELL
+	bool "Second shell on USB CDC ACM"
+	depends on SHELL_BACKEND_SERIAL
+	depends on USBD_CDC_ACM_CLASS
+	help
+	  Run a second shell instance on the CDC ACM node the usb-shell alias
+	  points at, alongside the shell on zephyr,shell-uart. Logging stays on
+	  the serial shell.

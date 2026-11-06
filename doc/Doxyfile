@@ -112,7 +112,8 @@ INPUT                  = _doxygen/main.md \
                          ../include \
                          ../lib \
                          ../drivers \
-                         ../soc/tenstorrent/tt_blackhole/include
+                         ../soc/tenstorrent/tt_blackhole/include \
+                         ../app/dm_test_app/src
 INPUT_ENCODING         = UTF-8
 INPUT_FILE_ENCODING    =
 FILE_PATTERNS          = *.c \
@@ -270,7 +271,10 @@ EXPAND_ONLY_PREDEF     = NO
 SEARCH_INCLUDES        = YES
 INCLUDE_PATH           =
 INCLUDE_FILE_PATTERNS  =
-PREDEFINED             = __syscall=
+PREDEFINED             = __syscall= \
+                         CONFIG_I2C_STM32 \
+                         CONFIG_I3C_CONTROLLER \
+                         CONFIG_SPI
 EXPAND_AS_DEFINED      =
 SKIP_FUNCTION_MACROS   = YES
 # Note: for manual builds, please run "wget https://docs.zephyrproject.org/latest/doxygen/html/zephyr.tag -O /tmp/zephyr.tag"
