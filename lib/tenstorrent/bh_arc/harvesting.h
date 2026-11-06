@@ -24,6 +24,7 @@ typedef struct {
 	bool eth8_serdes;     /* False = serdes5 lane 7-4, True = serdes5 lane 3-0 */
 	uint16_t eth_serdes_connected; /* Bitmap 0-11. 1 = Expect an outside board connection */
 	uint8_t gddr_enabled;          /* Bitmap 0-7 */
+	uint8_t gddr_efuse_harvested;  /* Bitmap 0-7 */
 	uint8_t l2cpu_enabled;         /* Bitmap 0-3. Shows L2CPU cluster enablement */
 	uint8_t pcie_enabled;          /* Bitmap 0-1. Shows PCIe instance enablement */
 	uint8_t pcie_usage[2];         /* bh_pcie_mode_t per PCIe instance (see chip_info.h) */

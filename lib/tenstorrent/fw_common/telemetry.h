@@ -534,12 +534,18 @@ typedef union {
  */
 #define TAG_EFUSE_HARVESTED_TENSIX_COL 86
 
+/** @brief GDDR instances harvested by efuse.
+ *
+ * Bit positions match @ref TAG_ENABLED_GDDR.
+ */
+#define TAG_EFUSE_HARVESTED_GDDR 87
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 87
+#define TAG_COUNT 88
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100

@@ -124,6 +124,14 @@ FUSE_SLT_FUSE_MAP_VERSION_START_BIT = 4162
 FUSE_SLT_FUSE_MAP_VERSION_END_BIT = 4191
 FUSE_SLT_HARVESTED_TENSIX_COLUMNS_START_BIT = 5536
 FUSE_SLT_HARVESTED_TENSIX_COLUMNS_END_BIT = 5551
+FUSE_ATE_DDR_TEST_STATUS_START_BIT = 3504
+FUSE_ATE_DDR_TEST_STATUS_END_BIT = 3511
+FUSE_SLT_DDR_TEST_STATUS_16G_START_BIT = 5472
+FUSE_SLT_DDR_TEST_STATUS_16G_END_BIT = 5479
+FUSE_SLT_DDR_TEST_STATUS_14G_START_BIT = 5480
+FUSE_SLT_DDR_TEST_STATUS_14G_END_BIT = 5487
+FUSE_SLT_DDR_TEST_STATUS_12G_START_BIT = 5488
+FUSE_SLT_DDR_TEST_STATUS_12G_END_BIT = 5495
 
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
@@ -163,12 +171,14 @@ TAG_ETH_LIVE_STATUS = 21
 TAG_CM_FW_VERSION = 29
 TAG_ENABLED_TENSIX_COL = 34
 TAG_ENABLED_ETH = 35
+TAG_ENABLED_GDDR = 36
 TAG_INPUT_POWER = 54
 TAG_ASIC_ID_HIGH = 61
 TAG_ASIC_ID_LOW = 62
 TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
 TAG_EFUSE_HARVESTED_TENSIX_COL = 86
+TAG_EFUSE_HARVESTED_GDDR = 87
 
 NUM_PD = 16
 NUM_VM = 8
@@ -1331,6 +1341,59 @@ def test_tensix_efuse_harvested(arc_chip_dut, asic_id):
 
     assert efuse == expected, (
         f"Efuse mask {efuse:#06x} does not match fuses {expected:#06x}"
+    )
+
+
+def test_gddr_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_GDDR matches the GDDR instances
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    instance.
+    """
+    GDDR_MASK = 0xFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_GDDR)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_GDDR)
+
+    logger.info(
+        f"GDDR enabled: {enabled:#04x}, efuse harvested: {efuse:#04x}, "
+        f"soft harvested: {GDDR_MASK & ~(enabled | efuse):#04x}"
+    )
+
+    assert (efuse & ~GDDR_MASK) == 0, "Efuse mask outside GDDR instances"
+    assert (enabled & efuse) == 0, "Enabled instance reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = read_functional_efuse_field(
+        arc_chip, FUSE_ATE_DDR_TEST_STATUS_START_BIT, FUSE_ATE_DDR_TEST_STATUS_END_BIT
+    )
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = 0
+    for start, end in (
+        (FUSE_SLT_DDR_TEST_STATUS_12G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_12G_END_BIT),
+        (FUSE_SLT_DDR_TEST_STATUS_14G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_14G_END_BIT),
+        (FUSE_SLT_DDR_TEST_STATUS_16G_START_BIT, FUSE_SLT_DDR_TEST_STATUS_16G_END_BIT),
+    ):
+        slt |= read_functional_efuse_field(arc_chip, start, end)
+    logger.info(
+        f"ATE instances: {ate:#04x}, SLT fuse map v{slt_version}, SLT instances: {slt:#04x}"
+    )
+
+    if slt_version == 0:
+        expected = ate
+    else:
+        if slt_version <= 2:
+            # Firmware ignores SLT GDDR3 failures for fuse map <= v2 (SYS-1065)
+            slt &= ~(1 << 3)
+        expected = ate | slt
+
+    assert efuse == expected & GDDR_MASK, (
+        f"Efuse mask {efuse:#04x} does not match fuses {expected & GDDR_MASK:#04x}"
     )
 
 
