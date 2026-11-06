@@ -7,4 +7,13 @@ config DMC_RUN_SMBUS_TESTS
 	  Run SMBUS tests on the DMC at boot time. This can be used to verify
 	  functionality of the SMBUS interface.
 
+config DMC_CLK_GEN_RC22504A
+	bool "Program RC22504A clock generator at boot"
+	depends on I2C && GPIO
+	default y if BOARD_TT_BLACKHOLE_GLX2_DMC
+	help
+	  Program the Renesas RC22504A clock generator (I2C1, address 0x09)
+	  before the JTAG bootrom sequence, then wait for its LOCK output
+	  (devicetree node "clk_gen_lock") to assert.
+
 source "Kconfig.zephyr"
