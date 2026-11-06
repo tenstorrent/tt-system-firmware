@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* SMBus over each I2C bus. The driver needs its own pinctrl-0. */
+/ {
+	smbus1: smbus1 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c1>;
+		pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb7>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+
+	smbus2: smbus2 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c2>;
+		pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb14>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+
+	smbus3: smbus3 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c3>;
+		pinctrl-0 = <&i2c3_scl_pa7 &i2c3_sda_pb4>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};

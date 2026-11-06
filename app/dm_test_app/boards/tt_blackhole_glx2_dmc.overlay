@@ -1,0 +1,123 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+&gpioe {
+	status = "okay";
+
+	/*
+	 * BRING-UP: PE5 -- OE of U2202, eFuse PMBus onto DMC_I2C2.
+	 */
+	pmbus-efuse-i2c2-mux-en {
+		gpio-hog;
+		gpios = <5 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+
+	/*
+	 * BRING-UP: PE1 -- PMBUS_EFUSE_VRM_EN_Z, reaching U231 through inverter U234, so GND
+	 * is what closes the bridge. output-low is that GND.
+	 */
+	pmbus-efuse-vrm-en {
+		gpio-hog;
+		gpios = <1 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+
+	/*
+	 * BRING-UP: PE6 -- DMC_I2C_B2B_EDGE_EN, OE of U232.
+	 */
+	dmc-i2c-b2b-edge-en {
+		gpio-hog;
+		gpios = <6 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+
+	/*
+	 * BRING-UP: PE2 -- DMC_I2C_RESET_B2B_Z, reset of the U2201 TCA9546A mux. Active low,
+	 * so high is out of reset and output-high is that release.
+	 */
+	dmc-i2c-reset-b2b {
+		gpio-hog;
+		gpios = <2 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};
+
+&gpioc {
+	status = "okay";
+
+	/*
+	 * BRING-UP: PC5 -- GPIO1 for EFuse state enable. Disabled by default.
+	 */
+	efus-en1_dmc {
+		gpio-hog;
+		gpios = <5 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+
+	/*
+	 * BRING-UP: PC6 -- GPIO2 for EFuse state enable. Disabled by default.
+	 */
+	efus-en2_dmc {
+		gpio-hog;
+		gpios = <6 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+
+	/*
+	 * BRING-UP: PC13 -- DMC_SPI_MUX_EN_Z, the shared enable of the three cascaded
+	 * TMUX1574 SPI muxes on sheet 28. Active low, so output-low is what turns them
+	 * on.
+	 */
+	dmc-spi-mux-en {
+		gpio-hog;
+		gpios = <13 GPIO_ACTIVE_HIGH>;
+		output-low;
+	};
+};
+
+/*
+ * BRING-UP: PD14 -- DMC_RC22504_OE_Z, the OE_nCS pin of the RC22504A reference
+ * clock generator (U400) on sheet 24.
+ */
+&gpiod {
+	status = "okay";
+
+	dmc-rc22504-oe {
+		gpio-hog;
+		gpios = <14 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
+};
+
+/*
+ * SMBus controllers over i2c1 and i2c2, for the `smbus` shell. smbus3 is not
+ * declared here: the board devicetree defines it, with the Blackhole ARC as
+ * a child at 0x0a, so a copy here would only merge into that node.
+ */
+/ {
+	smbus1: smbus1 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c1>;
+		pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7 &i2c1_smba_pb5>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+
+	smbus2: smbus2 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c2>;
+		pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pa6 &i2c2_smba_pb12>;
+		pinctrl-names = "default";
+		status = "okay";
+	};
+};
