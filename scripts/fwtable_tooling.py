@@ -7,20 +7,34 @@ Tooling for editing firmware tables in blackhole firmware bundles.
 
 import os
 import logging
+import struct
 import subprocess
 import sys
 import tempfile
 import tarfile
 import shutil
 
+from base64 import b16decode, b16encode
+from intelhex import IntelHex
 from pathlib import Path
 
 BOOTFS_FWTABLE_NAME = "cmfwcfg"
 TT_Z_P_ROOT = Path(__file__).parents[1]
 
+# Multi-table boot filesystem header. Images without it have a single
+# descriptor table at tt_boot_fs.FD_HEAD_ADDR.
+BOOTFS_HEADER_ADDR = 0x120000
+BOOTFS_HEADER_MAGIC = 0x54544246
+BOOTFS_HEADER_VERSION = 1
+BOOTFS_TABLE_COUNT_MAX = 16
+
+# Images start on an erase block boundary, so an image may grow up to the end
+# of its last block without reaching the next image.
+BOOTFS_BLOCK_SIZE = 0x1000
+
 sys.path.append(str(TT_Z_P_ROOT / "scripts"))
 
-import tt_fwbundle  # noqa: E402
+import tt_boot_fs  # noqa: E402
 
 _logger = logging.getLogger(__name__)
 
@@ -51,39 +65,138 @@ def nanopb_add_framing(b: bytes) -> bytes:
     return c
 
 
-def get_board_names_with_cmfwcfg_from_bundle_metadata(bundle_metadata) -> set[str]:
-    board_names = []
-    for meta_name, meta_data in bundle_metadata.items():
-        if meta_name == "manifest":
-            # not a board
+class BootFsImage:
+    """
+    A base16 encoded tt-boot-fs image from a firmware bundle, edited in place.
+
+    Descriptor tables are located from the on-flash layout rather than through
+    tt_boot_fs.BootFs, so that the published copy of this tooling can edit
+    images with either the single-table or the multi-table layout. Only the
+    edited image and its descriptor change; every other byte is written back
+    as it was read.
+    """
+
+    def __init__(self, path: Path):
+        self.ih = IntelHex()
+        offset = 0
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("@"):
+                    offset = int(line[1:], 10)
+                else:
+                    data = b16decode(line)
+                    self.ih.puts(offset, data)
+                    offset += len(data)
+
+    def save(self, path: Path):
+        with open(path, "w") as f:
+            for start, end in self.ih.segments():
+                f.write(f"@{start}\n")
+                data = self.ih.tobinstr(start=start, size=end - start)
+                f.write(b16encode(data).decode("ascii"))
+                f.write("\n")
+
+    def _read(self, addr: int, size: int) -> bytes:
+        return self.ih.tobinstr(start=addr, size=size)
+
+    def table_addrs(self) -> list[int]:
+        header_fmt = "<III"
+        magic, version, num_tables = struct.unpack(
+            header_fmt, self._read(BOOTFS_HEADER_ADDR, struct.calcsize(header_fmt))
+        )
+        if magic != BOOTFS_HEADER_MAGIC:
+            return [tt_boot_fs.FD_HEAD_ADDR]
+
+        if version != BOOTFS_HEADER_VERSION:
+            raise ValueError(
+                f"unsupported bootfs version {version}; expected {BOOTFS_HEADER_VERSION}"
+            )
+        if not 0 < num_tables <= BOOTFS_TABLE_COUNT_MAX:
+            raise ValueError(f"invalid bootfs table count {num_tables}")
+
+        addrs_fmt = f"<{num_tables}I"
+        return list(
+            struct.unpack(
+                addrs_fmt,
+                self._read(
+                    BOOTFS_HEADER_ADDR + struct.calcsize(header_fmt),
+                    struct.calcsize(addrs_fmt),
+                ),
+            )
+        )
+
+    def find(self, tag: str) -> tuple[int, "tt_boot_fs.tt_boot_fs_fd"]:
+        """
+        Return the flash address and contents of the descriptor for @p tag,
+        searching every descriptor table.
+        """
+        matches = []
+        for table_addr in self.table_addrs():
+            for fd_addr, fd in tt_boot_fs.iter_fd(
+                lambda addr, size, table_addr=table_addr: self._read(
+                    table_addr + addr, size
+                )
+            ):
+                if fd.image_tag_str() == tag:
+                    matches.append((table_addr + fd_addr, fd))
+
+        if not matches:
+            raise KeyError(f"no '{tag}' entry found in any bootfs table")
+        if len(matches) > 1:
+            raise ValueError(f"found {len(matches)} '{tag}' entries, expected one")
+
+        fd_addr, fd = matches[0]
+        if fd.fd_crc != tt_boot_fs.cksum(bytes(fd)[: -tt_boot_fs.CKSUM_SIZE]):
+            raise ValueError(f"'{tag}' descriptor at 0x{fd_addr:x} is corrupt")
+
+        return fd_addr, fd
+
+    def read(self, tag: str) -> tuple[int, bytes]:
+        """
+        Return the flash address and contents of the image for @p tag.
+        """
+        _, fd = self.find(tag)
+        data = self._read(fd.spi_addr, fd.flags.f.image_size)
+        if fd.data_crc != tt_boot_fs.cksum(data):
+            raise ValueError(f"'{tag}' image at 0x{fd.spi_addr:x} is corrupt")
+
+        return fd.spi_addr, data
+
+    def write(self, tag: str, data: bytes):
+        """
+        Replace the image for @p tag with @p data, at the same flash address.
+        """
+        fd_addr, fd = self.find(tag)
+        old_end = fd.spi_addr + fd.flags.f.image_size
+        limit = (old_end + BOOTFS_BLOCK_SIZE - 1) & ~(BOOTFS_BLOCK_SIZE - 1)
+        if fd.spi_addr + len(data) > limit:
+            raise ValueError(
+                f"{len(data)} bytes for '{tag}' at 0x{fd.spi_addr:x} would overrun 0x{limit:x}"
+            )
+
+        del self.ih[fd.spi_addr : old_end]
+        self.ih.puts(fd.spi_addr, data)
+
+        fd.flags.f.image_size = len(data)
+        fd.data_crc = tt_boot_fs.cksum(data)
+        fd.fd_crc = tt_boot_fs.cksum(bytes(fd)[: -tt_boot_fs.CKSUM_SIZE])
+        self.ih.puts(fd_addr, bytes(fd))
+
+
+def get_board_names_with_cmfwcfg(bundle_dir: Path) -> set[str]:
+    board_names = set()
+    for image_path in bundle_dir.glob("*/image.bin"):
+        try:
+            BootFsImage(image_path).find(BOOTFS_FWTABLE_NAME)
+        except (KeyError, ValueError):
+            # Not a tt-boot-fs image, e.g. a Wormhole board
             continue
+        board_names.add(image_path.parent.name)
 
-        board_name = meta_name
-        for part in meta_data["bootfs"]:
-            if part["image_tag"] == BOOTFS_FWTABLE_NAME:
-                board_names.append(board_name)
-                break
-
-    return set(board_names)
-
-
-def get_board_metadata_from_bundle_metadata(
-    bundle_metadata, board_names
-) -> dict[str, dict]:
-    board_meta = {}
-
-    for meta_name, meta_data in bundle_metadata.items():
-        if meta_name == "manifest":
-            # not a board
-            continue
-
-        board_name = meta_name
-        if board_name not in board_names:
-            continue
-
-        board_meta[board_name] = meta_data
-
-    return board_meta
+    return board_names
 
 
 def print_board_names(board_names: set[str]):
@@ -105,14 +218,6 @@ def filter_boards(arg_boards: list[str], board_names: set[str]) -> set[str]:
             continue
 
     return {b for b in arg_boards if b in board_names}
-
-
-def get_cmfwcfg_from_bootfs_metadata(bootfs):
-    for part in bootfs:
-        if part["image_tag"] == BOOTFS_FWTABLE_NAME:
-            return part
-
-    return None
 
 
 def do_update(
@@ -157,6 +262,8 @@ def do_update(
             subprocess.run(
                 [
                     protoc_path,
+                    # Required by protoc < 3.15, e.g. Ubuntu 22.04's
+                    "--experimental_allow_proto3_optional",
                     f"--python_out={OUTPUT_DIR}",
                     f"{SPIROM_PROTOBUFS}/fw_table.proto",
                     "-I",
@@ -173,54 +280,52 @@ def do_update(
         sys.path.append(str(OUTPUT_DIR))
         import fw_table_pb2  # noqa: E402
 
-        try:
-            _logger.info(f"Loading fwbundle {input}")
-            bundle_metadata = tt_fwbundle.bundle_metadata(input)
-        except Exception as e:
-            _logger.error(f"Error loading fwbundle metadata: {e}")
-            return os.EX_DATAERR
+        with tempfile.TemporaryDirectory() as tempdir:
+            try:
+                _logger.info(f"Loading fwbundle {input}")
+                with tarfile.open(input, "r:gz") as tar_in:
+                    tar_in.extractall(path=tempdir)
+            except Exception as e:
+                _logger.error(f"Error loading fwbundle: {e}")
+                return os.EX_DATAERR
 
-        board_names = get_board_names_with_cmfwcfg_from_bundle_metadata(bundle_metadata)
-        if not board:
-            # No board names have been supplied, so use all of them that apply
-            board = board_names
+            board_names = get_board_names_with_cmfwcfg(Path(tempdir))
+            if not board:
+                # No board names have been supplied, so use all of them that apply
+                board = board_names
 
-        if "?" in board:
-            print_board_names(board_names)
-            return os.EX_OK
+            if "?" in board:
+                print_board_names(board_names)
+                return os.EX_OK
 
-        # Ensure only valid board names are used
-        board = filter_boards(board, board_names)
+            # Ensure only valid board names are used
+            board = filter_boards(board, board_names)
 
-        if not board:
-            _logger.info("No valid boards to process")
-            return os.EX_DATAERR
+            if not board:
+                _logger.info("No valid boards to process")
+                return os.EX_DATAERR
 
-        with tarfile.open(input, "r:gz") as tar_in:
-            with tempfile.TemporaryDirectory() as tempdir:
-                tar_in.extractall(path=tempdir)
+            # Iterate over each board to extract the cmfwcfg entry, modify it, and write it back
+            for b in board:
+                _logger.debug(f"Processing board '{b}'")
+                ret = update_cb(
+                    cb_object,
+                    fw_table_pb2,
+                    Path(tempdir) / b / "image.bin",
+                    verbose=verbose,
+                )
+                if ret != os.EX_OK:
+                    return ret
 
-                # Iterate over each board to extract the cmfwcfg entry, modify it, and write it back
-                for b in board:
-                    _logger.debug(f"Processing board '{b}'")
-                    ret = update_cb(
-                        cb_object,
-                        fw_table_pb2,
-                        Path(tempdir) / b / "image.bin",
-                        verbose=verbose,
-                    )
-                    if ret != os.EX_OK:
-                        return ret
+            # Create a new fwbundle with the modified files
+            verb = "Creating"
+            if output.exists():
+                verb = "Overwriting existing"
+                os.remove(output)
 
-                # Create a new fwbundle with the modified files
-                verb = "Creating"
-                if output.exists():
-                    verb = "Overwriting existing"
-                    os.remove(output)
-
-                _logger.info(f"{verb} output fwbundle: {output}")
-                with tarfile.open(output, "x:gz") as tar_out:
-                    tar_out.add(tempdir, arcname=".")
+            _logger.info(f"{verb} output fwbundle: {output}")
+            with tarfile.open(output, "x:gz") as tar_out:
+                tar_out.add(tempdir, arcname=".")
 
         # verify that the firmware table includes the expected changes
         with tarfile.open(output, "r:gz") as tar_in:

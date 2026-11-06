@@ -98,18 +98,10 @@ def iterate_bar4_sizes(
     verify: bool = False,
     verbose: bool = False,
 ):
-    bootfs_b16_path = bootfs_bin_path.with_suffix(".b16")
-    os.rename(bootfs_bin_path, bootfs_b16_path)
-    bootfs_bytes = tt_boot_fs.extract_all(bootfs_b16_path, input_base64=True)
-
-    bootfs = tt_boot_fs.BootFs.from_binary(bootfs_bytes)
-    cmfwcfg_entry = bootfs.entries[BOOTFS_FWTABLE_NAME]
-
-    cmfwcfg_addr = cmfwcfg_entry.spi_addr
-    cmfwcfg_size = len(cmfwcfg_entry.data)
-    cmfwcfg_bytes = cmfwcfg_entry.data
+    bootfs = fwtable_tooling.BootFsImage(bootfs_bin_path)
+    cmfwcfg_addr, cmfwcfg_bytes = bootfs.read(BOOTFS_FWTABLE_NAME)
     _logger.debug(
-        f"{BOOTFS_FWTABLE_NAME} at SPI address: 0x{cmfwcfg_addr:x}, size: {cmfwcfg_size} bytes"
+        f"{BOOTFS_FWTABLE_NAME} at SPI address: 0x{cmfwcfg_addr:x}, size: {len(cmfwcfg_bytes)} bytes"
     )
 
     size = cb_object["size"]
@@ -187,15 +179,9 @@ def iterate_bar4_sizes(
         tt_boot_fs.hexdump(cmfwcfg_addr, cmfwcfg_bytes, checksum=True)
 
     # Update the bootfs with the new cmfwcfg
-    bootfs.entries[BOOTFS_FWTABLE_NAME].data = cmfwcfg_bytes
+    bootfs.write(BOOTFS_FWTABLE_NAME, cmfwcfg_bytes)
+    bootfs.save(bootfs_bin_path)
 
-    bootfs_bytes = bootfs.to_binary(True)
-
-    with open(bootfs_bin_path, "wb") as f:
-        # Convert back to the b16 encoded format
-        f.write(bytes(bootfs.to_b16(), "ascii"))
-
-    os.remove(bootfs_b16_path)
     return os.EX_OK
 
 
