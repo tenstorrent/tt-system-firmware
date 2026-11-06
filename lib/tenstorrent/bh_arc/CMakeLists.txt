@@ -93,6 +93,7 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
   )
 
   zephyr_library_sources_ifdef(CONFIG_BH_FWTABLE chip_info_fwtable.c)
+  zephyr_library_sources_ifdef(CONFIG_TT_BH_ARC_PCIE_LTSSM_LOG pcie_ltssm_log.c)
   zephyr_library_sources_ifdef(CONFIG_TT_SHELL tt_shell.c)
   zephyr_library_add_dependencies(nanopb_generated_headers)
 endif()

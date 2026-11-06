@@ -124,5 +124,6 @@ module-str = bh_arc
 source "subsys/logging/Kconfig.template.log_config"
 
 rsource "Kconfig.tt_pcie_log"
+rsource "Kconfig.pcie_ltssm_log"
 
 endif
