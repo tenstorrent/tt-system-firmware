@@ -121,20 +121,27 @@ def parse_args():
         metavar="TIMEOUT",
         type=int,
     )
+    parser.add_argument(
+        "--method",
+        choices=("openocd", "pyocd"),
+        default="openocd",
+        help=("Backend used to reset the DMC."),
+    )
 
     args = parser.parse_args()
 
-    if not args.config.is_file():
-        parser.error(f"Config file {args.config} does not exist")
-        return None
+    if args.method == "openocd":
+        if not args.config.is_file():
+            parser.error(f"Config file {args.config} does not exist")
+            return None
 
-    if not (args.openocd.is_file() and os.access(str(args.openocd), os.X_OK)):
-        parser.error(f"{args.openocd} is not an executable file")
-        return None
+        if not (args.openocd.is_file() and os.access(str(args.openocd), os.X_OK)):
+            parser.error(f"{args.openocd} is not an executable file")
+            return None
 
-    if not args.scripts.is_dir():
-        parser.error(f"{args.scripts} is not a directory")
-        return None
+        if not args.scripts.is_dir():
+            parser.error(f"{args.scripts} is not a directory")
+            return None
 
     return args
 
@@ -220,6 +227,35 @@ def reset_dmc(args):
             logger.error(f"OpenOCD stderr:\n{proc.stderr.decode(errors='replace')}")
         return os.EX_SOFTWARE
 
+    return os.EX_OK
+
+
+def reset_dmc_pyocd(args):
+    """
+    Reset the DMC using pyocd.
+
+    @param args: arguments
+        args.jtag_id: ST-Link serial / unique ID (None = first available probe)
+        args.hexfile: not supported; programming a hex file requires OpenOCD
+    @return: exit code EX_OK if successful, otherwise an error code
+    """
+    if args.hexfile:
+        logger.error("pyocd reset does not support flashing a hex file")
+        return os.EX_USAGE
+
+    import pyocd_utils
+
+    try:
+        session = pyocd_utils.get_session(adapter_id=args.jtag_id, no_prompt=True)
+        session.open()
+        try:
+            session.board.target.reset_and_halt()
+            session.board.target.resume()
+        finally:
+            session.close()
+    except Exception as e:
+        logger.error(f"pyocd DMC reset failed: {e}")
+        return os.EX_SOFTWARE
     return os.EX_OK
 
 
@@ -336,7 +372,10 @@ def main():
                 logger.debug(f"Found {dut['platform']} with JTAG ID {dut['id']}")
                 break
 
-    ret = reset_dmc(args)
+    if args.method == "pyocd":
+        ret = reset_dmc_pyocd(args)
+    else:
+        ret = reset_dmc(args)
     if ret != os.EX_OK:
         return ret
     if args.wait:

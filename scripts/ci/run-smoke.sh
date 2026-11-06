@@ -83,6 +83,9 @@ echo "Building tt-bootstrap flash loading algorithms..."
 if [[ "$TEST_SET" == *"dmc"* ]]; then
 	# Run the DMC tests
 	echo "Running DMC tests..."
+	echo "Priming ST-Link/DMC debug link with a pyocd reset..."
+	python3 "$TT_Z_P_ROOT/scripts/dmc_reset.py" --method pyocd \
+		|| echo "WARNING: DMC prime step failed; continuing with Twister anyway"
 	# Run tests tagged with "smoke"
 	"$ZEPHYR_BASE"/scripts/twister -i \
 		-p "$DMC_BOARD" --device-testing \
