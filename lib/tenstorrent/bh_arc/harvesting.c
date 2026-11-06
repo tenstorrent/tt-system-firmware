@@ -29,6 +29,7 @@
 
 TileEnable tile_enable = {
 	.tensix_col_enabled = BIT_MASK(14),
+	.tensix_col_efuse_harvested = 0,
 	.eth_enabled = BIT_MASK(14),
 	.eth5_serdes = true,
 	.eth8_serdes = true,
@@ -191,6 +192,7 @@ static int CalculateHarvesting(void)
 
 	/* Initial values, everything enabled */
 	tile_enable.tensix_col_enabled = BIT_MASK(14);
+	tile_enable.tensix_col_efuse_harvested = 0;
 	tile_enable.eth_enabled = BIT_MASK(14);
 	tile_enable.eth5_serdes = true;
 	tile_enable.eth8_serdes = true;
@@ -203,6 +205,8 @@ static int CalculateHarvesting(void)
 		if (FusesValid()) {
 			HarvestingATEFuses();
 			HarvestingSLTFuses();
+			tile_enable.tensix_col_efuse_harvested =
+				BIT_MASK(14) & ~tile_enable.tensix_col_enabled;
 		}
 
 		/* Eth handling */

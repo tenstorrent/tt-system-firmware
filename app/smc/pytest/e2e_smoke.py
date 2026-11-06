@@ -113,6 +113,17 @@ EFUSE_BOX_FUNC = 2
 
 FUSE_ASIC_ID_LOW_START_BIT = 1600
 FUSE_ASIC_ID_HIGH_START_BIT = 5568
+FUSE_ASIC_ID_OLD_START_BIT = 1056
+FUSE_ASIC_ID_OLD_END_BIT = 1071
+FUSE_ATE_TENSIX_ROW0_TEST_STATUS_START_BIT = 3168
+FUSE_ATE_TENSIX_ROW_STRIDE = 32
+NUM_TENSIX_ROWS = 10
+FUSE_SLT_ATE_SLT_STATUS_START_BIT = 4160
+FUSE_SLT_ATE_SLT_STATUS_END_BIT = 4161
+FUSE_SLT_FUSE_MAP_VERSION_START_BIT = 4162
+FUSE_SLT_FUSE_MAP_VERSION_END_BIT = 4191
+FUSE_SLT_HARVESTED_TENSIX_COLUMNS_START_BIT = 5536
+FUSE_SLT_HARVESTED_TENSIX_COLUMNS_END_BIT = 5551
 
 # ETH tile registers
 # Using this as a scratch register to verify ETH tile reset
@@ -150,12 +161,14 @@ TAG_TDP = 7
 TAG_DM_APP_FW_VERSION = 26
 TAG_ETH_LIVE_STATUS = 21
 TAG_CM_FW_VERSION = 29
+TAG_ENABLED_TENSIX_COL = 34
 TAG_ENABLED_ETH = 35
 TAG_INPUT_POWER = 54
 TAG_ASIC_ID_HIGH = 61
 TAG_ASIC_ID_LOW = 62
 TAG_HOST_AICLK_LIMIT = 70
 TAG_KERNEL_THROTTLER = 75
+TAG_EFUSE_HARVESTED_TENSIX_COL = 86
 
 NUM_PD = 16
 NUM_VM = 8
@@ -174,6 +187,39 @@ def read_telem(arc_chip, telem_idx):
 def read_functional_efuse_word(arc_chip, word_idx):
     func_base = EFUSE_DFT0_MEM_BASE_ADDR + EFUSE_BOX_FUNC * EFUSE_BOX_ADDR_ALIGN
     return arc_chip.axi_read32(func_base + word_idx * 4)
+
+
+def read_functional_efuse_field(arc_chip, start_bit, end_bit):
+    """Reads an efuse field of up to 32 bits that may span two words"""
+    word_idx = start_bit // 32
+    data = read_functional_efuse_word(arc_chip, word_idx) | (
+        read_functional_efuse_word(arc_chip, word_idx + 1) << 32
+    )
+    return (data >> (start_bit % 32)) & ((1 << (end_bit - start_bit + 1)) - 1)
+
+
+def harvest_fuses_valid(arc_chip):
+    """Firmware ignores harvesting fuses on parts fused before the ASIC ID moved"""
+    return (
+        read_functional_efuse_field(
+            arc_chip, FUSE_ASIC_ID_OLD_START_BIT, FUSE_ASIC_ID_OLD_END_BIT
+        )
+        == 0
+    )
+
+
+def slt_fuse_map_version(arc_chip):
+    """Returns the SLT fuse map version, or 0 if the SLT fuses are invalid"""
+    slt_status = read_functional_efuse_field(
+        arc_chip, FUSE_SLT_ATE_SLT_STATUS_START_BIT, FUSE_SLT_ATE_SLT_STATUS_END_BIT
+    )
+    if not slt_status & 0x2:
+        return 0
+    return read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_FUSE_MAP_VERSION_START_BIT,
+        FUSE_SLT_FUSE_MAP_VERSION_END_BIT,
+    )
 
 
 def convert_telemetry_to_float(value):
@@ -1226,6 +1272,66 @@ def test_tensix_reset_single(arc_chip_dut, asic_id):
         )
 
     assert failed == 0, f"{failed}/{len(all_tiles)} tiles failed"
+
+
+def test_tensix_efuse_harvested(arc_chip_dut, asic_id):
+    """
+    Validates that TAG_EFUSE_HARVESTED_TENSIX_COL matches the Tensix columns
+    harvested by the ATE and SLT efuses, and that it never reports an enabled
+    column.
+    """
+    TENSIX_COL_MASK = 0x3FFF
+
+    arc_chip = pyluwen.detect_chips()[asic_id]
+    enabled = read_telem(arc_chip, TAG_ENABLED_TENSIX_COL)
+    efuse = read_telem(arc_chip, TAG_EFUSE_HARVESTED_TENSIX_COL)
+
+    logger.info(
+        f"Tensix columns enabled: {enabled:#06x}, efuse harvested: {efuse:#06x}, "
+        f"soft harvested: {TENSIX_COL_MASK & ~(enabled | efuse):#06x}"
+    )
+
+    assert (efuse & ~TENSIX_COL_MASK) == 0, "Efuse mask outside Tensix columns"
+    assert (enabled & efuse) == 0, "Enabled column reported as efuse harvested"
+
+    if not harvest_fuses_valid(arc_chip):
+        assert efuse == 0, "Efuse harvesting reported for a part with invalid fuses"
+        return
+
+    ate = 0
+    for row in range(NUM_TENSIX_ROWS):
+        start = (
+            FUSE_ATE_TENSIX_ROW0_TEST_STATUS_START_BIT
+            + row * FUSE_ATE_TENSIX_ROW_STRIDE
+        )
+        ate |= read_functional_efuse_field(
+            arc_chip, start, start + FUSE_ATE_TENSIX_ROW_STRIDE - 1
+        )
+    ate &= TENSIX_COL_MASK
+
+    slt_version = slt_fuse_map_version(arc_chip)
+    slt = read_functional_efuse_field(
+        arc_chip,
+        FUSE_SLT_HARVESTED_TENSIX_COLUMNS_START_BIT,
+        FUSE_SLT_HARVESTED_TENSIX_COLUMNS_END_BIT,
+    )
+    logger.info(
+        f"ATE columns: {ate:#06x}, SLT fuse map v{slt_version}, SLT columns: {slt:#06x}"
+    )
+
+    if slt_version == 0:
+        expected = ate
+    elif slt_version == 1:
+        # Fuse map v1 stores NOC X coordinates and infers a column from the
+        # binning fuse (SYS-1035), so only bound the result
+        assert (ate & ~efuse) == 0, "ATE-harvested column missing from efuse mask"
+        return
+    else:
+        expected = ate | (slt & TENSIX_COL_MASK)
+
+    assert efuse == expected, (
+        f"Efuse mask {efuse:#06x} does not match fuses {expected:#06x}"
+    )
 
 
 def test_aiclk(arc_chip_dut, asic_id):

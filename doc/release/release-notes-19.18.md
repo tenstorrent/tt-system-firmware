@@ -12,6 +12,8 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+- Add the `TAG_EFUSE_HARVESTED_TENSIX_COL` (86) telemetry entry, a bitmap of the Tensix columns harvested by efuse.
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->

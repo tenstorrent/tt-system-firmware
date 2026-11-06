@@ -183,6 +183,8 @@ static struct telemetry_table telemetry_table = {
 		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
 		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
 		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
+		[81] = {TAG_EFUSE_HARVESTED_TENSIX_COL,
+			TELEM_OFFSET(TAG_EFUSE_HARVESTED_TENSIX_COL)},
 	},
 };
 /* clang-format on */
@@ -386,6 +388,7 @@ void telemetry_platform_write_static(uint32_t app_version)
 
 	/* Tile enablement / harvesting information */
 	telemetry[TAG_ENABLED_TENSIX_COL] = tile_enable.tensix_col_enabled;
+	telemetry[TAG_EFUSE_HARVESTED_TENSIX_COL] = tile_enable.tensix_col_efuse_harvested;
 	telemetry[TAG_ENABLED_ETH] = tile_enable.eth_enabled;
 	telemetry[TAG_ENABLED_GDDR] = tile_enable.gddr_enabled;
 	telemetry[TAG_ENABLED_L2CPU] = tile_enable.l2cpu_enabled;
