@@ -463,7 +463,7 @@ DTS example
        status = "okay";
        arc = <&chip0_arc>;
        vcore {
-         channel-type = <14>; /* SENSOR_CHAN_VOLTAGE */
+         channel-type = <43>; /* SENSOR_CHAN_VOLTAGE */
          channel-index = <0>;
          telemetry-tag = <TAG_VCORE>;
        };
@@ -480,7 +480,7 @@ DTS example
        pldm_voltage0: pldm_voltage0 {
          compatible = "tenstorrent,pldm-numeric-sensor";
          sensor = <&zephyr_voltage_sensor0>;
-         channel-type = <14>;              /* SENSOR_CHAN_VOLTAGE */
+         channel-type = <43>;              /* SENSOR_CHAN_VOLTAGE */
          channel-index = <0>;
          sensor-id = <PLDM_SENSOR_ID>;     /* Tenstorrent specific, obeying compatibility rules */
        };

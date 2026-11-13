@@ -26,7 +26,7 @@
 			compatible = "tenstorrent,pldm-numeric-sensor";
 			sensor = <&dummy_sensor0>;
 			/* SENSOR_CHAN_POWER */
-			channel-type = <45>;
+			channel-type = <46>;
 			channel-index = <0>;
 			sensor-id = <202>;
 			entity-type = <10>;
@@ -38,7 +38,7 @@
 			compatible = "tenstorrent,pldm-numeric-sensor";
 			sensor = <&dummy_sensor0>;
 			/* SENSOR_CHAN_POWER */
-			channel-type = <45>;
+			channel-type = <46>;
 			channel-index = <0>;
 			sensor-id = <303>;
 			entity-type = <20>;

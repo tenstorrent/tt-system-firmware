@@ -523,7 +523,7 @@ def test_tensix_disable(tmp_path: Path):
     )
 
 
-def _flash_node(jedec_id: bytes = None, compats=("jedec,mspi-nor",), children=()):
+def _flash_node(jedec_id: bytes = None, compats=("jedec,nor",), children=()):
     """
     The parts of an edtlib node the compat variables generator reads.
     """

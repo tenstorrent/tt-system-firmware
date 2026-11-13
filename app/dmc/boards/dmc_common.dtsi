@@ -188,7 +188,7 @@
 		};
 
 		tdp {
-			channel-type = <45>; /* SENSOR_CHAN_POWER */
+			channel-type = <46>; /* SENSOR_CHAN_POWER */
 			channel-index = <0>;
 			telemetry-tag = <7>;
 		};

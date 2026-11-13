@@ -20,14 +20,8 @@ tests:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
          arc_hs.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
-         arc_hs.conf"
   drivers.dma.chan_link_transfer.arc_hs.polling:
     extra_args:
       - "DTC_OVERLAY_FILE=\
          ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
          arc_hs_polling.overlay"
-      - "EXTRA_CONF_FILE=\
-         ../../../../../tt-system-firmware/test-conf/tests/drivers/dma/chan_link_transfer/\
-         arc_hs.conf"
