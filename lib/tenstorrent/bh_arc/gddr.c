@@ -5,7 +5,6 @@
  */
 
 #include "bh_reset.h"
-#include "chip_info.h"
 #include "gddr.h"
 #include "gddr_cal.h"
 #include "harvesting.h"
@@ -17,6 +16,7 @@
 #include "status_reg.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <tenstorrent/bh_power.h>
@@ -86,8 +86,8 @@ static gddr_cal_table_t gddr_cal_table;
 static gddr_cal_entry_t *gddr_asic_cal;
 
 /* Row of the gddrcal table belonging to this ASIC: 0 on single-ASIC boards, 0/1 on P300,
- * SPI-provisioned UBB-local ASIC location on Galaxy. Allows one provisioned table image to
- * be broadcast to every ASIC's flash.
+ * SPI-provisioned UBB-local ASIC location minus one on Galaxy (locations there are 1-8).
+ * Allows one provisioned table image to be broadcast to every ASIC's flash.
  *
  * @return the row index, or -EINVAL if the ASIC location does not fit the table. Aliasing
  * an out-of-range location onto another ASIC's row would silently apply the wrong CA
@@ -96,15 +96,17 @@ static gddr_cal_entry_t *gddr_asic_cal;
 static int GddrCalAsicIndex(void)
 {
 	uint32_t asic_location = tt_bh_fwtable_get_asic_location(fwtable_dev);
+	bool ubb = tt_bh_fwtable_get_pcb_type(fwtable_dev) == PcbTypeUBB;
 
-	if (asic_location >= GDDR_CAL_NUM_ASICS) {
+	if ((ubb && !IN_RANGE(asic_location, 1, GDDR_CAL_NUM_ASICS)) ||
+	    (!ubb && asic_location >= GDDR_CAL_NUM_ASICS)) {
 		LOG_WRN_ONCE("asic_location %u outside gddrcal table (%u rows); CA seed/latch "
 			     "disabled",
 			     asic_location, GDDR_CAL_NUM_ASICS);
 		return -EINVAL;
 	}
 
-	return asic_location;
+	return ubb ? asic_location - 1 : asic_location;
 }
 
 struct gddr_bist_info get_gddr_bist_info(void)
@@ -206,6 +208,20 @@ int read_gddr_telemetry_table(uint8_t gddr_inst, gddr_telemetry_table_t *gddr_te
 		const size_t v3_start = offsetof(gddr_telemetry_table_t, ca_vrefc_offset);
 
 		memset((uint8_t *)gddr_telemetry + v3_start, 0, sizeof(*gddr_telemetry) - v3_start);
+	} else if (gddr_telemetry->telemetry_table_version < 4) {
+		/* v3 (MRISC 2.17 and older): bytes 28-31 hold the 1D margin check / sweep
+		 * results and the table ends with three reserved bytes after the DRAM OCD
+		 * pulldown, where v4 (MRISC 2.18) puts the CA centering, verdict, SR-exit and
+		 * boot rescue fields. A v3 MRISC uses one VREFC for both channels.
+		 */
+		const size_t v4_start = offsetof(gddr_telemetry_table_t, ca_phase_offset_ch0);
+
+		gddr_telemetry->ca_center_trained_mask = 0;
+		gddr_telemetry->ca_center_phase_margin = 0;
+		gddr_telemetry->ca_center_look1 = 0;
+		gddr_telemetry->ca_center_look2 = 0;
+		memset((uint8_t *)gddr_telemetry + v4_start, 0, sizeof(*gddr_telemetry) - v4_start);
+		gddr_telemetry->ca_vrefc_offset_ch1 = gddr_telemetry->ca_vrefc_offset;
 	}
 
 	return 0;
@@ -256,6 +272,31 @@ static int LoadMriscFw(uint8_t gddr_inst, uint8_t *buf, size_t buf_size, size_t 
 
 	return rc;
 }
+/*
+ * Params table v9 (MRISC 2.18+): PHY CA TX drive, per-channel CA phase offsets and channel B
+ * VREFC from the gddrcal entry. An unset drive leaves the blob's 0xFF (MRISC board default).
+ * Both phases must be set for the offsets to be seeded; channel B's VREFC is only seeded when
+ * per-channel VREFC is enabled, otherwise MRISC uses ca_vrefc_offset for both.
+ */
+static void SeedGddrCaCenter(volatile gddr_params_table_t *params_table,
+			     const gddr_cal_entry_t *entry, uint32_t *feature_bits)
+{
+	if (IN_RANGE(entry->ca_phy_drv_tx_ca, GDDR_CA_PHY_DRV_TX_CA_MIN,
+		     GDDR_CA_PHY_DRV_TX_CA_MAX)) {
+		params_table->ca_phy_drv_tx_ca = entry->ca_phy_drv_tx_ca;
+	}
+	if (entry->ca_phase_offset[0] != GDDR_CA_PHASE_OFFSET_UNSET &&
+	    entry->ca_phase_offset[1] != GDDR_CA_PHASE_OFFSET_UNSET) {
+		params_table->ca_phase_offset_ch0 = (uint8_t)entry->ca_phase_offset[0];
+		params_table->ca_phase_offset_ch1 = (uint8_t)entry->ca_phase_offset[1];
+		*feature_bits |= GDDR_FEATURE_CA_PHASE_OFFSETS_VALID;
+	}
+	if (IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_PER_CH_VREFC) &&
+	    entry->ca_vrefc_offset_ch1 <= GDDR_CA_VREFC_OFFSET_MAX) {
+		params_table->ca_vrefc_offset_ch1 = entry->ca_vrefc_offset_ch1;
+	}
+}
+
 static int LoadMriscFwCfg(uint8_t gddr_inst, uint8_t *buf, size_t buf_size, size_t spi_address,
 			  size_t image_size)
 {
@@ -282,13 +323,19 @@ static int LoadMriscFwCfg(uint8_t gddr_inst, uint8_t *buf, size_t buf_size, size
 
 			feature_bits |= GDDR_FEATURE_ENABLE_CA_MARGIN_CHECK |
 					GDDR_FEATURE_ENABLE_CA_SWEEP_FALLBACK;
+			if (IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_PER_CH_VREFC) &&
+			    params_table->params_table_version >= 9) {
+				feature_bits |= GDDR_FEATURE_CA_CENTER_PER_CH_VREFC;
+			}
 			if (entry != NULL && entry->valid) {
 				params_table->ca_vrefc_offset = entry->ca_vrefc_offset;
 				params_table->ca_termination_offset = entry->ca_termination_offset;
-				if (params_table->params_table_version >= 8) {
-					/* 0xFF = "not seeded", MRISC keeps its board default */
-					params_table->ca_ocd_pulldown_offset =
-						entry->ca_ocd_pulldown_offset;
+				/* ca_ocd_pulldown_offset (DRAM OCD, the DQ / EDC driver) is not a
+				 * CA setting: it stays at the blob's 0xFF, so MRISC keeps its
+				 * board default. MRISC 2.18 drives CA with ca_phy_drv_tx_ca.
+				 */
+				if (params_table->params_table_version >= 9) {
+					SeedGddrCaCenter(params_table, entry, &feature_bits);
 				}
 				feature_bits |= GDDR_FEATURE_CA_SETTINGS_VALID;
 			}
@@ -378,10 +425,11 @@ static int wait_mrisc_not_busy(uint8_t gddr_inst, k_timepoint_t timeout, const c
 	while (MriscRegRead32(gddr_inst, MRISC_MSG_REGISTER) != 0) {
 		/* Wait for the message to be processed */
 		if (sys_timepoint_expired(timeout)) {
-			LOG_ERR("Timeout after %d ms waiting for GDDR instance %d to run %s",
-				MRISC_MEMTEST_TIMEOUT, gddr_inst, op_desc);
+			LOG_ERR("Timed out waiting for GDDR instance %d to run %s", gddr_inst,
+				op_desc);
 			return -ETIMEDOUT;
 		}
+		k_msleep(1);
 	}
 	return 0;
 }
@@ -653,6 +701,41 @@ static int CheckGddrTraining(uint8_t gddr_inst, k_timepoint_t timeout)
 	return -ETIMEDOUT;
 }
 
+/* Log the boot CA outcome MRISC published (telemetry v4+): WRN when the first training failed
+ * and the CA boot rescue found the start point, WRN for a check failure or degraded boot, ERR
+ * for a fatal verdict.
+ */
+static void LogGddrCaStatus(uint8_t gddr_inst)
+{
+	gddr_telemetry_table_t t;
+
+	if (read_gddr_telemetry_table(gddr_inst, &t) < 0 || t.telemetry_table_version < 4) {
+		return;
+	}
+
+	if (t.ca_center_flags & GDDR_CA_FLAG_RESCUED) {
+		LOG_WRN("GDDR %d CA boot rescue: first training failed at post code %d (error %d, "
+			"CACAL 0x%02x), %d candidates, %d ms",
+			gddr_inst, t.ca_rescue_first_fail, t.ca_rescue_first_error,
+			t.ca_rescue_cacal_sts, t.ca_rescue_tries, t.ca_rescue_ms);
+	}
+	if (t.ca_center_status < GDDR_CA_VERDICT_CHECK_FAIL) {
+		return;
+	}
+
+	if (t.ca_center_status >= GDDR_CA_VERDICT_FATAL_NO_EYE) {
+		LOG_ERR("GDDR %d CA verdict %d: term %d drv %d phase %d/%d eye %d/%d", gddr_inst,
+			t.ca_center_status, t.ca_termination_offset, t.ca_phy_drv_tx_ca,
+			t.ca_phase_offset_ch0, t.ca_phase_offset_ch1, t.ca_center_area_ch0,
+			t.ca_center_area_ch1);
+	} else {
+		LOG_WRN("GDDR %d CA verdict %d: term %d drv %d phase %d/%d eye %d/%d", gddr_inst,
+			t.ca_center_status, t.ca_termination_offset, t.ca_phy_drv_tx_ca,
+			t.ca_phase_offset_ch0, t.ca_phase_offset_ch1, t.ca_center_area_ch0,
+			t.ca_center_area_ch1);
+	}
+}
+
 static int CheckGddrHwTest(void)
 {
 	/* First kick off all tests in parallel, then check their results. Test will take
@@ -699,82 +782,117 @@ static int CheckGddrHwTest(void)
 }
 
 #ifdef CONFIG_TT_BH_ARC_GDDR_CA_LATCH
+/* True if the saved phase offset is close enough to the applied one to keep (see
+ * CONFIG_TT_BH_ARC_GDDR_CA_PHASE_LATCH_DEADBAND). An unset offset only matches unset.
+ */
+static bool CaPhaseOffsetSaved(int8_t saved, int8_t applied)
+{
+	if (saved == GDDR_CA_PHASE_OFFSET_UNSET || applied == GDDR_CA_PHASE_OFFSET_UNSET) {
+		return saved == applied;
+	}
+	return abs(saved - applied) <= CONFIG_TT_BH_ARC_GDDR_CA_PHASE_LATCH_DEADBAND;
+}
+
 /**
  * @brief Pull the applied CA settings out of MRISC telemetry into the cal table cache.
  *
  * Reads the CA result fields the MRISC FW published after training. If MRISC reports that
- * the applied settings differ from the seeded/default ones (i.e. the runtime CA sweep
- * picked a new best setting), the cached gddrcal entry is updated.
+ * the applied settings differ from the seeded/default ones (i.e. the runtime CA sweep, or
+ * from MRISC 2.18 the 2D eye centering and its CA termination x PHY CA TX drive search,
+ * picked a new setting), the cached gddrcal entry is updated, unless only the phase offsets
+ * moved and by no more than the latch deadband. Telemetry v4 adds the per-channel phase
+ * offsets, channel B VREFC and the PHY CA TX drive; with an older MRISC they are stored as
+ * unset. The DRAM OCD pulldown MRISC reports is not a CA setting and is not latched.
  *
  * @return true if the cached table changed and needs to be written back to flash.
  */
 static bool LatchGddrCaSettings(uint8_t gddr_inst)
 {
-	if (gddr_asic_cal == NULL) {
+	gddr_telemetry_table_t telemetry;
+
+	if (gddr_asic_cal == NULL || read_gddr_telemetry_table(gddr_inst, &telemetry) < 0) {
 		return false;
 	}
-
-	uint32_t version = MriscL1Read32(
-		gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
-				   offsetof(gddr_telemetry_table_t, telemetry_table_version));
 
 	/* CA result fields only exist in telemetry table v3+ */
-	if (version < 3) {
+	if (telemetry.telemetry_table_version < 3 || telemetry.ca_settings_changed == 0) {
+		return false;
+	}
+	/* A degraded boot runs on the best point it found, not a passing one: keep the seed. A
+	 * point the CA boot rescue found is reported as changed with a pass verdict and latched.
+	 */
+	if (telemetry.telemetry_table_version >= 4 &&
+	    telemetry.ca_center_status != GDDR_CA_VERDICT_PASS_SEEDED &&
+	    telemetry.ca_center_status != GDDR_CA_VERDICT_PASS_NEW_PAIR) {
+		LOG_WRN("GDDR %d CA settings changed but verdict %d is not a pass; not latching",
+			gddr_inst, telemetry.ca_center_status);
 		return false;
 	}
 
-	/* ca_vrefc_offset, ca_termination_offset, ca_settings_source and ca_settings_changed
-	 * are adjacent uint8_t fields sharing one 32-bit word.
-	 */
-	uint32_t ca_word =
-		MriscL1Read32(gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
-						 offsetof(gddr_telemetry_table_t, ca_vrefc_offset));
-	uint8_t vrefc_offset = FIELD_GET(GENMASK(7, 0), ca_word);
-	uint8_t termination_offset = FIELD_GET(GENMASK(15, 8), ca_word);
-	uint8_t settings_changed = FIELD_GET(GENMASK(31, 24), ca_word);
+	uint8_t vrefc_offset = telemetry.ca_vrefc_offset;
+	uint8_t termination_offset = telemetry.ca_termination_offset;
+	int8_t phase_offset[2] = {GDDR_CA_PHASE_OFFSET_UNSET, GDDR_CA_PHASE_OFFSET_UNSET};
+	uint8_t vrefc_offset_ch1 = GDDR_CA_VREFC_OFFSET_CH1_SAME;
+	/* 0 = an MRISC that does not report the drive; seeding unset keeps its board default. */
+	uint8_t drv_tx_ca = GDDR_CA_PHY_DRV_TX_CA_UNSET;
 
-	if (settings_changed == 0) {
-		return false;
+	if (telemetry.telemetry_table_version >= 4) {
+		phase_offset[0] = telemetry.ca_phase_offset_ch0;
+		phase_offset[1] = telemetry.ca_phase_offset_ch1;
+		vrefc_offset_ch1 = telemetry.ca_vrefc_offset_ch1;
+		if (telemetry.ca_phy_drv_tx_ca != 0) {
+			drv_tx_ca = telemetry.ca_phy_drv_tx_ca;
+		}
 	}
-
-	/* Applied CA driver strength. MRISC reports 0xFF when it did not pick a value;
-	 * seeding that back through the params table makes MRISC keep its default.
-	 */
-	uint32_t ca_word2 = MriscL1Read32(
-		gddr_inst, GDDR_TELEMETRY_TABLE_ADDR +
-				   offsetof(gddr_telemetry_table_t, ca_ocd_pulldown_offset));
-	uint8_t ocd_pulldown_offset = FIELD_GET(GENMASK(7, 0), ca_word2);
 
 	/* Anything persisted here is seeded back into MRISC on every later boot, so refuse
 	 * values the encodings cannot represent rather than making a bad read permanent.
 	 */
 	if (vrefc_offset > GDDR_CA_VREFC_OFFSET_MAX ||
 	    termination_offset > GDDR_CA_TERMINATION_OFFSET_MAX ||
-	    (ocd_pulldown_offset > GDDR_CA_OCD_PULLDOWN_OFFSET_MAX &&
-	     ocd_pulldown_offset != GDDR_CA_OCD_PULLDOWN_UNSET)) {
-		LOG_WRN("GDDR %d reported out-of-range CA settings: vrefc_offset=0x%x "
-			"termination_offset=%d ocd_pulldown_offset=0x%x; not latching",
-			gddr_inst, vrefc_offset, termination_offset, ocd_pulldown_offset);
+	    (drv_tx_ca > GDDR_CA_PHY_DRV_TX_CA_MAX && drv_tx_ca != GDDR_CA_PHY_DRV_TX_CA_UNSET) ||
+	    (telemetry.telemetry_table_version >= 4 &&
+	     (phase_offset[0] == GDDR_CA_PHASE_OFFSET_UNSET ||
+	      phase_offset[1] == GDDR_CA_PHASE_OFFSET_UNSET ||
+	      vrefc_offset_ch1 > GDDR_CA_VREFC_OFFSET_MAX))) {
+		LOG_WRN("GDDR %d reported out-of-range CA settings: vrefc_offset=0x%x/0x%x "
+			"termination_offset=%d drv_tx_ca=0x%x phase_offset=%d/%d; not latching",
+			gddr_inst, vrefc_offset, vrefc_offset_ch1, termination_offset, drv_tx_ca,
+			phase_offset[0], phase_offset[1]);
 		return false;
+	}
+
+	/* MRISC reports channel B's VREFC even when it follows channel A. */
+	if (!IS_ENABLED(CONFIG_TT_BH_ARC_GDDR_CA_PER_CH_VREFC) ||
+	    vrefc_offset_ch1 == vrefc_offset) {
+		vrefc_offset_ch1 = GDDR_CA_VREFC_OFFSET_CH1_SAME;
 	}
 
 	gddr_cal_entry_t *entry = &gddr_asic_cal[gddr_inst];
 
 	if (entry->valid && entry->ca_vrefc_offset == vrefc_offset &&
 	    entry->ca_termination_offset == termination_offset &&
-	    entry->ca_ocd_pulldown_offset == ocd_pulldown_offset) {
+	    entry->ca_phy_drv_tx_ca == drv_tx_ca &&
+	    CaPhaseOffsetSaved(entry->ca_phase_offset[0], phase_offset[0]) &&
+	    CaPhaseOffsetSaved(entry->ca_phase_offset[1], phase_offset[1]) &&
+	    entry->ca_vrefc_offset_ch1 == vrefc_offset_ch1) {
 		return false;
 	}
 
 	*entry = (gddr_cal_entry_t){
 		.ca_vrefc_offset = vrefc_offset,
 		.ca_termination_offset = termination_offset,
-		.ca_ocd_pulldown_offset = ocd_pulldown_offset,
+		.ca_phy_drv_tx_ca = drv_tx_ca,
 		.valid = 1,
+		.ca_phase_offset = {phase_offset[0], phase_offset[1]},
+		.ca_vrefc_offset_ch1 = vrefc_offset_ch1,
 	};
-	LOG_INF("GDDR %d CA settings changed: vrefc_offset=0x%x termination_offset=%d "
-		"ocd_pulldown_offset=0x%x",
-		gddr_inst, vrefc_offset, termination_offset, ocd_pulldown_offset);
+	/* verdict: telemetry v4 ca_center_status (GDDR_CA_VERDICT_*), 0 before v4 */
+	LOG_INF("GDDR %d CA settings changed: vrefc_offset=0x%x/0x%x termination_offset=%d "
+		"drv_tx_ca=0x%x phase_offset=%d/%d (source %d, search %d, verdict %d)",
+		gddr_inst, vrefc_offset, vrefc_offset_ch1, termination_offset, drv_tx_ca,
+		phase_offset[0], phase_offset[1], telemetry.ca_settings_source,
+		telemetry.ca_center_fallback_status, telemetry.ca_center_status);
 	return true;
 }
 
@@ -817,6 +935,7 @@ static int gddr_training(void)
 		if (IS_BIT_SET(GetDramMask(), gddr_inst)) {
 			int error = CheckGddrTraining(gddr_inst, timeout);
 
+			LogGddrCaStatus(gddr_inst);
 			if (error == -ETIMEDOUT) {
 				LOG_ERR("GDDR instance %d timed out during training", gddr_inst);
 				init_errors = true;
@@ -887,14 +1006,6 @@ static int32_t mrisc_message(uint32_t op_code, uint32_t instance_mask, uint32_t 
 
 int32_t set_mrisc_power_setting(bool on)
 {
-	/*
-	 * Galaxy/UBB stays out of GDDR PHY powerdown (self-refresh).
-	 */
-	if (!on && bh_chip_info_is_ubb()) {
-		LOG_WRN_ONCE("Skipping GDDR PHY powerdown on Galaxy");
-		return 0;
-	}
-
 	uint32_t op_code = on ? MRISC_MSG_TYPE_PHY_WAKEUP : MRISC_MSG_TYPE_PHY_POWERDOWN;
 
 	return mrisc_message(op_code, GetDramMask(), MRISC_POWER_SETTING_TIMEOUT_MS,
@@ -969,6 +1080,7 @@ static uint8_t toggle_gddr_reset(const union request *req, struct response *rsp)
 	k_timepoint_t timeout = sys_timepoint_calc(K_MSEC(MRISC_INIT_TIMEOUT));
 
 	rc = CheckGddrTraining(gddr_inst, timeout);
+	LogGddrCaStatus(gddr_inst);
 	if (rc < 0) {
 		rsp->data[1] = GDDR_RESET_ERR_TRAINING;
 		return 1;

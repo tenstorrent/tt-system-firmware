@@ -16,7 +16,7 @@
  */
 #include <stdint.h>
 
-#define GDDR_TELEMETRY_TABLE_T_VERSION (0x00000003)
+#define GDDR_TELEMETRY_TABLE_T_VERSION (0x00000004)
 
 typedef struct {
 	uint32_t telemetry_table_version;
@@ -51,42 +51,157 @@ typedef struct {
 	/* Applied CA termination offset (MR3, 0-3). */
 	uint8_t ca_settings_source;
 	/*
-	 * Where the applied CA settings came from. 0 = FW default LUT,
-	 * 1 = params table (SMC-seeded), 2 = runtime CA sweep.
+	 * Where the applied CA settings came from. 0 = FW default LUT, 1 = params table
+	 * (SMC-seeded), 2 = runtime 1D CA sweep (MRISC 2.17), 3 = 2D eye centering (MRISC 2.18+).
 	 */
 	uint8_t ca_settings_changed;
 	/*
-	 * 1 = Applied CA settings differ from the seeded/default values
-	 * (SMC should latch them to flash).
+	 * 1 = Applied CA settings differ from the seeded/default values (SMC should latch them to
+	 * flash). 2.18+ compares the CA termination, PHY CA TX drive, per-channel phase offset and
+	 * per-channel VREFC; the DRAM OCD is not a CA setting and is not compared.
 	 */
-	uint8_t ca_margin_check_status;
-	/* Post-training CA margin check result. 0 = not run, 1 = pass, 2 = fail. */
-	uint8_t ca_sweep_status;
+	uint8_t ca_center_trained_mask;
 	/*
-	 * Runtime CA sweep result. 0 = not run, 1 = completed with passing window,
-	 * 2 = completed with no passing window.
+	 * Five-point check fail mask at the trained point, before any centering (same bits as
+	 * ca_center_check_fail_mask). 0 when the check did not run. v3 had ca_margin_check_status
+	 * here.
 	 */
-	int8_t ca_window_min_offset;
+	uint8_t ca_center_phase_margin;
 	/*
-	 * Lowest passing CA VREFC offset (signed) observed by the margin check or sweep.
-	 * 0x7F = invalid/not measured.
+	 * Smallest solid (always-pass) phase margin in mixer steps, over both channels and sides,
+	 * at the point the final check judged, from the 2D scan. 0 = no scan / not judged on a
+	 * scan. v3 had ca_sweep_status here.
 	 */
-	int8_t ca_window_max_offset;
+	uint8_t ca_center_look1;
 	/*
-	 * Highest passing CA VREFC offset (signed) observed by the margin check or sweep.
-	 * 0x7F = invalid/not measured.
+	 * Look 1 at the seeded pair. Bits 6:0 = five-point fail mask, bit 7 = eye below
+	 * ca_center_min_area; 0xFF = the scan lost the interface; 0 = passed or no look. v3 had
+	 * ca_window_min_offset here.
+	 */
+	uint8_t ca_center_look2;
+	/*
+	 * Look 2 at the seeded pair (only taken when look 1 failed), same encoding as
+	 * ca_center_look1. v3 had ca_window_max_offset here.
 	 */
 	uint8_t ca_ocd_pulldown_offset;
 	/*
-	 * Applied CA driver strength as 3-bit OCD pulldown offset code
-	 * (0-3 = 0..+3, 4-7 = -4..-1).
+	 * Applied DRAM OCD pulldown offset (MR2 OP[2:0], the DRAM's DQ / DBI / EDC output driver)
+	 * as 3-bit code (0-3 = 0..+3, 4-7 = -4..-1). Informational - not a CA setting, not searched
+	 * by CA centering and not latched by the SMC (2.18+ replaced it with ca_phy_drv_tx_ca).
 	 */
-	uint8_t ca_reserved0;
-	/* Reserved, reads 0. */
-	uint8_t ca_reserved1;
-	/* Reserved, reads 0. */
-	uint8_t ca_reserved2;
-	/* Reserved, reads 0. */
+	int8_t ca_phase_offset_ch0;
+	/*
+	 * Applied channel A CA phase offset on top of this boot's CA training (mean over the
+	 * channel's pins of applied - trained code), signed, units of 2 mixer steps rounded to
+	 * nearest. The SMC latches it and seeds it back as ca_phase_offset_ch0.
+	 */
+	int8_t ca_phase_offset_ch1;
+	/* Applied channel B CA phase offset, units of 2 mixer steps. */
+	uint8_t ca_vrefc_offset_ch1;
+	/*
+	 * Applied channel B CA VREFC offset (MR10 OP[3:0] code). Equals ca_vrefc_offset unless
+	 * per-channel VREFC is enabled.
+	 */
+	uint8_t ca_center_check_fail_mask;
+	/*
+	 * Five-point check points that failed at the point the interface was left on (centred and,
+	 * if needed, searched). Bit 0/1 = ch A phase -/+M, bit 2/3 = ch B phase -/+M, bit 4/5 =
+	 * VREFC -/+N, bit 6 = center (BIST).
+	 */
+	uint8_t ca_center_scan_status;
+	/* Last 2D eye scan status (ca_eye_status_e + 1), 0 = no scan ran. */
+	uint8_t ca_center_fallback_status;
+	/*
+	 * CA termination / PHY CA TX drive search. 0 = not run (the seeded pair passed at the
+	 * centred point), 1 = unused in 2.18, 2 = picked another pair that passes, 3 = time cap hit
+	 * before a pair passed (booted on the best, which may be the seeded pair), 4 = no pair
+	 * passed (booted on the best, which may be the seeded pair).
+	 */
+	uint8_t ca_center_flags;
+	/*
+	 * Bit 0 = eye below ca_center_min_area at the final point (only with a scan), bit 1 =
+	 * per-channel VREFC active, bit 2 = the final DRAM check needed a re-init (see
+	 * ca_center_final_reinits), bit 3 = the last-resort retrain of the seeded pair was used,
+	 * bit 4 = the first training failed and the CA boot rescue found the point CA centering
+	 * started from (see ca_rescue_*). Other bits read 0.
+	 */
+	uint16_t ca_center_elapsed_ms;
+	/* Time spent in CA centering this boot (ms, saturates). */
+	uint16_t ca_center_area_ch0;
+	/*
+	 * Channel A always-pass eye area of the last scan (mixer steps x VREFC codes; a quick-scan
+	 * row counts for 3 codes).
+	 */
+	uint16_t ca_center_area_ch1;
+	/* Channel B always-pass eye area of the last scan. */
+	int16_t ca_center_centroid_x16_ch0;
+	/*
+	 * Channel A eye centroid phase of the last scan x16, mixer steps vs the codes the scan
+	 * started at.
+	 */
+	int16_t ca_center_centroid_x16_ch1;
+	/* Channel B eye centroid phase of the last scan x16. */
+	int16_t ca_center_centroid_v16_ch0;
+	/*
+	 * Channel A eye centroid VREFC of the last scan x16, codes vs the VREFC the scan started
+	 * at.
+	 */
+	int16_t ca_center_centroid_v16_ch1;
+	/* Channel B eye centroid VREFC of the last scan x16. */
+	uint8_t ca_phy_drv_tx_ca;
+	/*
+	 * Applied PHY CA TX drive code (PHYCMN_ZQCALCONFIG3.drv_config_tx_ca, 1-0x3F), the CA drive
+	 * strength. Searched with ca_termination_offset by CA centering; the SMC latches it and
+	 * seeds it back as ca_phy_drv_tx_ca. 0 on MRISC builds before this field.
+	 */
+	uint8_t ca_center_status;
+	/*
+	 * Boot CA verdict (ca_verdict_e). 0 = NOT_RUN (CA check and centering both off), 1 =
+	 * PASS_SEEDED (final point passes BIST, +/-M, +/-N and min area on the seeded term / drive
+	 * pair), 2 = PASS_NEW_PAIR (the term / drive search found another passing pair), 3 =
+	 * CHECK_FAIL (check only, centering off; five-point check failed, plain training kept), 4 =
+	 * DEGRADED_TIME_CAP (time cap hit before a pair passed; booted on the best), 5 =
+	 * DEGRADED_NO_PASS (no pair passed; booted on the best), 6 = DEGRADED_SCAN_FAIL (scan did
+	 * not complete or the interface had to be retrained; booted on the seeded training point),
+	 * 7 = FATAL_NO_EYE, 8 = FATAL_RECOVERY_FAIL (7 / 8 halt with GDDR_ERROR_CA_SWEEP_FAIL).
+	 */
+	uint8_t ca_srx_status;
+	/*
+	 * Outcome of the last self-refresh exit (ca_srx_status_e). 0 = none since boot, 1 = OK
+	 * (offsets re-applied, DRAM check passed if enabled), 2 = offset re-apply failed, 3 =
+	 * SR-exit retrain timed out and the re-init at the CA point recovered, 4 = DRAM check
+	 * failed and a re-init fixed it, 5 = recovery failed (interface not restored).
+	 */
+	uint8_t ca_center_final_reinits;
+	/* Re-inits the final DRAM check at the boot point needed (0 = passed first time). */
+	uint16_t ca_center_reinits;
+	/* Re-inits during boot CA tuning (probe recoveries, search retrains), saturates. */
+	uint16_t ca_srx_count;
+	/* Self-refresh exits (CA retrains) since boot CA tuning finished, saturates. */
+	uint16_t ca_srx_fail_count;
+	/*
+	 * Self-refresh exits whose re-apply or DRAM check failed (re-inited) since boot, saturates.
+	 */
+	uint8_t ca_center_scans;
+	/* 2D CA eye scans run by boot CA tuning. */
+	uint8_t ca_center_look1_margin;
+	/* Smallest solid phase margin (mixer steps) at look 1 from its scan; 0 = no scan. */
+	uint8_t ca_rescue_first_fail;
+	/*
+	 * Post code (dram_post_code_e) the first training stopped at when it failed and the CA boot
+	 * rescue ran; 0 = the first training passed or the rescue is off.
+	 */
+	uint8_t ca_rescue_first_error;
+	/* Error code (dram_error_code_e) of that failed first training; 0 = none. */
+	uint8_t ca_rescue_tries;
+	/* Candidates the CA boot rescue retrained (the passing one included); 0 = no rescue. */
+	uint8_t ca_rescue_cacal_sts;
+	/*
+	 * PHY CACAL_OFSM_STS0 [3:0] of channel A (bits 3:0) and B (bits 7:4) when the first
+	 * training failed (bit 0 cacal_done, 2 ca_any_error, 3 cabin_error).
+	 */
+	uint16_t ca_rescue_ms;
+	/* Time the CA boot rescue took (ms, saturates); 0 = no rescue. */
 } gddr_telemetry_table_t;
 
 #endif

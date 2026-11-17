@@ -16,7 +16,7 @@
  */
 #include <stdint.h>
 
-#define GDDR_PARAMS_TABLE_T_VERSION (0x00000008)
+#define GDDR_PARAMS_TABLE_T_VERSION (0x00000009)
 
 typedef struct {
 	uint32_t params_table_version;
@@ -37,25 +37,122 @@ typedef struct {
 	/* ID to uniquely identify each controller (0-7) */
 	uint32_t ca_vrefc_offset;
 	/*
-	 * Per-controller CA VREFC offset as 4-bit two's-complement MR10 OP[3:0] code.
-	 * Used only when feature_bits.ca_settings_valid is 1. Patched at load time by the SMC.
+	 * Per-controller CA VREFC offset as 4-bit two's-complement MR10 OP[3:0] code. Used only
+	 * when feature_bits.ca_settings_valid is 1. Patched at load time by the SMC.
 	 */
 	uint32_t ca_termination_offset;
 	/*
-	 * Per-controller CA termination offset (MR3, 0-3).
-	 * Used only when feature_bits.ca_settings_valid is 1. Patched at load time by the SMC.
+	 * Per-controller CA termination offset (MR3, 0-3). Used only when
+	 * feature_bits.ca_settings_valid is 1. Patched at load time by the SMC.
 	 */
 	uint32_t ca_margin_check_vref_steps;
 	/*
-	 * Number of VREFC offset steps (N) to probe at +/-N around nominal during the
-	 * post-training CA margin check. Valid range 1-7.
+	 * Number of VREFC offset steps (N) to probe at +/-N around nominal during the post-training
+	 * CA margin check. Valid range 1-7.
 	 */
 	uint32_t ca_ocd_pulldown_offset;
 	/*
-	 * Per-controller CA driver strength as 3-bit OCD pulldown offset code
-	 * (0-3 = 0..+3, 4-7 = -4..-1). Used only when feature_bits.ca_settings_valid is 1
-	 * and the value is <= 7; 0xFF (default) = not seeded, keep the FW board-type default.
-	 * Patched at load time by the SMC.
+	 * DRAM OCD pulldown offset (MR2 OP[2:0], the DRAM's DQ / DBI / EDC output driver) as 3-bit
+	 * code (0-3 = 0..+3, 4-7 = -4..-1). Not a CA setting and not searched; 2.18 replaced it as
+	 * the CA drive with ca_phy_drv_tx_ca. Used only when feature_bits.ca_settings_valid is 1
+	 * and the value is <= 7; 0xFF (default) = keep the FW board-type default. The SMC leaves it
+	 * at 0xFF from 2.18; characterization / sideload use only.
+	 */
+	uint32_t ca_vrefc_offset_ch1;
+	/*
+	 * Channel B CA VREFC offset (4-bit MR10 code). Used only when
+	 * feature_bits.ca_settings_valid and ca_center_per_ch_vrefc are 1 and the value is <= 0xF;
+	 * 0xFF = same as ca_vrefc_offset. Patched at load time by the SMC.
+	 */
+	uint32_t ca_phase_offset_ch0;
+	/*
+	 * Channel A CA phase offset added to the CA training result, signed byte in units of 2
+	 * mixer steps. Used only when feature_bits.ca_phase_offsets_valid is 1. Patched at load
+	 * time by the SMC.
+	 */
+	uint32_t ca_phase_offset_ch1;
+	/* Channel B CA phase offset, same encoding as ca_phase_offset_ch0. */
+	uint32_t ca_center_policy;
+	/*
+	 * Ignored (the 2D eye scan runs on every boot when feature_bits.enable_ca_sweep_fallback is
+	 * 1, quick scan about 0.4 s per controller). Kept for the table layout.
+	 */
+	uint32_t ca_center_scan_mode;
+	/* 2D eye scan mode. 0 = quick (VREFC rows every 3 codes), 1 = full (every VREFC row). */
+	uint32_t ca_center_check_phase_steps;
+	/*
+	 * Phase margin M in mixer steps the centred point must have on both sides of each channel,
+	 * judged on the CA scan's always-pass (8/8 memtest) edges at the channel's VREFC row (the
+	 * trained-point check still probes at +/-M). galaxy_2 16G, 2026-11-05 campaign; full-size
+	 * dram-test fails 10-22 steps inside the memtest edge, and M 32 gave no CA-caused dram-test
+	 * failure in 80 runs. 0 = default 40.
+	 */
+	uint32_t ca_center_hyst_phase;
+	/*
+	 * Only move a channel's phase if the 2D eye centroid is at least this many mixer steps
+	 * away.
+	 */
+	uint32_t ca_center_hyst_vrefc;
+	/*
+	 * Only move VREFC if the chosen value is at least this many codes away (1-code moves are
+	 * within the scan's repeatability).
+	 */
+	uint32_t ca_center_min_area;
+	/*
+	 * Smallest acceptable always-pass eye area (mixer steps x VREFC codes, smallest channel;
+	 * healthy eyes are about 1100-1600). Part of the pass test at the centred point with BIST
+	 * and the +/-M / +/-N check; a point that misses any of them starts the CA termination /
+	 * PHY CA TX drive search. 0 = no eye size requirement.
+	 */
+	uint32_t ca_center_time_cap_ms;
+	/*
+	 * Wall-clock cap for the CA centering per boot; a termination / PHY CA TX drive candidate
+	 * is only started if it and the final step (restore of the best centred point, or a retrain
+	 * + look) still fit. Only a controller whose centred point fails the pass test searches.
+	 * galaxy_2 SUT-2 16G (full-mode scans), 2026-11-15 - two looks take up to ~10.5 s and a
+	 * quick-mode pair about 1 s or less, so 20000 leaves room for about 9 of the 11 pairs after
+	 * two slow looks (all of them after typical looks); the slowest passing boot over 40 loads
+	 * was 11.3 s (GDDR7), and at 10000 GDDR3 ran out of time in 3 of 20 boots (one booted
+	 * uncentred). With ca_rescue_time_cap_ms (15000) and training it stays inside the CMFW's 40
+	 * s wait.
+	 */
+	uint32_t ca_center_srx_check;
+	/*
+	 * 1 = after every self-refresh-exit retrain (with CA centering), check the DRAM at the CA
+	 * point (8 x 8 MB memtests in the SW-inaccessible top 16 MB) and re-init there on a
+	 * failure. 0 = off (the boot-time check still runs). Spare word before 2.18, so older
+	 * tables read 0.
+	 */
+	uint32_t ca_phy_drv_tx_ca;
+	/*
+	 * Per-controller PHY CA TX drive code (PHYCMN_ZQCALCONFIG3.drv_config_tx_ca, 6 bits). Used
+	 * only when feature_bits.ca_settings_valid is 1 and the value is 1-0x3F; 0 or 0xFF = not
+	 * seeded, keep the board default (5; Galaxy Rev C controller 3 = 18). CA centering searches
+	 * it with ca_termination_offset (it is the CA drive strength; the DRAM OCD pulldown is the
+	 * DQ / EDC driver). Spare word before 2.18, so older tables read 0. Patched at load time by
+	 * the SMC from its gddrcal flash table.
+	 */
+	uint32_t ca_center_drv_codes;
+	/*
+	 * PHY CA TX drive codes the CA termination / drive search tries after the seeded one, one
+	 * per byte from bits [7:0]; a 0 or a code above 0x3F ends the list, a word of 0 means the
+	 * FW default (15, 18). galaxy_2 16G sweep 2026-11-06, CA at plain training, all 8
+	 * controllers - 5, 15 and 18 pass everywhere; 4, 6, 7, 21 and 26 fail on some controllers;
+	 * 3, 12, 24, 28 and 30 on most.
+	 */
+	uint32_t ca_rescue_time_cap_ms;
+	/*
+	 * Wall-clock cap for the CA boot rescue (only runs when the first training fails); a
+	 * candidate is only started inside it. 0 or above 60000 = FW default (15000); older tables
+	 * have 0xFFFFFFFF in this spare word. The CMFW waits 40 s for all controllers, CA centering
+	 * takes up to ca_center_time_cap_ms after it.
+	 */
+	uint32_t ca_rescue_wait_ms;
+	/*
+	 * Training waits (DFI init, WCK2CK start, training complete, controller init, manual WCK2CK
+	 * / RD / WR stages) while the CA boot rescue retrains a candidate, instead of 2000 ms. A
+	 * passing controller finishes the controller CA stage about 0.09 ms after INITCAL_START. 0
+	 * or above 2000 = FW default (500); older tables have 0xFFFFFFFF in this spare word.
 	 */
 } gddr_params_table_t;
 

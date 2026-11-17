@@ -22,8 +22,34 @@
 #define GDDR_FEATURE_CTRL_PHY_PARAMS_OVERRIDE BIT(1)
 #define GDDR_FEATURE_ENABLE_INLINE_ECC        BIT(2)
 #define GDDR_FEATURE_CA_SETTINGS_VALID        BIT(3)
+/* MRISC 2.17: VREFC margin check / 1D sweep. 2.18+: five-point check / 2D eye centering. */
 #define GDDR_FEATURE_ENABLE_CA_MARGIN_CHECK   BIT(4)
 #define GDDR_FEATURE_ENABLE_CA_SWEEP_FALLBACK BIT(5)
+/* MRISC 2.18+ (params table v9) */
+#define GDDR_FEATURE_CA_PHASE_OFFSETS_VALID   BIT(6)
+#define GDDR_FEATURE_CA_CENTER_PER_CH_VREFC   BIT(7)
+/* MRISC 2.18: 1 = halt on a failed first training instead of running the CA boot rescue. The
+ * SMC leaves it clear, so the rescue runs (with GDDR_FEATURE_ENABLE_CA_SWEEP_FALLBACK).
+ */
+#define GDDR_FEATURE_DISABLE_CA_BOOT_RESCUE   BIT(8)
+
+/* Telemetry v4 ca_center_flags: the first training failed and the CA boot rescue found the
+ * point CA centering started from (ca_rescue_* hold why and how long it took).
+ */
+#define GDDR_CA_FLAG_RESCUED BIT(4)
+
+/* Telemetry v4 ca_center_status: boot CA verdict (bh-mrisc ca_verdict_e). 7 and 8 halt the
+ * MRISC with GDDR_ERROR_CA_SWEEP_FAIL; only 1 and 2 are latched to gddrcal.
+ */
+#define GDDR_CA_VERDICT_NOT_RUN             0 /* CA check and centering both off */
+#define GDDR_CA_VERDICT_PASS_SEEDED         1 /* passed on the seeded term / drive pair */
+#define GDDR_CA_VERDICT_PASS_NEW_PAIR       2 /* the term / drive search found a passing pair */
+#define GDDR_CA_VERDICT_CHECK_FAIL          3 /* check only: failed, plain training kept */
+#define GDDR_CA_VERDICT_DEGRADED_TIME_CAP   4 /* time cap before a pair passed, booted on best */
+#define GDDR_CA_VERDICT_DEGRADED_NO_PASS    5 /* no pair passed, booted on the best */
+#define GDDR_CA_VERDICT_DEGRADED_SCAN_FAIL  6 /* scan incomplete / retrained, seeded point */
+#define GDDR_CA_VERDICT_FATAL_NO_EYE        7
+#define GDDR_CA_VERDICT_FATAL_RECOVERY_FAIL 8
 
 #define MIN_GDDR_SPEED             12000
 #define MAX_GDDR_SPEED             20000
@@ -47,19 +73,22 @@
 #define MRISC_INIT_BEFORE   0x11111111
 #define MRISC_INIT_STARTED  0x0
 #ifdef CONFIG_TT_BH_ARC_GDDR_CA_LATCH
-/* The CA sweep fallback (MRISC 2.17+) can escalate through the full
- * 15 VREFC x 4 termination x 8 driver strength matrix when no setting
- * satisfies the +/-N margin requirement. Measured worst case is ~28 s on a
- * P300 (failing points are dominated by training retries); allow for it.
- * Healthy boots still finish in well under a second - this only delays the
- * failure verdict for controllers that are already in trouble.
+/* MRISC CA tuning at boot: the 2.17 1D sweep fallback measures ~28 s worst case on a P300.
+ * 2.18 caps its CA boot rescue (only after a failed first training) at ca_rescue_time_cap_ms
+ * (15 s) and the 2D eye centering with its CA termination x PHY CA TX drive search at
+ * ca_center_time_cap_ms (20 s). The controllers run in parallel and healthy boots finish in
+ * a few seconds - this only delays the failure verdict for controllers already in trouble.
  */
 #define MRISC_INIT_TIMEOUT 40000 /* In ms */
 #else
 #define MRISC_INIT_TIMEOUT 1000 /* In ms */
 #endif
-#define MRISC_MEMTEST_TIMEOUT          1000 /* In ms */
-#define MRISC_POWER_SETTING_TIMEOUT_MS 1000
+/* MRISC's MT_DONE wait is 1 s; allow for the message round trip. */
+#define MRISC_MEMTEST_TIMEOUT          1500 /* In ms */
+/* A healthy wake / powerdown takes milliseconds. Covers an SR entry or PHY low-power ack that
+ * times out on MRISC (2 s) and is backed out with an SR exit.
+ */
+#define MRISC_POWER_SETTING_TIMEOUT_MS 6000
 
 /* Defined by MRISC FW */
 

@@ -35,7 +35,9 @@ uint32_t read_reg_fake_mrisc_timed_out(uint32_t addr)
 		if (mrisc_msg_read_call_count < NUM_GDDR) {
 			mrisc_msg_read_call_count++;
 		} else {
-			z_impl_sys_clock_tick_set(100);
+			z_impl_sys_clock_tick_set(
+				sys_clock_tick_get() +
+				k_ms_to_ticks_ceil64(MRISC_POWER_SETTING_TIMEOUT_MS) + 1);
 			return MRISC_MSG_TYPE_PHY_POWERDOWN;
 		}
 	}
