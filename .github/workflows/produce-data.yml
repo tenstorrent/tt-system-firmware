@@ -43,28 +43,35 @@ jobs:
       - name: Determine run ID
         id: run-info
         shell: bash
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          THIS_REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          run_id="${{ github.event.workflow_run.id }}"
-          run_attempt="${{ github.event.workflow_run.run_attempt }}"
+          run_id="$RUN_ID"
+          run_attempt="$RUN_ATTEMPT"
 
           # Only upload for runs that originate from this repository. A
           # workflow_run can be triggered by fork PRs, and the upload job runs
-          # on a self-hosted runner with SFTP credentials, so gate the upload
+          # on a syseng runner with SFTP credentials, so gate the upload
           # to trusted (non-fork) runs only.
-          head_repo="${{ github.event.workflow_run.head_repository.full_name }}"
-          if [[ "$head_repo" == "${{ github.repository }}" ]]; then
+          head_repo="$HEAD_REPO"
+          if [[ "$head_repo" == "$THIS_REPO" ]]; then
             upload="true"
           else
             upload="false"
-            echo "::notice::Skipping upload for run from '$head_repo' (not ${{ github.repository }})"
+            echo "::notice::Skipping upload for run from '$head_repo' (not $THIS_REPO)"
           fi
 
-          # The soak/long tests can be triggered on a PR via the 'long-tests'
-          # label, but we only want to upload their data for runs on the
-          # main branch.
-          workflow_name="${{ github.event.workflow_run.name }}"
-          head_branch="${{ github.event.workflow_run.head_branch }}"
-          default_branch="${{ github.event.repository.default_branch }}"
+          # Soak runs can be dispatched on a non-default branch. Only upload
+          # HW Soak data for the default branch.
+          workflow_name="$WORKFLOW_NAME"
+          head_branch="$HEAD_BRANCH"
+          default_branch="$DEFAULT_BRANCH"
           if [[ "$workflow_name" == "HW Soak" && "$head_branch" != "$default_branch" ]]; then
             upload="false"
             echo "::notice::Skipping upload for '$workflow_name' on branch '$head_branch' (only uploads on $default_branch)"
@@ -77,7 +84,7 @@ jobs:
           echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
           echo "upload=$upload" >> "$GITHUB_OUTPUT"
 
-          echo "::notice title=target-workflow-link::The workflow being analyzed is available at https://github.com/${{ github.repository }}/actions/runs/$run_id/attempts/$run_attempt"
+          echo "::notice title=target-workflow-link::The workflow being analyzed is available at https://github.com/${THIS_REPO}/actions/runs/${run_id}/attempts/${run_attempt}"
 
       - name: Check API rate limit
         env:
@@ -112,7 +119,8 @@ jobs:
     name: Upload Pipeline Data via SFTP
     needs: produce-data
     if: needs.produce-data.outputs.upload == 'true'
-    runs-on: self-hosted
+    # SFTP credentials are only present on the syseng upload runner.
+    runs-on: [self-hosted, syseng]
     steps:
       - name: Download pipeline JSON
         uses: actions/download-artifact@v4
