@@ -82,8 +82,16 @@ typedef struct {
 	/** @brief Extended board ID. */
 	uint32_t extended_board_id: 1;
 
+	/** @brief HDMA channel 0 is left to the host driver.
+	 *
+	 * Firmware does not program HDMA read or write channel 0, and advertises a second
+	 * MSI vector for HDMA completions. Any firmware use of HDMA is on channel 1 or above,
+	 * at a prefetch depth of 7 or less. Always enabled when supported.
+	 */
+	uint32_t hdma_ch0_host_owned: 1;
+
 	/** @brief Reserved for future use. */
-	uint32_t reserved: 29;
+	uint32_t reserved: 28;
 } telemetry_feature_flags_bits_0_t;
 
 /** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */

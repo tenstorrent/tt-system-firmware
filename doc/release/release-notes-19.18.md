@@ -12,6 +12,16 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+### PCIe
+
+- Advertise 2 MSI vectors (Multiple Message Capable = 1) at every PCIe init, including after a chip reset. Vector 1 is for HDMA completions, which the host driver owns; firmware sends its own MSIs on vector 0 only.
+- `TT_SMC_MSG_SEND_PCIE_MSI` now sends an MSI whose vector the host did not enable on vector 0, instead of dropping it.
+- Leave HDMA channel 0 to the host driver. The `TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER` (0x9B) and `TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER` (0x9C) messages are retired and reply "not recognized" (0xFF).
+
+### Telemetry
+
+- Report the HDMA change in telemetry: bit 3 (`hdma_ch0_host_owned`) of `TAG_FW_CAPABILITIES_0` and `TAG_FW_ACTIVE_CONFIG_0`.
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->

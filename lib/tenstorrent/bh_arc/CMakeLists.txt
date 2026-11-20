@@ -79,7 +79,6 @@ if(NOT CONFIG_TT_SMC_RECOVERY)
     gddr.c
     gddr_cal.c
     i2c_messages.c
-    pcie_dma.c
     pvt.c
     regulator.c
     regulator_config.c

@@ -375,6 +375,9 @@ static PCIeInitStatus PCIeInitComm(const struct CntlInitV3Param *param)
 
 	SetupDbiAccess();
 	CntlInitV3(param);
+	if ((PCIeDeviceType)param->device_type == EndPoint) {
+		PcieMsiAdvertiseVectors();
+	}
 
 	SetupSii();
 	SetupOutboundTlbs(); /* pcie_inst is implied by ConfigurePCIeTlbs */
