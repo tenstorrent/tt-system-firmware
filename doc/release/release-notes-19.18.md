@@ -15,7 +15,7 @@ Major enhancements with this release include:
 ### PCIe
 
 - Advertise 2 MSI vectors (Multiple Message Capable = 1) at every PCIe init, including after a chip reset. Vector 1 is for HDMA completions, which the host driver owns; firmware sends its own MSIs on vector 0 only.
-- Leave HDMA channel 0 to the host driver. The `TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER` (0x9B) and `TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER` (0x9C) messages are retired and reply "not recognized" (0xFF).
+- Leave HDMA channel 0 to the host driver. `TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER` (0x9B) and `TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER` (0x9C) now run on HDMA channel 1; the messages are unchanged.
 
 ### Telemetry
 

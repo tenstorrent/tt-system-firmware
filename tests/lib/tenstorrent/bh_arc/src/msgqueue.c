@@ -43,6 +43,13 @@ static uint8_t i2c_write_buf_idx;
 
 static uint32_t clock_wave_value;
 static uint32_t noc_2_axi_last_write;
+static uint32_t noc_2_axi_last_write_addr;
+
+/* DBI registers as seen through the ARC's NOC TLB 14 window */
+#define DBI_TLB_WINDOW_ADDR(dbi_addr) (0xCE000000U + (dbi_addr))
+/* Doorbells of HDMA channel 1; channel 0 belongs to the host driver */
+#define HDMA_DOORBELL_OFF_WRCH_1      0x00380204U
+#define HDMA_DOORBELL_OFF_RDCH_1      0x00380304U
 
 union request req = {0};
 struct response rsp = {0};
@@ -202,6 +209,7 @@ static void WriteReg_msgqueue_fake(uint32_t addr, uint32_t value)
 	    (addr >= ARC_NOC1_TLB_BASE_ADDR &&
 	     addr < ARC_NOC1_TLB_BASE_ADDR + ARC_NOC_TLB_WINDOW_SPAN)) {
 		noc_2_axi_last_write = value;
+		noc_2_axi_last_write_addr = addr;
 	}
 }
 
@@ -611,22 +619,36 @@ ZTEST(msgqueue, test_msg_type_force_vdd)
 	push_msg_failure("below-range %u (envelope [%u, %u])", too_low, vdd_min, vdd_max);
 }
 
-ZTEST(msgqueue, test_msg_type_pcie_dma_retired)
+ZTEST(msgqueue, test_msg_type_pcie_dma_chip_to_host)
 {
-	/* HDMA channel 0 belongs to the host driver: firmware no longer handles 0x9B/0x9C */
-	req = (union request){0};
-	req.data[0] = TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER;
-	msgqueue_request_push(0, &req);
-	process_message_queues();
-	msgqueue_response_pop(0, &rsp);
-	zexpect_equal(rsp.data[0] & 0xff, 0xff, "Chip-to-host DMA message should be unrecognized");
+	req.pcie_dma_transfer.command_code = TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER;
+	req.pcie_dma_transfer.completion_data = 0xAB;
+	req.pcie_dma_transfer.transfer_size_bytes = 4096;
+	req.pcie_dma_transfer.chip_addr = 0x100000;
+	req.pcie_dma_transfer.host_addr = 0x200000;
+	req.pcie_dma_transfer.msi_completion_addr = 0x300000;
 
-	req = (union request){0};
-	req.data[0] = TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER;
-	msgqueue_request_push(0, &req);
-	process_message_queues();
-	msgqueue_response_pop(0, &rsp);
-	zexpect_equal(rsp.data[0] & 0xff, 0xff, "Host-to-chip DMA message should be unrecognized");
+	push_msg_success();
+
+	zassert_equal(rsp.data[0], 0, "Chip-to-host DMA transfer should succeed");
+	zassert_equal(noc_2_axi_last_write_addr, DBI_TLB_WINDOW_ADDR(HDMA_DOORBELL_OFF_WRCH_1),
+		      "Chip-to-host DMA should ring the doorbell of write channel 1");
+}
+
+ZTEST(msgqueue, test_msg_type_pcie_dma_host_to_chip)
+{
+	req.pcie_dma_transfer.command_code = TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER;
+	req.pcie_dma_transfer.completion_data = 0xCD;
+	req.pcie_dma_transfer.transfer_size_bytes = 2048;
+	req.pcie_dma_transfer.chip_addr = 0x400000;
+	req.pcie_dma_transfer.host_addr = 0x500000;
+	req.pcie_dma_transfer.msi_completion_addr = 0x600000;
+
+	push_msg_success();
+
+	zassert_equal(rsp.data[0], 0, "Host-to-chip DMA transfer should succeed");
+	zassert_equal(noc_2_axi_last_write_addr, DBI_TLB_WINDOW_ADDR(HDMA_DOORBELL_OFF_RDCH_1),
+		      "Host-to-chip DMA should ring the doorbell of read channel 1");
 }
 
 ZTEST(msgqueue, test_msg_type_trigger_reset_invalid)

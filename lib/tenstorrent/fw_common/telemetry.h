@@ -84,8 +84,9 @@ typedef struct {
 
 	/** @brief HDMA channel 0 is left to the host driver.
 	 *
-	 * Firmware does not program HDMA read or write channel 0, and advertises a second
-	 * MSI vector for HDMA completions. Always enabled when supported.
+	 * Firmware does not program HDMA read or write channel 0 (its DMA messages use
+	 * channel 1), and advertises a second MSI vector for HDMA completions. Always enabled
+	 * when supported.
 	 */
 	uint32_t hdma_ch0_host_owned: 1;
 

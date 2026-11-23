@@ -517,6 +517,44 @@ struct test_rqst {
 	uint32_t test_value;
 };
 
+/** @brief Host request to initiate a PCIe DMA transfer
+ * @details Messages of this type are processed by @ref pcie_dma_transfer_handler.
+ *
+ * The transfer runs on HDMA channel 1. Channel 0 belongs to the host driver.
+ *
+ * For @ref TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER the DMA reads from the host
+ * and writes to the chip. For @ref TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER the
+ * DMA reads from the chip and writes to the host.
+ *
+ * On completion an MSI is sent to the host at msi_completion_addr with
+ * the completion_data value.
+ */
+struct pcie_dma_transfer_rqst {
+	/** @brief The command code corresponding to
+	 * @ref TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER or
+	 * @ref TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER
+	 */
+	uint8_t command_code;
+
+	/** @brief Completion data written to the MSI completion address */
+	uint8_t completion_data;
+
+	/** @brief Two bytes of padding */
+	uint8_t pad[2];
+
+	/** @brief Transfer size in bytes */
+	uint32_t transfer_size_bytes;
+
+	/** @brief Chip-side address for the transfer */
+	uint64_t chip_addr;
+
+	/** @brief Host-side address for the transfer */
+	uint64_t host_addr;
+
+	/** @brief MSI completion address on the host */
+	uint64_t msi_completion_addr;
+};
+
 /** @brief Host request to reset a single Tensix tile
  * @details Messages of this type are processed by @ref ToggleSingleTensixReset.
  *
@@ -1050,6 +1088,9 @@ union request {
 
 	/** @brief A test request */
 	struct test_rqst test;
+
+	/** @brief A PCIe DMA transfer request */
+	struct pcie_dma_transfer_rqst pcie_dma_transfer;
 
 	/** @brief An ASIC state transition request */
 	struct asic_state_rqst asic_state;
