@@ -59,11 +59,45 @@ config TT_BH_ARC_GDDR_CA_LATCH
 	  Seed MRISC with per-controller CA VREF/termination settings stored in
 	  the gddrcal flash partition, enable the MRISC post-training CA margin
 	  check with full-sweep fallback, and latch any updated settings back to
-	  flash after training. Settings cover CA VREF offset, CA termination
-	  offset, and CA driver strength (OCD pulldown offset), stored per ASIC
-	  and per controller. Requires gddrcal_a and gddrcal_b fixed partitions
-	  in the devicetree. Requires MRISC FW with params table v7 or newer
-	  (v8+ for driver strength); older MRISC FW ignores the extra fields.
+	  flash after training. Settings cover CA VREF offset and CA termination
+	  offset, stored per ASIC and per controller. Requires gddrcal_a and
+	  gddrcal_b fixed partitions in the devicetree. Requires MRISC FW with
+	  params table v7 or newer; older MRISC FW ignores the extra fields.
+	  With MRISC 2.18+ (params table v9) the margin check is a 2D five-point
+	  check, the fallback re-centers CA on the 2D eye and searches CA
+	  termination x PHY CA TX drive pairs, and the PHY CA TX drive (the CA
+	  drive strength) and per-channel CA phase offsets are latched and
+	  seeded as well. The DRAM OCD pulldown is not a CA setting and is left
+	  at the MRISC board default. A failed first training no longer halts:
+	  MRISC's CA boot rescue retrains CA candidates, CA centering starts
+	  from the one that trains, and the SMC latches it like any other
+	  passing point. Only a passing boot CA verdict (telemetry v4) is
+	  latched.
+
+config TT_BH_ARC_GDDR_CA_PER_CH_VREFC
+	bool "Let MRISC pick a separate CA VREFC per GDDR channel"
+	depends on TT_BH_ARC_GDDR_CA_LATCH
+	help
+	  MRISC 2.18+ 2D eye centering normally uses one CA VREFC for both
+	  channels of a controller (the value that maximizes the worse
+	  channel's margin). With this option it targets each channel's own
+	  eye centroid, programming channel B through its PHY DRAM config
+	  register, and the SMC latches and seeds channel B's VREFC separately.
+
+config TT_BH_ARC_GDDR_CA_PHASE_LATCH_DEADBAND
+	int "CA phase offset change needed to rewrite gddrcal, in 2-mixer-step units"
+	depends on TT_BH_ARC_GDDR_CA_LATCH
+	range 0 127
+	default 6
+	help
+	  MRISC re-centers CA on every boot, and the phase offset it applies
+	  on top of CA training varies by a few mixer steps from boot to boot
+	  with the training result (std 2-3 steps over 100 boots). The saved
+	  offset is only the starting point of the next boot, so it is
+	  rewritten only when an applied offset differs from it by more than
+	  this many 2-step units (any VREFC, termination or driver strength
+	  change is always saved). The default of 12 mixer steps kept it to
+	  1-2 writes per controller over 100 boots.
 
 config TT_BH_ARC_I2C_TIMEOUT
 	bool "Time out if I2C transaction exceeds given duration"

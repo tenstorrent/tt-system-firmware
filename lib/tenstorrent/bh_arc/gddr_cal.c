@@ -25,10 +25,27 @@ LOG_MODULE_REGISTER(gddr_cal, CONFIG_TT_APP_LOG_LEVEL);
  * gddr_cal_table_t, or to the on-flash framing. Banks stamped with another
  * version fail validation and are treated as absent, so the flow re-latches.
  * v1 was per-controller only, v2 added the per-ASIC dimension, v3 added the A/B
- * bank framing.
+ * bank framing, v4 added the CA phase offsets and channel B VREFC and replaced
+ * the DRAM OCD pulldown byte with the PHY CA TX drive. v3 banks are still read
+ * and converted (see gddr_cal_convert()).
  */
-#define GDDR_CAL_VERSION    3U
+#define GDDR_CAL_VERSION    4U
+#define GDDR_CAL_VERSION_V3 3U
 #define GDDR_CAL_SEQ_ERASED 0xFFFFFFFFU
+
+/* The v3 payload: gddr_cal_entry_t without the fields v4 appended, with the DRAM OCD
+ * pulldown where v4 has the PHY CA TX drive.
+ */
+struct gddr_cal_entry_v3 {
+	uint8_t ca_vrefc_offset;
+	uint8_t ca_termination_offset;
+	uint8_t ca_ocd_pulldown_offset;
+	uint8_t valid;
+};
+
+struct gddr_cal_table_v3 {
+	struct gddr_cal_entry_v3 entries[GDDR_CAL_NUM_ASICS][GDDR_CAL_NUM_CONTROLLERS];
+};
 
 #define GDDR_CAL_NUM_BANKS 2
 
@@ -86,7 +103,39 @@ static struct gddr_cal_bank bank_buf;
 static bool gddr_cal_hdr_is_plausible(const struct gddr_cal_bank_hdr *hdr)
 {
 	return hdr->magic == GDDR_CAL_MAGIC && hdr->seq != GDDR_CAL_SEQ_ERASED &&
-	       hdr->version == GDDR_CAL_VERSION;
+	       (hdr->version == GDDR_CAL_VERSION || hdr->version == GDDR_CAL_VERSION_V3);
+}
+
+static size_t gddr_cal_body_size(uint32_t version)
+{
+	return version == GDDR_CAL_VERSION_V3 ? sizeof(struct gddr_cal_table_v3)
+					      : sizeof(gddr_cal_table_t);
+}
+
+/*
+ * Convert a v3 bank body (in bank->table) into the v4 table. v3 kept the DRAM OCD pulldown
+ * where v4 has the PHY CA TX drive; it was never a drive code, so the drive comes back unset
+ * (MRISC keeps its board default), as do the phase offsets v3 did not have.
+ */
+static void gddr_cal_convert(const struct gddr_cal_bank *bank, gddr_cal_table_t *table)
+{
+	const struct gddr_cal_table_v3 *v3 = (const struct gddr_cal_table_v3 *)&bank->table;
+
+	for (uint8_t asic = 0; asic < GDDR_CAL_NUM_ASICS; asic++) {
+		for (uint8_t ctrl = 0; ctrl < GDDR_CAL_NUM_CONTROLLERS; ctrl++) {
+			const struct gddr_cal_entry_v3 *old = &v3->entries[asic][ctrl];
+
+			table->entries[asic][ctrl] = (gddr_cal_entry_t){
+				.ca_vrefc_offset = old->ca_vrefc_offset,
+				.ca_termination_offset = old->ca_termination_offset,
+				.ca_phy_drv_tx_ca = GDDR_CA_PHY_DRV_TX_CA_UNSET,
+				.valid = old->valid,
+				.ca_phase_offset = {GDDR_CA_PHASE_OFFSET_UNSET,
+						    GDDR_CA_PHASE_OFFSET_UNSET},
+				.ca_vrefc_offset_ch1 = GDDR_CA_VREFC_OFFSET_CH1_SAME,
+			};
+		}
+	}
 }
 
 /* Wrap-safe "is a newer than b". */
@@ -95,12 +144,14 @@ static bool gddr_cal_seq_is_newer(uint32_t a, uint32_t b)
 	return ((int32_t)(a - b)) > 0;
 }
 
+/* The body is bank->table for v4, or the (shorter) v3 table in the same place. */
 static uint32_t gddr_cal_bank_crc(const struct gddr_cal_bank *bank)
 {
 	uint32_t crc = crc32_ieee_update(0, (const uint8_t *)&bank->hdr,
 					 offsetof(struct gddr_cal_bank_hdr, cksum));
 
-	return crc32_ieee_update(crc, (const uint8_t *)&bank->table, sizeof(bank->table));
+	return crc32_ieee_update(crc, (const uint8_t *)&bank->table,
+				 gddr_cal_body_size(bank->hdr.version));
 }
 
 int gddr_cal_read(gddr_cal_table_t *table)
@@ -141,18 +192,25 @@ int gddr_cal_read(gddr_cal_table_t *table)
 	for (uint8_t i = 0; i < n_candidates; i++) {
 		uint8_t b = order[i];
 
-		rc = flash_read(flash, bank_offset[b], &bank_buf, sizeof(bank_buf));
+		rc = flash_read(flash, bank_offset[b], &bank_buf,
+				sizeof(bank_buf.hdr) + gddr_cal_body_size(hdr[b].version));
 		if (rc < 0) {
 			LOG_ERR("%s() failed: %d", "flash_read", rc);
 			continue;
 		}
 
-		if (bank_buf.hdr.cksum != gddr_cal_bank_crc(&bank_buf)) {
+		if (bank_buf.hdr.version != hdr[b].version ||
+		    bank_buf.hdr.cksum != gddr_cal_bank_crc(&bank_buf)) {
 			LOG_WRN("gddrcal bank %u CRC mismatch, ignoring", b);
 			continue;
 		}
 
-		*table = bank_buf.table;
+		if (bank_buf.hdr.version != GDDR_CAL_VERSION) {
+			gddr_cal_convert(&bank_buf, table);
+			LOG_INF("gddrcal bank %u is v%u, converted", b, bank_buf.hdr.version);
+		} else {
+			*table = bank_buf.table;
+		}
 		active_bank = b;
 		active_seq = bank_buf.hdr.seq;
 		have_active = true;

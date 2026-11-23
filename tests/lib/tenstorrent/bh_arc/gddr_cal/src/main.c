@@ -21,7 +21,8 @@
 
 /* Mirror of the private on-flash framing in lib/tenstorrent/bh_arc/gddr_cal.c. */
 #define GDDR_CAL_MAGIC      0x4C414347U
-#define GDDR_CAL_VERSION    3U
+#define GDDR_CAL_VERSION    4U
+#define GDDR_CAL_VERSION_V3 3U
 #define GDDR_CAL_SEQ_ERASED 0xFFFFFFFFU
 
 struct gddr_cal_bank_hdr {
@@ -34,6 +35,18 @@ struct gddr_cal_bank_hdr {
 struct gddr_cal_bank {
 	struct gddr_cal_bank_hdr hdr;
 	gddr_cal_table_t table;
+};
+
+struct gddr_cal_entry_v3 {
+	uint8_t ca_vrefc_offset;
+	uint8_t ca_termination_offset;
+	uint8_t ca_ocd_pulldown_offset;
+	uint8_t valid;
+};
+
+struct gddr_cal_bank_v3 {
+	struct gddr_cal_bank_hdr hdr;
+	struct gddr_cal_entry_v3 entries[GDDR_CAL_NUM_ASICS][GDDR_CAL_NUM_CONTROLLERS];
 };
 
 #define NUM_BANKS 2
@@ -64,8 +77,11 @@ static void fill_table(gddr_cal_table_t *table, uint8_t seed)
 
 			e->ca_vrefc_offset = (uint8_t)(seed + asic);
 			e->ca_termination_offset = (uint8_t)(seed + ctrl);
-			e->ca_ocd_pulldown_offset = (uint8_t)(seed ^ (asic * 8 + ctrl));
+			e->ca_phy_drv_tx_ca = (uint8_t)(seed ^ (asic * 8 + ctrl));
 			e->valid = 1;
+			e->ca_phase_offset[0] = (int8_t)(seed - ctrl);
+			e->ca_phase_offset[1] = (int8_t)(ctrl - asic);
+			e->ca_vrefc_offset_ch1 = (uint8_t)(seed + asic + ctrl);
 		}
 	}
 }
@@ -99,6 +115,35 @@ static void write_raw_bank(uint8_t bank, uint32_t seq, uint32_t version,
 	b.hdr.version = version;
 	b.table = *table;
 	b.hdr.cksum = fix_crc ? bank_crc(&b) : bank_crc(&b) ^ 0xffffffffU;
+
+	erase_bank(bank);
+	rc = flash_write(flash_dev, bank_addr[bank], &b, sizeof(b));
+	zassert_ok(rc, "flash_write bank %u failed: %d", bank, rc);
+}
+
+/* A v3 bank as the previous firmware wrote it, with a good CRC. */
+static void write_raw_v3_bank(uint8_t bank, uint32_t seq, uint8_t seed)
+{
+	struct gddr_cal_bank_v3 b;
+	int rc;
+
+	for (uint8_t asic = 0; asic < GDDR_CAL_NUM_ASICS; asic++) {
+		for (uint8_t ctrl = 0; ctrl < GDDR_CAL_NUM_CONTROLLERS; ctrl++) {
+			b.entries[asic][ctrl] = (struct gddr_cal_entry_v3){
+				.ca_vrefc_offset = (uint8_t)(seed + asic),
+				.ca_termination_offset = (uint8_t)(seed + ctrl),
+				.ca_ocd_pulldown_offset = (uint8_t)(seed ^ (asic * 8 + ctrl)),
+				.valid = (uint8_t)((asic + ctrl) & 1),
+			};
+		}
+	}
+	b.hdr.magic = GDDR_CAL_MAGIC;
+	b.hdr.seq = seq;
+	b.hdr.version = GDDR_CAL_VERSION_V3;
+	b.hdr.cksum =
+		crc32_ieee_update(crc32_ieee_update(0, (const uint8_t *)&b.hdr,
+						    offsetof(struct gddr_cal_bank_hdr, cksum)),
+				  (const uint8_t *)&b.entries, sizeof(b.entries));
 
 	erase_bank(bank);
 	rc = flash_write(flash_dev, bank_addr[bank], &b, sizeof(b));
@@ -330,11 +375,71 @@ ZTEST(gddr_cal, test_wrong_version_is_rejected)
 
 	fill_table(&table, 0xf0);
 
-	/* Stands in for a table written by an older firmware. */
-	write_raw_bank(0, 3, GDDR_CAL_VERSION - 1, &table, true);
+	/* Stands in for tables written by a much older and a newer firmware. */
+	write_raw_bank(0, 3, GDDR_CAL_VERSION_V3 - 1, &table, true);
 	write_raw_bank(1, 4, GDDR_CAL_VERSION + 1, &table, true);
 
 	zassert_equal(gddr_cal_read(&got), -ENOENT, "foreign versions must be rejected");
+}
+
+ZTEST(gddr_cal, test_v3_bank_is_converted)
+{
+	gddr_cal_table_t got;
+
+	write_raw_v3_bank(0, 5, 0x21);
+	zassert_ok(gddr_cal_read(&got), "a v3 bank must still be readable");
+
+	for (uint8_t asic = 0; asic < GDDR_CAL_NUM_ASICS; asic++) {
+		for (uint8_t ctrl = 0; ctrl < GDDR_CAL_NUM_CONTROLLERS; ctrl++) {
+			const gddr_cal_entry_t *e = &got.entries[asic][ctrl];
+
+			zassert_equal(e->ca_vrefc_offset, (uint8_t)(0x21 + asic));
+			zassert_equal(e->ca_termination_offset, (uint8_t)(0x21 + ctrl));
+			/* The v3 byte was the DRAM OCD, never a drive code. */
+			zassert_equal(e->ca_phy_drv_tx_ca, GDDR_CA_PHY_DRV_TX_CA_UNSET);
+			zassert_equal(e->valid, (asic + ctrl) & 1);
+			zassert_equal(e->ca_phase_offset[0], GDDR_CA_PHASE_OFFSET_UNSET);
+			zassert_equal(e->ca_phase_offset[1], GDDR_CA_PHASE_OFFSET_UNSET);
+			zassert_equal(e->ca_vrefc_offset_ch1, GDDR_CA_VREFC_OFFSET_CH1_SAME);
+			zassert_equal(e->reserved, 0);
+		}
+	}
+}
+
+/* The first write after reading a v3 bank stores v4 in the other bank and leaves the v3 one. */
+ZTEST(gddr_cal, test_write_after_v3_read_upgrades)
+{
+	gddr_cal_table_t table;
+	gddr_cal_table_t got;
+	uint32_t seq;
+	struct gddr_cal_bank_v3 old;
+
+	write_raw_v3_bank(0, 5, 0x21);
+	zassert_ok(gddr_cal_read(&got));
+
+	fill_table(&table, 0x44);
+	zassert_ok(gddr_cal_write(&table));
+	zassert_true(raw_bank_is_valid(1, &seq), "v4 write should target bank B");
+	zassert_equal(seq, 6, "v4 write should follow the v3 sequence number");
+
+	zassert_ok(flash_read(flash_dev, bank_addr[0], &old, sizeof(old)));
+	zassert_equal(old.hdr.version, GDDR_CAL_VERSION_V3, "v3 bank must not be touched");
+
+	zassert_ok(gddr_cal_read(&got));
+	zassert_mem_equal(&got, &table, sizeof(table), "newer v4 bank should win");
+}
+
+ZTEST(gddr_cal, test_newer_v4_wins_over_v3)
+{
+	gddr_cal_table_t table;
+	gddr_cal_table_t got;
+
+	fill_table(&table, 0x55);
+	write_raw_bank(0, 7, GDDR_CAL_VERSION, &table, true);
+	write_raw_v3_bank(1, 6, 0x21);
+
+	zassert_ok(gddr_cal_read(&got));
+	zassert_mem_equal(&got, &table, sizeof(table), "v4 bank (seq 7) should win");
 }
 
 ZTEST(gddr_cal, test_both_banks_corrupt_no_table)
