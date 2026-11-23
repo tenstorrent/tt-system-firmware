@@ -21,6 +21,11 @@
 /* MISC_CONTROL_1_OFF.DBI_RO_WR_EN: lets DBI write fields that are read-only from the host */
 #define PCIE_MISC_CONTROL_1_DBI_RO_WR_EN BIT(0)
 
+/* Multiple Message Capable is log2 of the vector count: 2 vectors. Vector 0 carries firmware's
+ * own MSIs; vector 1 is for HDMA completions, which the host driver programs.
+ */
+#define PCIE_MSI_MULTIPLE_MSG_CAP 1
+
 typedef struct {
 	uint32_t pci_msi_cap_id: 8;
 	uint32_t pci_msi_cap_next_offset: 8;
@@ -78,14 +83,7 @@ void SendPcieMsi(uint8_t x, uint8_t y, uint32_t vector_id)
 		ReadDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL_REG_REG_ADDR);
 	uint32_t vectors_allowed = GetVectorsAllowed(pci_msi_cap.f.pci_msi_multiple_msg_en);
 
-	/* Vector 0 is the generic vector: an MSI whose vector the host did not enable goes
-	 * there instead of being dropped.
-	 */
-	if (vector_id >= vectors_allowed) {
-		vector_id = PCIE_MSI_GENERIC_VECTOR;
-	}
-
-	if (pci_msi_cap.f.pci_msi_enable) {
+	if (pci_msi_cap.f.pci_msi_enable && vector_id < vectors_allowed) {
 		uint32_t msi_addr_lo =
 			ReadDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_MSI_CAP_OFF_04H_REG_REG_ADDR);
 		uint32_t msi_addr_hi =

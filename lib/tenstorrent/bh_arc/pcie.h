@@ -26,14 +26,7 @@
 #define PCIE_LOGICAL_Y       0
 #define PCIE_DBI_REG_TLB     14
 
-/* MSI vectors advertised to the host, as the log2 Multiple Message Capable encoding: 2 vectors */
-#define PCIE_MSI_MULTIPLE_MSG_CAP 1
-/* Firmware's own MSIs, and any MSI whose vector the host did not enable */
-#define PCIE_MSI_GENERIC_VECTOR   0
-/* HDMA completions, owned by the host driver; firmware's own MSIs never use it */
-#define PCIE_MSI_HDMA_VECTOR      1
-
-/* Advertise PCIE_MSI_MULTIPLE_MSG_CAP in the MSI capability. A chip reset reverts it. */
+/* Advertise 2 MSI vectors in the MSI capability. A chip reset reverts it. */
 void PcieMsiAdvertiseVectors(void);
 
 static inline void WriteDbiReg(const uint32_t addr, const uint32_t data)

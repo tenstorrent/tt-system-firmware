@@ -43,9 +43,6 @@ static uint8_t i2c_write_buf_idx;
 
 static uint32_t clock_wave_value;
 static uint32_t noc_2_axi_last_write;
-/* PCIe MSI capability control word: pci_msi_enable | pci_msi_multiple_msg_en == 1 (2 vectors) */
-#define MSI_CTRL_DEFAULT (BIT(16) | BIT(20))
-static uint32_t msi_ctrl_fake = MSI_CTRL_DEFAULT;
 
 union request req = {0};
 struct response rsp = {0};
@@ -180,7 +177,7 @@ static uint32_t ReadReg_msgqueue_fake(uint32_t addr)
 
 	/*BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL_REG_REG_ADDR*/
 	if (addr == 0xCE000050) {
-		return msi_ctrl_fake;
+		return BIT(16) | BIT(20); /*pci_msi_enable | pci_msi_multiple_msg_en == 1*/
 	}
 
 	return 0;
@@ -434,7 +431,6 @@ static void test_setup(void *ctx)
 	i2c_read_buf_idx = 0U;
 	i2c_write_buf_idx = 0U;
 	clock_wave_value = 0U;
-	msi_ctrl_fake = MSI_CTRL_DEFAULT;
 	memset(i2c_read_buf_emul, 0, sizeof(i2c_read_buf_emul));
 	memset(i2c_write_buf_emul, 0, sizeof(i2c_write_buf_emul));
 }
@@ -452,30 +448,6 @@ ZTEST(msgqueue, test_msg_type_send_pcie_msi)
 
 	push_msg_success();
 	zexpect_equal(noc_2_axi_last_write, 1);
-}
-
-ZTEST(msgqueue, test_msg_type_send_pcie_msi_generic_vector)
-{
-	/* Host enabled 2 vectors: vector 2 is not among them, so it goes to vector 0 */
-	noc_2_axi_last_write = 0xffffffffU;
-	req.data[0] = TT_SMC_MSG_SEND_PCIE_MSI | (BIT(0) << 8U) /*PCIe instance 1*/;
-	req.data[1] = 0x02; /* MSI number */
-	push_msg_success();
-	zexpect_equal(noc_2_axi_last_write, 0, "MSI on a disabled vector should go to vector 0");
-
-	/* Host enabled 1 vector: the HDMA vector goes to vector 0 */
-	msi_ctrl_fake = BIT(16); /* pci_msi_enable, pci_msi_multiple_msg_en == 0 */
-	noc_2_axi_last_write = 0xffffffffU;
-	req.data[1] = 0x01; /* MSI number */
-	push_msg_success();
-	zexpect_equal(noc_2_axi_last_write, 0, "With 1 vector enabled, MSI should go to vector 0");
-
-	/* MSI disabled: nothing is sent */
-	msi_ctrl_fake = 0;
-	noc_2_axi_last_write = 0xffffffffU;
-	req.data[1] = 0x00; /* MSI number */
-	push_msg_success();
-	zexpect_equal(noc_2_axi_last_write, 0xffffffffU, "No MSI should be sent while MSI is off");
 }
 
 ZTEST(msgqueue, test_msg_type_i2c_message_bad_line_id)
