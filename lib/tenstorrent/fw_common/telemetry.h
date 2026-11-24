@@ -528,12 +528,21 @@ typedef union {
 /** @brief Lower 32 bits of the extended board ID as flashed. */
 #define TAG_BOARD_ID_EXT_LOW 85
 
+/**
+ * @brief Substrate version information.
+ *
+ * This tag provides details about the substrate version of the substrate used in the ASIC.
+ * Stored data relates to the ASCII code for the following versions: 'A0', 'A1', 'A2' or 'A3'.
+ * 0 if the fuse does not hold one of those versions.
+ */
+#define TAG_SUBSTRATE_VERSION 86
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 86
+#define TAG_COUNT 87
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100

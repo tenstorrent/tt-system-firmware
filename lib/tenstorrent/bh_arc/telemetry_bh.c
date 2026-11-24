@@ -183,6 +183,7 @@ static struct telemetry_table telemetry_table = {
 		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
 		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
 		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
+		[81] = {TAG_SUBSTRATE_VERSION, TELEM_OFFSET(TAG_SUBSTRATE_VERSION)},
 	},
 };
 /* clang-format on */
@@ -321,6 +322,26 @@ static uint32_t get_gddr_mrisc_endpoints(void)
 	return packed;
 }
 
+/*
+ * Fuse format, confirmed on an A1 chip:
+ * read bytes = [MSB ... LSB] = ['1']['A'][0x00][0x00] for A1
+ * Returns 0 if the fuse does not hold a substrate version, e.g. on parts fused before
+ * substrate tracking, which hold a test program revision there instead.
+ */
+static uint32_t GetTelemetrySubstrateVersion(void)
+{
+	uint32_t word = READ_FUNCTIONAL_EFUSE(SUBSTRATE_VERSION);
+
+	uint32_t c0 = (word >> 24) & 0xFF; /* version digit: '0','1','2','3' */
+	uint32_t c1 = (word >> 16) & 0xFF; /* expected 'A' */
+
+	if (c1 != 'A' || c0 < '0' || c0 > '3') {
+		return 0;
+	}
+
+	return ((c1 << 8) | c0);
+}
+
 void telemetry_platform_write_static(uint32_t app_version)
 {
 	telemetry_feature_flags_0_t fw_capabilities = {0};
@@ -396,6 +417,9 @@ void telemetry_platform_write_static(uint32_t app_version)
 	 */
 
 	telemetry[TAG_ASIC_LOCATION] = tt_bh_fwtable_get_asic_location(fwtable_dev);
+
+	/* Get substrate version from efuse and store in telemetry. */
+	telemetry[TAG_SUBSTRATE_VERSION] = GetTelemetrySubstrateVersion();
 
 	telemetry[TAG_GDDR_MRISC_NOC2AXI_PORT] = get_gddr_mrisc_endpoints();
 
