@@ -10,3 +10,12 @@ common:
 
 tests:
   drivers.pldm.nucleo: {}
+  drivers.pldm.nucleo.fw_update:
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=fw_update.overlay
+    extra_configs:
+      - CONFIG_FLASH=y
+      - CONFIG_FLASH_MAP=y
+      - CONFIG_STREAM_FLASH=y
+      - CONFIG_IMG_MANAGER=y
+      - CONFIG_MCUBOOT_IMG_MANAGER=y

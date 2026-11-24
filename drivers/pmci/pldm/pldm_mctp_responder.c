@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include "pldm_base.h"
+#include "pldm_fw_update.h"
 #include "pldm_mctp_responder.h"
 #include "pldm_pdr.h"
 #include "pldm_platform.h"
@@ -25,9 +26,19 @@
 LOG_MODULE_REGISTER(tt_pldm_mctp_rsp, CONFIG_TT_APP_LOG_LEVEL);
 
 #define TT_PLDM_MSG_TYPE_PLDM       0x01U
-#define TT_PLDM_MAX_MESSAGE_LEN     64U
+#define TT_PLDM_MAX_MESSAGE_LEN     CONFIG_TT_PMCI_PLDM_MAX_MESSAGE_LEN
 #define TT_PLDM_RX_QUEUE_DEPTH      8U
-#define TT_PLDM_RX_WORKQ_STACK_SIZE 1024U
+#define TT_PLDM_RX_WORKQ_STACK_SIZE CONFIG_TT_PMCI_PLDM_RX_WORKQ_STACK_SIZE
+
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+/* Retries and timeouts of a firmware update; DSP0267 FD_T2 defaults to 1 s */
+#define TT_PLDM_FW_UPDATE_TICK K_MSEC(1000)
+
+/* A firmware data chunk arrives after a PLDM header and a completion code */
+BUILD_ASSERT(sizeof(struct pldm_msg_hdr) + 1U + CONFIG_TT_PMCI_PLDM_FW_UPDATE_TRANSFER_SIZE <=
+		     TT_PLDM_MAX_MESSAGE_LEN,
+	     "CONFIG_TT_PMCI_PLDM_MAX_MESSAGE_LEN is too small for the firmware data chunks");
+#endif
 
 struct tt_pldm_rx_work_item {
 	uint8_t eid;
@@ -53,6 +64,16 @@ struct tt_pldm_mctp_responder_data {
 	struct k_work_q rx_work_q;
 	struct k_work rx_work;
 	struct k_msgq rx_msgq;
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+	struct k_work_delayable fw_update_work;
+	uint8_t fw_update_tag;
+	/* The firmware device initialised; type 5 messages are dropped otherwise */
+	bool fw_update_ready;
+#endif
+
+	/* Used only from rx_work_q's thread, one message at a time: kept off its stack */
+	struct tt_pldm_rx_work_item rx_item;
+	uint8_t tx_buf[1U + TT_PLDM_MAX_MESSAGE_LEN];
 
 	K_KERNEL_STACK_MEMBER(rx_work_q_stack, TT_PLDM_RX_WORKQ_STACK_SIZE);
 	uint8_t rx_msgq_buffer[TT_PLDM_RX_QUEUE_DEPTH * sizeof(struct tt_pldm_rx_work_item)];
@@ -64,11 +85,78 @@ static int tt_pldm_build_response(const struct device *dev, const struct pldm_ms
 				  size_t req_pldm_len, struct pldm_msg *resp_msg,
 				  size_t *resp_pldm_len);
 
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+static bool tt_pldm_is_fw_update(const uint8_t *pldm, size_t len)
+{
+	const struct pldm_msg_hdr *hdr = (const struct pldm_msg_hdr *)pldm;
+
+	return len >= sizeof(*hdr) && hdr->type == PLDM_FWUP;
+}
+
+/* Requests and responses of type 5 both go to the firmware device */
+static void tt_pldm_fw_update_rx(struct tt_pldm_mctp_responder_data *data, uint8_t eid,
+				 uint8_t msg_tag, const uint8_t *pldm, size_t len)
+{
+	const struct pldm_msg_hdr *hdr = (const struct pldm_msg_hdr *)pldm;
+	uint8_t *tx_buf = data->tx_buf;
+	size_t resp_len = TT_PLDM_MAX_MESSAGE_LEN;
+	int rc;
+
+	if (!data->fw_update_ready) {
+		return;
+	}
+
+	if (hdr->request) {
+		LOG_INF("Firmware update request 0x%02x from EID %u", hdr->command, eid);
+	}
+
+	rc = tt_pldm_fw_update_handle_msg(eid, pldm, len, &tx_buf[1], &resp_len);
+	if (rc != 0) {
+		LOG_WRN("Firmware update message not handled rc=%d", rc);
+	} else if (resp_len > 0U) {
+		tx_buf[0] = TT_PLDM_MSG_TYPE_PLDM;
+		rc = mctp_message_tx(data->mctp_ctx, eid, false, msg_tag, tx_buf, 1U + resp_len);
+		if (rc < 0) {
+			LOG_WRN("Failed to TX PLDM response rc=%d", rc);
+		}
+	}
+
+	/* The firmware device sends its next request from progress, so run it now */
+	k_work_reschedule_for_queue(&data->rx_work_q, &data->fw_update_work, K_NO_WAIT);
+}
+
+static void tt_pldm_fw_update_work_handler(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct tt_pldm_mctp_responder_data *data =
+		CONTAINER_OF(dwork, struct tt_pldm_mctp_responder_data, fw_update_work);
+	uint8_t *tx_buf = data->tx_buf;
+	size_t req_len = TT_PLDM_MAX_MESSAGE_LEN;
+	uint8_t eid;
+	int rc;
+
+	rc = tt_pldm_fw_update_progress(&tx_buf[1], &req_len, &eid);
+	if (rc == 0 && req_len > 0U) {
+		tx_buf[0] = TT_PLDM_MSG_TYPE_PLDM;
+		/* One request outstanding at a time; libpldm retries it after FD_T2 */
+		data->fw_update_tag = (data->fw_update_tag + 1U) & 0x7U;
+		rc = mctp_message_tx(data->mctp_ctx, eid, true, data->fw_update_tag, tx_buf,
+				     1U + req_len);
+		if (rc < 0) {
+			LOG_WRN("Failed to TX PLDM request rc=%d", rc);
+		}
+	}
+
+	k_work_reschedule_for_queue(&data->rx_work_q, &data->fw_update_work,
+				    TT_PLDM_FW_UPDATE_TICK);
+}
+#endif /* CONFIG_TT_PMCI_PLDM_FW_UPDATE */
+
 static void tt_pldm_mctp_process_rx_message(const struct device *dev, uint8_t eid, uint8_t msg_tag,
 					    const uint8_t *rx_buf, size_t len)
 {
 	struct tt_pldm_mctp_responder_data *data = dev->data;
-	uint8_t tx_buf[1U + TT_PLDM_MAX_MESSAGE_LEN];
+	uint8_t *tx_buf = data->tx_buf;
 	struct pldm_msg *resp_msg = (struct pldm_msg *)&tx_buf[1];
 	size_t req_pldm_len;
 	size_t resp_pldm_len = 0U;
@@ -102,13 +190,22 @@ static void tt_pldm_mctp_rx_work_handler(struct k_work *work)
 {
 	struct tt_pldm_mctp_responder_data *data =
 		CONTAINER_OF(work, struct tt_pldm_mctp_responder_data, rx_work);
-	struct tt_pldm_rx_work_item item;
+	struct tt_pldm_rx_work_item *item = &data->rx_item;
 
-	while (k_msgq_get(&data->rx_msgq, &item, K_NO_WAIT) == 0) {
-		if (data->dev != NULL) {
-			tt_pldm_mctp_process_rx_message(data->dev, item.eid, item.msg_tag, item.buf,
-							item.len);
+	while (k_msgq_get(&data->rx_msgq, item, K_NO_WAIT) == 0) {
+		if (data->dev == NULL) {
+			continue;
 		}
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+		if (item->buf[0] == TT_PLDM_MSG_TYPE_PLDM &&
+		    tt_pldm_is_fw_update(&item->buf[1], item->len - 1U)) {
+			tt_pldm_fw_update_rx(data, item->eid, item->msg_tag, &item->buf[1],
+					     item->len - 1U);
+			continue;
+		}
+#endif
+		tt_pldm_mctp_process_rx_message(data->dev, item->eid, item->msg_tag, item->buf,
+						item->len);
 	}
 }
 
@@ -178,11 +275,17 @@ static void tt_pldm_mctp_rx_message(uint8_t eid, bool tag_owner, uint8_t msg_tag
 	const struct device *dev = cb_data;
 	struct tt_pldm_mctp_responder_data *data = dev->data;
 	const uint8_t *rx_buf = msg;
-	struct tt_pldm_rx_work_item item;
+	/*
+	 * Static: with a large CONFIG_TT_PMCI_PLDM_MAX_MESSAGE_LEN the item does not
+	 * belong on the stack of the MCTP binding's RX work, the one thread that runs
+	 * this callback.
+	 */
+	static struct tt_pldm_rx_work_item item;
 
 	ARG_UNUSED(tag_owner);
 
 	if (len < 1U || len > sizeof(item.buf)) {
+		LOG_WRN("Dropping PLDM RX message: %u bytes", (unsigned int)len);
 		return;
 	}
 
@@ -248,6 +351,19 @@ static int tt_pldm_mctp_responder_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+	k_work_init_delayable(&data->fw_update_work, tt_pldm_fw_update_work_handler);
+	rc = tt_pldm_fw_update_init();
+	if (rc != 0) {
+		/* Keep base, platform and OEM: only firmware update is unavailable */
+		LOG_ERR("Firmware update init failed rc=%d, firmware update disabled", rc);
+	} else {
+		data->fw_update_ready = true;
+		k_work_schedule_for_queue(&data->rx_work_q, &data->fw_update_work,
+					  TT_PLDM_FW_UPDATE_TICK);
+	}
+#endif
+
 	mctp_set_rx_all(data->mctp_ctx, tt_pldm_mctp_rx_message, (void *)dev);
 
 	data->ready = true;
@@ -281,4 +397,10 @@ static int tt_pldm_mctp_responder_init(const struct device *dev)
 			      CONFIG_APPLICATION_INIT_PRIORITY, NULL)
 
 /* clang-format on */
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+/* One firmware device: a second responder would drive it from a second work queue */
+BUILD_ASSERT(DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 1,
+	     "Firmware update supports a single tenstorrent,pldm-mctp-responder");
+#endif
+
 DT_INST_FOREACH_STATUS_OKAY(TT_PLDM_MCTP_RESPONDER_DEFINE)

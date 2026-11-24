@@ -42,6 +42,23 @@ config TT_PMCI_PLDM_MCTP_RESPONDER
 	  The driver consumes PLDM messages and emits responses for supported
 	  PLDM Base and Platform commands.
 
+config TT_PMCI_PLDM_MAX_MESSAGE_LEN
+	int "Largest PLDM message the responder sends or receives"
+	depends on TT_PMCI_PLDM_MCTP_RESPONDER
+	default 256 if TT_PMCI_PLDM_FW_UPDATE
+	default 64
+	range 64 2048
+	help
+	  Counted from the PLDM header. Longer messages are dropped. Each
+	  queued receive message reserves this much RAM, and so does the
+	  responder's transmit buffer.
+
+config TT_PMCI_PLDM_RX_WORKQ_STACK_SIZE
+	int "Stack size of the PLDM receive work queue"
+	depends on TT_PMCI_PLDM_MCTP_RESPONDER
+	default 2048 if TT_PMCI_PLDM_FW_UPDATE
+	default 1024
+
 config TT_PMCI_PLDM_LIBPLDM_FD
 	bool "Build the libpldm firmware device responder"
 	depends on PLDM
