@@ -7,4 +7,14 @@ config DMC_RUN_SMBUS_TESTS
 	  Run SMBUS tests on the DMC at boot time. This can be used to verify
 	  functionality of the SMBUS interface.
 
+config DMC_TEST_SKIP_IMAGE_CONFIRM
+	bool "Test only: never confirm the running image"
+	depends on BOARD_NUCLEO_U385RG_Q
+	help
+	  Do not mark the image as confirmed after boot, so after a test
+	  swap MCUboot reverts it at the next reset. Only for testing the
+	  firmware update revert
+	  path; never enable it in a release build. Only on the Nucleo
+	  development board.
+
 source "Kconfig.zephyr"
