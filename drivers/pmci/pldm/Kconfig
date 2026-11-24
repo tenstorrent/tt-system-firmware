@@ -51,3 +51,32 @@ config TT_PMCI_PLDM_LIBPLDM_FD
 	  src/firmware_device/fd.c) and the PLDM control helper it calls
 	  (src/control.c). The libpldm Zephyr module does not build them, and
 	  their API is still marked testing (LIBPLDM_ABI_TESTING).
+
+config TT_PMCI_PLDM_FW_UPDATE
+	bool "PLDM firmware update (DSP0267) firmware device"
+	default y
+	depends on DT_HAS_TENSTORRENT_PLDM_FW_UPDATE_ENABLED
+	depends on PLDM && MCUBOOT_IMG_MANAGER
+	depends on $(dt_nodelabel_enabled,slot1_partition)
+	select TT_PMCI_PLDM_LIBPLDM_FD
+	select IMG_ERASE_PROGRESSIVELY
+	help
+	  Answer PLDM for Firmware Update (type 5), with the identity given by
+	  the tenstorrent,pldm-fw-update devicetree node. The update agent's
+	  image is written to the MCUboot secondary slot, and ActivateFirmware
+	  requests a test swap. The new image runs after the next reset and
+	  must confirm itself, or MCUboot reverts it. No update is accepted
+	  while the running image is unconfirmed.
+
+if TT_PMCI_PLDM_FW_UPDATE
+
+config TT_PMCI_PLDM_FW_UPDATE_TRANSFER_SIZE
+	int "Largest firmware data chunk to request"
+	default 32
+	range 32 1024
+	help
+	  libpldm never asks for less than 32 bytes. Each chunk arrives in
+	  one PLDM message, so the responder must accept messages this size
+	  plus 4 bytes of PLDM header and completion code.
+
+endif # TT_PMCI_PLDM_FW_UPDATE
