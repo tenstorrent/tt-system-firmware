@@ -224,6 +224,15 @@ static int tt_pldm_mctp_responder_init(const struct device *dev)
 		return rc;
 	}
 
+	/* Advertise PLDM in MCTP Control Get Message Type Support. A bus owner (mctpd + pldmd)
+	 * only treats endpoints that list type 0x01 as PLDM termini.
+	 */
+	rc = mctp_control_add_type(data->mctp_ctx, TT_PLDM_MSG_TYPE_PLDM);
+	if (rc != 0) {
+		LOG_ERR("mctp_control_add_type failed rc=%d", rc);
+		return rc;
+	}
+
 	data->tid = cfg->tid;
 	data->pdr_dev = cfg->pdr_dev;
 	if (cfg->pdr_dev != NULL) {
