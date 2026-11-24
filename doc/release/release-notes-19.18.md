@@ -12,6 +12,8 @@ Major enhancements with this release include:
 
 ## Blackhole
 
+- Report GDDR instances whose MRISC is not servicing its mailbox in telemetry at `TAG_GDDR_MRISC_UNRESPONSIVE` (tag 86), one bit per instance. A set bit means that instance has stopped following power state changes and the chip needs a reset.
+
 ## Grendel
 
 <!-- Subsections can break down improvements by (area or board) -->

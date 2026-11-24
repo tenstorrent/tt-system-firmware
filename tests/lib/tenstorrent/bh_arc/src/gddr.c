@@ -53,12 +53,45 @@ void write_reg_fake_count_mrisc_msgs(uint32_t addr, uint32_t value)
 	}
 }
 
+static uint32_t mrisc_msg_read_count;
+static const uint8_t dead_gddr_inst = 2U;
+
+/* mrisc_message() reads each mailbox once, in instance order, before posting. Report a
+ * pending message only on the read that belongs to dead_gddr_inst.
+ */
+uint32_t read_reg_fake_one_mrisc_busy(uint32_t addr)
+{
+	if (addr == mrisc_msg_reg) {
+		if (mrisc_msg_read_count++ == dead_gddr_inst) {
+			return MRISC_MSG_TYPE_PHY_POWERDOWN;
+		}
+	}
+
+	return 0;
+}
+
 ZTEST(gddr, test_mrisc_busy_failed)
 {
 	ReadReg_fake.custom_fake = read_reg_fake_mrisc_busy;
 	int32_t ret = set_mrisc_power_setting(true);
 
 	zassert_equal(ret, -EBUSY);
+}
+
+/* One unresponsive MRISC must not stop the other instances from getting the message. */
+ZTEST(gddr, test_mrisc_one_busy_others_messaged)
+{
+	mrisc_msg_read_count = 0U;
+	num_mrisc_msgs = 0U;
+	ReadReg_fake.custom_fake = read_reg_fake_one_mrisc_busy;
+	WriteReg_fake.custom_fake = write_reg_fake_count_mrisc_msgs;
+
+	int32_t ret = set_mrisc_power_setting(true);
+
+	zexpect_equal(ret, -EBUSY);
+	zexpect_equal(num_mrisc_msgs, NUM_GDDR - 1);
+	zexpect_equal(get_mrisc_failed_mask(), BIT(dead_gddr_inst));
+	num_mrisc_msgs = 0U;
 }
 
 ZTEST(gddr, test_mrisc_timed_out)
@@ -76,6 +109,7 @@ ZTEST(gddr, test_mrisc_power_on)
 
 	zexpect_equal(ret, 0);
 	zexpect_equal(num_mrisc_msgs, NUM_GDDR);
+	zexpect_equal(get_mrisc_failed_mask(), 0U);
 
 	for (uint8_t i = 0U; i < NUM_GDDR; i++) {
 		zexpect_equal(mrisc_msgs[i], MRISC_MSG_TYPE_PHY_WAKEUP);

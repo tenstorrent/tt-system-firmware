@@ -373,13 +373,15 @@ static int check_mrisc_busy(uint8_t gddr_inst)
 	return 0;
 }
 
-static int wait_mrisc_not_busy(uint8_t gddr_inst, k_timepoint_t timeout, const char *op_desc)
+/* timeout_ms is only used to report how long the caller allowed; timeout is the deadline. */
+static int wait_mrisc_not_busy(uint8_t gddr_inst, k_timepoint_t timeout, uint32_t timeout_ms,
+			       const char *op_desc)
 {
 	while (MriscRegRead32(gddr_inst, MRISC_MSG_REGISTER) != 0) {
 		/* Wait for the message to be processed */
 		if (sys_timepoint_expired(timeout)) {
-			LOG_ERR("Timeout after %d ms waiting for GDDR instance %d to run %s",
-				MRISC_MEMTEST_TIMEOUT, gddr_inst, op_desc);
+			LOG_ERR("Timeout after %u ms waiting for GDDR instance %d to run %s",
+				timeout_ms, gddr_inst, op_desc);
 			return -ETIMEDOUT;
 		}
 	}
@@ -431,7 +433,7 @@ static int StartHwMemtest(uint8_t gddr_inst, uint32_t addr_bits, uint32_t start_
 static int CheckHwMemtestResult(uint8_t gddr_inst, k_timepoint_t timeout)
 {
 	/* This should only be called after StartHwMemtest() has already been called. */
-	int32_t ret = wait_mrisc_not_busy(gddr_inst, timeout, "memtest");
+	int32_t ret = wait_mrisc_not_busy(gddr_inst, timeout, MRISC_MEMTEST_TIMEOUT, "memtest");
 
 	if (ret != 0) {
 		gddr_bist.failed |= BIT(gddr_inst);
@@ -855,34 +857,71 @@ static int gddr_training(void)
 	return 0;
 }
 
+/* Bit N set: GDDR instance N did not take or did not complete its most recent MRISC message. */
+static uint32_t mrisc_failed_mask;
+
 static int32_t mrisc_message(uint32_t op_code, uint32_t instance_mask, uint32_t timeout_ms,
 			     const char *op_desc)
 {
+	uint32_t pending_mask = 0U;
+	uint32_t failed_mask = 0U;
+	int32_t first_err = 0;
+
+	/* Post the message to every instance whose mailbox is free. A mailbox that is still
+	 * occupied belongs to an MRISC that never serviced an earlier message (held in reset,
+	 * hung, or crashed). Record it and keep going so the other instances still get the
+	 * message.
+	 */
 	for (uint8_t gddr_inst = 0U; gddr_inst < NUM_GDDR; gddr_inst++) {
-		if (IS_BIT_SET(instance_mask, gddr_inst)) {
-
-			int ret = check_mrisc_busy(gddr_inst);
-
-			if (ret != 0) {
-				return ret;
-			}
-			MriscRegWrite32(gddr_inst, MRISC_MSG_REGISTER, op_code);
+		if (!IS_BIT_SET(instance_mask, gddr_inst)) {
+			continue;
 		}
+
+		/* Read the mailbox directly rather than through check_mrisc_busy(), which warns
+		 * every time. A dead MRISC is reported once, below.
+		 */
+		if (MriscRegRead32(gddr_inst, MRISC_MSG_REGISTER) != MRISC_MSG_TYPE_NONE) {
+			failed_mask |= BIT(gddr_inst);
+			first_err = (first_err != 0) ? first_err : -EBUSY;
+			continue;
+		}
+		MriscRegWrite32(gddr_inst, MRISC_MSG_REGISTER, op_code);
+		pending_mask |= BIT(gddr_inst);
 	}
 	k_timepoint_t timeout = sys_timepoint_calc(K_MSEC(timeout_ms));
 
+	/* Wait only on the instances that were posted to. The deadline is shared, so once it
+	 * has expired each remaining instance is still read once and passes if it is done.
+	 */
 	for (uint8_t gddr_inst = 0U; gddr_inst < NUM_GDDR; gddr_inst++) {
-		if (IS_BIT_SET(instance_mask, gddr_inst)) {
+		if (!IS_BIT_SET(pending_mask, gddr_inst)) {
+			continue;
+		}
 
-			int ret = wait_mrisc_not_busy(gddr_inst, timeout, op_desc);
+		int ret = wait_mrisc_not_busy(gddr_inst, timeout, timeout_ms, op_desc);
 
-			if (ret != 0) {
-				return ret;
-			}
+		if (ret != 0) {
+			failed_mask |= BIT(gddr_inst);
+			first_err = (first_err != 0) ? first_err : ret;
 		}
 	}
 
-	return 0;
+	/* Report an instance only when it goes from responding to not responding, so a dead
+	 * MRISC is logged once rather than on every message.
+	 */
+	uint32_t newly_failed = failed_mask & ~mrisc_failed_mask;
+
+	/* Log errors for only newly failed instances */
+	for (uint8_t gddr_inst = 0U; gddr_inst < NUM_GDDR; gddr_inst++) {
+		if (IS_BIT_SET(newly_failed, gddr_inst)) {
+			LOG_ERR("GDDR %d MRISC is not responding to %s; a reset is needed",
+				gddr_inst, op_desc);
+		}
+	}
+	/* Update global failed mask with new failures */
+	mrisc_failed_mask = (mrisc_failed_mask & ~instance_mask) | failed_mask;
+
+	return first_err;
 }
 
 int32_t set_mrisc_power_setting(bool on)
@@ -899,6 +938,11 @@ int32_t set_mrisc_power_setting(bool on)
 
 	return mrisc_message(op_code, GetDramMask(), MRISC_POWER_SETTING_TIMEOUT_MS,
 			     "power_setting");
+}
+
+uint32_t get_mrisc_failed_mask(void)
+{
+	return mrisc_failed_mask;
 }
 
 SYS_INIT_APP(gddr_training);
