@@ -58,7 +58,9 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on:
+      group: syseng
+      labels: ${{ matrix.config.board }}
     container:
       image: ${{ matrix.config.metal-image }}
       volumes:
@@ -182,7 +184,9 @@ jobs:
       fail-fast: false
       matrix:
         config: ${{ fromJson(needs.generate-matrix.outputs.deploy-matrix) }}
-    runs-on: ${{ matrix.config.board }}
+    runs-on:
+      group: syseng
+      labels: ${{ matrix.config.board }}
     container:
       image: ${{ matrix.config.metal-image }}
       volumes:
