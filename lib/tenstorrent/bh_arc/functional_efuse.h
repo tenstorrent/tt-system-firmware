@@ -14,6 +14,9 @@
 #define FUSE_ASIC_ID_OLD_END_BIT                      1071
 #define FUSE_ASIC_ID_LOW_START_BIT                    1600
 #define FUSE_ASIC_ID_LOW_END_BIT                      1631
+/* Functional efuse word 0x3D. Fused as the FT test program revision, used for substrate version */
+#define FUSE_SUBSTRATE_VERSION_START_BIT              1952
+#define FUSE_SUBSTRATE_VERSION_END_BIT                1983
 #define FUSE_ATE_TENSIX_ROW0_TEST_STATUS_START_BIT    3168
 #define FUSE_ATE_TENSIX_ROW0_TEST_STATUS_END_BIT      3199
 #define FUSE_ATE_TENSIX_ROW1_TEST_STATUS_START_BIT    3200
