@@ -528,12 +528,25 @@ typedef union {
 /** @brief Lower 32 bits of the extended board ID as flashed. */
 #define TAG_BOARD_ID_EXT_LOW 85
 
+/**
+ * @brief GDDR instances whose MRISC is not servicing its mailbox.
+ *
+ * Bit i is set when GDDR instance i did not take, or did not complete, the most recent MRISC
+ * message (PHY wakeup or powerdown). This means its MRISC is held in reset, hung, or crashed;
+ * the instance has stopped following power state changes and the chip needs a reset. The bit
+ * clears once the instance completes a later message.
+ *
+ * The value only changes when an MRISC message is sent, so an MRISC that dies between power
+ * state changes is not reported until the next one.
+ */
+#define TAG_GDDR_MRISC_UNRESPONSIVE 86
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 86
+#define TAG_COUNT 87
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100

@@ -183,6 +183,7 @@ static struct telemetry_table telemetry_table = {
 		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
 		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
 		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
+		[81] = {TAG_GDDR_MRISC_UNRESPONSIVE, TELEM_OFFSET(TAG_GDDR_MRISC_UNRESPONSIVE)},
 	},
 };
 /* clang-format on */
@@ -284,6 +285,7 @@ static void UpdateGddrTelemetry(void)
 	telemetry[TAG_GDDR_UNCORR_ERRS] = uncorr_errs;
 	telemetry[TAG_GDDR_STATUS] = status;
 	telemetry[TAG_GDDR_SPEED] = speed;
+	telemetry[TAG_GDDR_MRISC_UNRESPONSIVE] = get_mrisc_failed_mask();
 }
 
 /* Pack per-instance GDDR die temperatures into the host telemetry wire format. Each word holds

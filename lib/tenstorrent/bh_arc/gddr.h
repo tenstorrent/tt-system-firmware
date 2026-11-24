@@ -59,7 +59,7 @@
 #define MRISC_INIT_TIMEOUT 1000 /* In ms */
 #endif
 #define MRISC_MEMTEST_TIMEOUT          1000 /* In ms */
-#define MRISC_POWER_SETTING_TIMEOUT_MS 1000
+#define MRISC_POWER_SETTING_TIMEOUT_MS CONFIG_TT_BH_ARC_MRISC_POWER_SETTING_TIMEOUT_MS
 
 /* Defined by MRISC FW */
 
@@ -131,5 +131,16 @@ struct gddr_bist_info get_gddr_bist_info(void);
  * @return 0 on success. Negative error code on failure.
  */
 int32_t set_mrisc_power_setting(bool on);
+
+/** @brief Get the GDDR instances whose MRISC failed the most recent MRISC message
+ *
+ * A bit is set when that instance's mailbox was still occupied by an earlier message, or when
+ * it did not complete the message before the timeout. This means the MRISC is not servicing
+ * its mailbox (held in reset, hung, or crashed). The bit clears once the instance completes a
+ * later message.
+ *
+ * @return Bitmask with one bit per GDDR instance (bit N = instance N).
+ */
+uint32_t get_mrisc_failed_mask(void);
 
 #endif

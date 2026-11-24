@@ -65,6 +65,22 @@ config TT_BH_ARC_GDDR_CA_LATCH
 	  in the devicetree. Requires MRISC FW with params table v7 or newer
 	  (v8+ for driver strength); older MRISC FW ignores the extra fields.
 
+config TT_BH_ARC_MRISC_POWER_SETTING_TIMEOUT_MS
+	int "Timeout for GDDR MRISC PHY power messages in milliseconds"
+	default 20
+	range 1 1000
+	help
+	  How long to wait for the GDDR MRISCs to complete a PHY wakeup or PHY
+	  powerdown message. One deadline is shared by all GDDR instances. An
+	  instance that has not completed by then is reported as unresponsive.
+
+	  The wait runs inside the host message handler and blocks every host
+	  message queue, so keep it well under the host driver's message
+	  timeout (about 100 ms for tt-kmd 2.8). A healthy MRISC completes
+	  these messages in a few milliseconds, but there is no specified
+	  bound: the time depends on GDDR speed, board type, memory vendor
+	  and temperature, so a board may need to override the default.
+
 config TT_BH_ARC_I2C_TIMEOUT
 	bool "Time out if I2C transaction exceeds given duration"
 	default y

@@ -22,7 +22,9 @@
 #include "clock_wave.h"
 #include "cm2dm_msg.h"
 #include "noc_init.h"
+#include "noc2axi.h"
 #include "aiclk_ppm.h"
+#include "gddr.h"
 
 #include "reg_mock.h"
 #include "telemetry.h"
@@ -279,6 +281,43 @@ ZTEST(msgqueue, test_msgqueue_power_settings_cmd)
 	zexpect_equal(clock_control_get_status(
 			      pll4, (clock_control_subsys_t)CLOCK_CONTROL_TT_BH_CLOCK_L2CPUCLK_3),
 		      CLOCK_CONTROL_STATUS_OFF);
+}
+
+/* Every GDDR MRISC mailbox reads back as still holding an earlier message. */
+static uint32_t ReadReg_mrisc_busy_fake(uint32_t addr)
+{
+	const uint32_t mrisc_tlb = 13U;
+	const uint32_t mrisc_msg_reg = ARC_NOC0_BASE_ADDR + (mrisc_tlb << NOC_TLB_LOG_SIZE) +
+				       (MRISC_MSG_REGISTER & NOC_TLB_WINDOW_ADDR_MASK);
+
+	if (addr == mrisc_msg_reg) {
+		return MRISC_MSG_TYPE_PHY_POWERDOWN;
+	}
+
+	return 0;
+}
+
+/* An unresponsive MRISC must be reported to the host, not swallowed. */
+ZTEST(msgqueue, test_msgqueue_power_settings_mrisc_failure)
+{
+	ReadReg_fake.custom_fake = ReadReg_mrisc_busy_fake;
+
+	/* LSB to MSB:
+	 * 0x21: TT_SMC_MSG_POWER_SETTING
+	 * 0x02: 2 power flags valid, 0 power settings valid
+	 * 0x0002: max_ai_clk off, mrisc power on
+	 */
+	req.data[0] = 0x00020221;
+	push_msg_failure();
+
+	zexpect_equal(rsp.data[0], 1);
+	zexpect_not_equal(rsp.data[1], 0);
+	zexpect_equal(rsp.data[1], get_mrisc_failed_mask());
+
+	/* Once the MRISCs respond again the same request succeeds and the mask clears. */
+	RESET_FAKE(ReadReg);
+	push_msg_success();
+	zexpect_equal(get_mrisc_failed_mask(), 0U);
 }
 
 ZTEST(msgqueue, test_msgqueue_power_settings_with_go_busy)
