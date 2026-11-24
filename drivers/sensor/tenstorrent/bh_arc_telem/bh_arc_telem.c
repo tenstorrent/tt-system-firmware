@@ -18,6 +18,7 @@
 #include <tenstorrent/tt_smbus_regs.h>
 
 #include <errno.h>
+#include <string.h>
 #include <limits.h>
 
 #include <telemetry.h>
@@ -152,13 +153,15 @@ static int bh_arc_telem_decoder_get_frame_count(const uint8_t *buffer,
 						struct sensor_chan_spec chan_spec,
 						uint16_t *frame_count)
 {
-	const struct bh_arc_telem_rtio_data *sample = (const struct bh_arc_telem_rtio_data *)buffer;
+	struct bh_arc_telem_rtio_data sample;
 
 	if (buffer == NULL || frame_count == NULL) {
 		return -EINVAL;
 	}
 
-	*frame_count = sensor_chan_spec_eq(sample->spec, chan_spec) ? 1U : 0U;
+	/* The read buffer has no alignment guarantee: copy, do not cast */
+	memcpy(&sample, buffer, sizeof(sample));
+	*frame_count = sensor_chan_spec_eq(sample.spec, chan_spec) ? 1U : 0U;
 	return 0;
 }
 
@@ -180,8 +183,7 @@ static int bh_arc_telem_decoder_decode(const uint8_t *buffer, struct sensor_chan
 				       uint32_t *fit, uint16_t max_count, void *data_out)
 {
 	struct sensor_q31_data *out = data_out;
-	const struct bh_arc_telem_rtio_data *samples =
-		(const struct bh_arc_telem_rtio_data *)buffer;
+	struct bh_arc_telem_rtio_data sample;
 	int ret;
 
 	if (buffer == NULL || fit == NULL || data_out == NULL || max_count == 0U) {
@@ -193,14 +195,15 @@ static int bh_arc_telem_decoder_decode(const uint8_t *buffer, struct sensor_chan
 	}
 
 	for (uint32_t i = *fit; i < max_count; i++) {
-		if (!sensor_chan_spec_eq(samples[i].spec, chan_spec)) {
+		memcpy(&sample, &buffer[i * sizeof(sample)], sizeof(sample));
+		if (!sensor_chan_spec_eq(sample.spec, chan_spec)) {
 			continue;
 		}
 
 		int64_t micro;
 
-		ret = bh_arc_telem_raw_to_micro(samples[i].telem_tag, samples[i].scale_micro,
-						samples[i].raw, &micro);
+		ret = bh_arc_telem_raw_to_micro(sample.telem_tag, sample.scale_micro, sample.raw,
+						&micro);
 		if (ret == 0) {
 			out->header.reading_count = 1U;
 			out->header.base_timestamp_ns = 0U;
@@ -266,9 +269,8 @@ static void bh_arc_telem_submit_sample(struct rtio_iodev_sqe *iodev_sqe)
 		return;
 	}
 
-	struct bh_arc_telem_rtio_data *data = (struct bh_arc_telem_rtio_data *)buf;
-
 	for (size_t i = 0; i < sensor_cfg->count; i++) {
+		struct bh_arc_telem_rtio_data sample;
 		const struct sensor_chan_spec *chan = &sensor_cfg->channels[i];
 		const struct bh_arc_telem_map *map = bh_arc_telem_find_map(
 			cfg, (enum sensor_channel)chan->chan_type, (uint8_t)chan->chan_idx);
@@ -284,10 +286,12 @@ static void bh_arc_telem_submit_sample(struct rtio_iodev_sqe *iodev_sqe)
 			return;
 		}
 
-		data[i].spec = *chan;
-		data[i].telem_tag = map->telem_tag;
-		data[i].scale_micro = map->scale_micro;
-		data[i].raw = raw;
+		sample.spec = *chan;
+		sample.telem_tag = map->telem_tag;
+		sample.scale_micro = map->scale_micro;
+		sample.raw = raw;
+		/* The read buffer has no alignment guarantee: copy, do not cast */
+		memcpy(&buf[i * sizeof(sample)], &sample, sizeof(sample));
 	}
 
 	rtio_iodev_sqe_ok(iodev_sqe, 0);
