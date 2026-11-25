@@ -528,12 +528,68 @@ typedef union {
 /** @brief Lower 32 bits of the extended board ID as flashed. */
 #define TAG_BOARD_ID_EXT_LOW 85
 
+/**
+ * @brief VCOREM rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and output voltage.
+ */
+#define TAG_VCOREM_POWER 86
+
+/**
+ * @brief SERDES VDDL rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 0.75 V rail voltage.
+ * 0 if the rail is not monitored on this board.
+ */
+#define TAG_SERDES_VDDL_POWER 87
+
+/**
+ * @brief SERDES VDD rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 0.75 V rail voltage.
+ * 0 if the rail is not monitored on this board, e.g. the p300 left ASIC, which shares the
+ * right ASIC's regulator.
+ */
+#define TAG_SERDES_VDD_POWER 88
+
+/**
+ * @brief SERDES VDDH rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 1.2 V rail voltage.
+ * 0 if the rail is not monitored on this board.
+ */
+#define TAG_SERDES_VDDH_POWER 89
+
+/**
+ * @brief GDDR VDDR rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 0.85 V rail voltage.
+ * 0 if the rail is not monitored on this board.
+ */
+#define TAG_GDDR_VDDR_POWER 90
+
+/**
+ * @brief GDDR east VDDA rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 0.85 V rail voltage.
+ * 0 if the rail is not monitored on this board.
+ */
+#define TAG_GDDR_VDDA_EAST_POWER 91
+
+/**
+ * @brief GDDR west VDDA rail power in milliwatts.
+ *
+ * Derived from the regulator's output current and the nominal 0.85 V rail voltage.
+ * 0 if the rail is not monitored on this board.
+ */
+#define TAG_GDDR_VDDA_WEST_POWER 92
+
 /** @} */ /* end of telemetry_tag group */
 
 /* Not a real tag, signifies the last tag in the list.
  * MUST be incremented if new tags are defined.
  */
-#define TAG_COUNT 86
+#define TAG_COUNT 93
 
 /** @brief Default periodic telemetry update interval in milliseconds. */
 #define TELEM_UPDATE_INTERVAL_DEFAULT_MS 100

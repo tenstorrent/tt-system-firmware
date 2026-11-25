@@ -183,6 +183,13 @@ static struct telemetry_table telemetry_table = {
 		[78] = {TAG_BOARD_ID_EXT_HIGH, TELEM_OFFSET(TAG_BOARD_ID_EXT_HIGH)},
 		[79] = {TAG_BOARD_ID_EXT_MIDDLE, TELEM_OFFSET(TAG_BOARD_ID_EXT_MIDDLE)},
 		[80] = {TAG_BOARD_ID_EXT_LOW, TELEM_OFFSET(TAG_BOARD_ID_EXT_LOW)},
+		[81] = {TAG_VCOREM_POWER, TELEM_OFFSET(TAG_VCOREM_POWER)},
+		[82] = {TAG_SERDES_VDDL_POWER, TELEM_OFFSET(TAG_SERDES_VDDL_POWER)},
+		[83] = {TAG_SERDES_VDD_POWER, TELEM_OFFSET(TAG_SERDES_VDD_POWER)},
+		[84] = {TAG_SERDES_VDDH_POWER, TELEM_OFFSET(TAG_SERDES_VDDH_POWER)},
+		[85] = {TAG_GDDR_VDDR_POWER, TELEM_OFFSET(TAG_GDDR_VDDR_POWER)},
+		[86] = {TAG_GDDR_VDDA_EAST_POWER, TELEM_OFFSET(TAG_GDDR_VDDA_EAST_POWER)},
+		[87] = {TAG_GDDR_VDDA_WEST_POWER, TELEM_OFFSET(TAG_GDDR_VDDA_WEST_POWER)},
 	},
 };
 /* clang-format on */
@@ -499,10 +506,20 @@ void telemetry_platform_update(void)
 	telemetry[TAG_MAX_GDDR_TEMP] = telemetry_internal_data.gddr_temps.max_temp;
 	telemetry[TAG_INPUT_POWER] = GetInputPower(); /* Input power - reported in W */
 	telemetry[TAG_SMBUS_ERRORS] = smbus_target_get_error_count(smbus_target_dev);
+	const float *rail_power = telemetry_internal_data.rail_power;
+
 	/* reported in W, truncated to uint32_t */
-	telemetry[TAG_GDDR_WEST_IO_POWER] = telemetry_internal_data.gddr_io_power_west;
+	telemetry[TAG_GDDR_WEST_IO_POWER] = rail_power[POWER_RAIL_GDDR_IO_WEST];
 	/* reported in W, truncated to uint32_t */
-	telemetry[TAG_GDDR_EAST_IO_POWER] = telemetry_internal_data.gddr_io_power_east;
+	telemetry[TAG_GDDR_EAST_IO_POWER] = rail_power[POWER_RAIL_GDDR_IO_EAST];
+	/* reported in mW, truncated to uint32_t */
+	telemetry[TAG_VCOREM_POWER] = rail_power[POWER_RAIL_VCOREM] * 1000.0f;
+	telemetry[TAG_SERDES_VDDL_POWER] = rail_power[POWER_RAIL_SERDES_VDDL] * 1000.0f;
+	telemetry[TAG_SERDES_VDD_POWER] = rail_power[POWER_RAIL_SERDES_VDD] * 1000.0f;
+	telemetry[TAG_SERDES_VDDH_POWER] = rail_power[POWER_RAIL_SERDES_VDDH] * 1000.0f;
+	telemetry[TAG_GDDR_VDDR_POWER] = rail_power[POWER_RAIL_GDDR_VDDR] * 1000.0f;
+	telemetry[TAG_GDDR_VDDA_EAST_POWER] = rail_power[POWER_RAIL_GDDR_VDDA_EAST] * 1000.0f;
+	telemetry[TAG_GDDR_VDDA_WEST_POWER] = rail_power[POWER_RAIL_GDDR_VDDA_WEST] * 1000.0f;
 	telemetry[TAG_NOP_START_COUNT] = GetStartNOPCount();
 	telemetry[TAG_NOP_ON_DURATION] = GetNOPOnDuration(telemetry_update_interval_ms());
 	telemetry[TAG_TIMER_HEARTBEAT]++; /* Incremented every time the timer is called */
