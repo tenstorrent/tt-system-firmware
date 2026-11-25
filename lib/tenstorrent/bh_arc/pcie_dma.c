@@ -62,18 +62,7 @@
 #define PCIE_DBI_USP_A_BH_PCIE_DWC_PCIE_USP_PF0_HDMA_CAP_HDMA_XFERSIZE_OFF_RDCH_0_REG_ADDR         \
 	0x0038011C
 
-/*
- * The transfers run on HDMA channel 1: channel 0 belongs to the host driver. The *_CH_0 addresses
- * above are channel 0's; channel i is i * HDMA_CHANNEL_STRIDE further on. The host driver runs
- * read channel 0 at PF_DEPTH 7, and the read channels share 16 prefetch slots, taken in channel
- * order, so channel 1 must stay at PF_DEPTH 7 or less. Register mode leaves it at its reset value.
- */
-#define HDMA_CHANNEL        1
-#define HDMA_CHANNEL_STRIDE 0x200
-
-#define HDMA_REG_ADDR(reg)                                                                         \
-	(PCIE_DBI_USP_A_BH_PCIE_DWC_PCIE_USP_PF0_HDMA_CAP_HDMA_##reg##_REG_ADDR +                  \
-	 HDMA_CHANNEL * HDMA_CHANNEL_STRIDE)
+#define HDMA_REG_ADDR(reg) (PCIE_DBI_USP_A_BH_PCIE_DWC_PCIE_USP_PF0_HDMA_CAP_HDMA_##reg##_REG_ADDR)
 
 typedef struct {
 	uint32_t stop_mask: 1;
@@ -143,7 +132,7 @@ bool PcieDmaWriteTransfer(uint64_t chip_addr, uint64_t host_addr, uint32_t trans
 		    high32(msi_completion_addr + sizeof(uint32_t)));
 	WriteDbiReg(HDMA_REG_ADDR(MSI_MSGD_OFF_WRCH_0), completion_data);
 
-	/* Enable the write channel */
+	/* Enable write channel 0 */
 	WriteDbiReg(HDMA_REG_ADDR(EN_OFF_WRCH_0), 0x1);
 
 	WriteDbiReg(HDMA_REG_ADDR(SAR_LOW_OFF_WRCH_0), low32(chip_addr));
@@ -182,7 +171,7 @@ bool PcieDmaReadTransfer(uint64_t chip_addr, uint64_t host_addr, uint32_t transf
 		    high32(msi_completion_addr + sizeof(uint32_t)));
 	WriteDbiReg(HDMA_REG_ADDR(MSI_MSGD_OFF_RDCH_0), completion_data);
 
-	/* Enable the read channel */
+	/* Enable read channel 0 */
 	WriteDbiReg(HDMA_REG_ADDR(EN_OFF_RDCH_0), 0x1);
 
 	WriteDbiReg(HDMA_REG_ADDR(SAR_LOW_OFF_RDCH_0), low32(host_addr));

@@ -15,11 +15,11 @@ Major enhancements with this release include:
 ### PCIe
 
 - Advertise 2 MSI vectors (Multiple Message Capable = 1) at every PCIe init, including after a chip reset. Vector 1 is for HDMA completions, which the host driver owns; firmware sends its own MSIs on vector 0 only.
-- Leave HDMA channel 0 to the host driver. `TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER` (0x9B) and `TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER` (0x9C) now run on HDMA channel 1; the messages are unchanged.
+- Set HDMA channel 0's PF_DEPTH to 7 for the read and write engines at PCIe init. Channel 0's value applies to every channel, so channels 0 and 1 get 8 prefetch entries each. Firmware's DMA messages stay on channel 0; channel 1 is left to the host driver.
 
 ### Telemetry
 
-- Report the HDMA change in telemetry: bit 3 (`hdma_ch0_host_owned`) of `TAG_FW_CAPABILITIES_0` and `TAG_FW_ACTIVE_CONFIG_0`.
+- Report the HDMA change in telemetry: bit 3 (`hdma_host_channel_1`) of `TAG_FW_CAPABILITIES_0` and `TAG_FW_ACTIVE_CONFIG_0`.
 
 ## Grendel
 

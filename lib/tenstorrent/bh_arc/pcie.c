@@ -362,6 +362,33 @@ static void SetupSii(void)
 	WriteSiiReg(PCIE_SII_A_APP_PCIE_CTL_REG_OFFSET, app_pcie_ctl.val);
 }
 
+#define PCIE_DBI_HDMA_QOS_OFF_WRCH_0_REG_ADDR 0x0038003C
+#define PCIE_DBI_HDMA_QOS_OFF_RDCH_0_REG_ADDR 0x0038013C
+#define PCIE_HDMA_QOS_PF_DEPTH                GENMASK(25, 16)
+
+/*
+ * Channel 0's PF_DEPTH sets the prefetch depth of every HDMA channel: each channel gets
+ * PF_DEPTH + 1 of the engine's 16 prefetch entries (read and write engines are separate).
+ * 7 gives two channels 8 entries each: channel 0 for firmware's DMA messages and channel 1
+ * for the host driver. Channels 2 to 7 then have no entries and must not be used: they
+ * return corrupted data. The reset value is 1. It must be set while the engine is idle.
+ */
+#define PCIE_HDMA_PF_DEPTH 7
+
+static void SetHdmaPrefetchDepth(void)
+{
+	const uint32_t qos_regs[] = {PCIE_DBI_HDMA_QOS_OFF_WRCH_0_REG_ADDR,
+				     PCIE_DBI_HDMA_QOS_OFF_RDCH_0_REG_ADDR};
+
+	for (size_t i = 0; i < ARRAY_SIZE(qos_regs); i++) {
+		uint32_t qos = ReadDbiReg(qos_regs[i]);
+
+		qos &= ~PCIE_HDMA_QOS_PF_DEPTH;
+		qos |= FIELD_PREP(PCIE_HDMA_QOS_PF_DEPTH, PCIE_HDMA_PF_DEPTH);
+		WriteDbiReg(qos_regs[i], qos);
+	}
+}
+
 static PCIeInitStatus PCIeInitComm(const struct CntlInitV3Param *param)
 {
 	ConfigurePCIeTlbs(param->pcie_inst);
@@ -377,6 +404,7 @@ static PCIeInitStatus PCIeInitComm(const struct CntlInitV3Param *param)
 	CntlInitV3(param);
 	if ((PCIeDeviceType)param->device_type == EndPoint) {
 		PcieMsiAdvertiseVectors();
+		SetHdmaPrefetchDepth();
 	}
 
 	SetupSii();

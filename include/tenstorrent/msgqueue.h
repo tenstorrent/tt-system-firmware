@@ -520,8 +520,6 @@ struct test_rqst {
 /** @brief Host request to initiate a PCIe DMA transfer
  * @details Messages of this type are processed by @ref pcie_dma_transfer_handler.
  *
- * The transfer runs on HDMA channel 1. Channel 0 belongs to the host driver.
- *
  * For @ref TT_SMC_MSG_PCIE_DMA_HOST_TO_CHIP_TRANSFER the DMA reads from the host
  * and writes to the chip. For @ref TT_SMC_MSG_PCIE_DMA_CHIP_TO_HOST_TRANSFER the
  * DMA reads from the chip and writes to the host.
