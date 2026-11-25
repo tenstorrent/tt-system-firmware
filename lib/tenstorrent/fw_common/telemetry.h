@@ -82,8 +82,17 @@ typedef struct {
 	/** @brief Extended board ID. */
 	uint32_t extended_board_id: 1;
 
+	/** @brief HDMA channel 1 is left to the host driver.
+	 *
+	 * Firmware uses only HDMA read and write channel 0, sets channel 0's PF_DEPTH to 7
+	 * at PCIe init (8 prefetch entries for each of channels 0 and 1), and advertises a
+	 * second MSI vector for the host driver's HDMA completions. Always enabled when
+	 * supported.
+	 */
+	uint32_t hdma_host_channel_1: 1;
+
 	/** @brief Reserved for future use. */
-	uint32_t reserved: 29;
+	uint32_t reserved: 28;
 } telemetry_feature_flags_bits_0_t;
 
 /** @brief Packed 32-bit representation of @ref telemetry_feature_flags_bits_0_t. */
@@ -471,6 +480,7 @@ typedef union {
  *   kernel-throttler-at-AICLK-floor feature.
  * - bit 1 (`gddr_therm_trip`): firmware supports the GDDR thermal-trip action.
  * - bit 2 (`extended_board_id`): the board uses an extended board ID.
+ * - bit 3 (`hdma_host_channel_1`): firmware leaves HDMA channel 1 to the host driver.
  */
 #define TAG_FW_CAPABILITIES_0 78
 
@@ -483,6 +493,8 @@ typedef union {
  * - bit 1 (`gddr_therm_trip`): GDDR thermal-trip action is enabled.
  * - bit 2 (`extended_board_id`): the board uses an extended board ID; this is
  *   a board property and is not runtime-enabled.
+ * - bit 3 (`hdma_host_channel_1`): HDMA channel 1 is left to the host driver; always
+ *   enabled when supported.
  *
  * Runtime control:
  * - The host can enable or disable bit 0 with @ref TT_SMC_MSG_CHARACTERISATION

@@ -26,6 +26,9 @@
 #define PCIE_LOGICAL_Y       0
 #define PCIE_DBI_REG_TLB     14
 
+/* Advertise 2 MSI vectors in the MSI capability. A chip reset reverts it. */
+void PcieMsiAdvertiseVectors(void);
+
 static inline void WriteDbiReg(const uint32_t addr, const uint32_t data)
 {
 	const uint8_t noc_id = 0;

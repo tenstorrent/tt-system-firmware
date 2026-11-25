@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 #include <tenstorrent/smc_msg.h>
 #include <tenstorrent/msgqueue.h>
 
@@ -15,6 +16,15 @@
 #define BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_MSI_CAP_OFF_04H_REG_REG_ADDR          0x00000054
 #define BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_MSI_CAP_OFF_08H_REG_REG_ADDR          0x00000058
 #define BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_MSI_CAP_OFF_0CH_REG_REG_ADDR          0x0000005C
+#define BH_PCIE_DWC_PCIE_USP_PF0_PORT_LOGIC_MISC_CONTROL_1_OFF_REG_ADDR         0x000008BC
+
+/* MISC_CONTROL_1_OFF.DBI_RO_WR_EN: lets DBI write fields that are read-only from the host */
+#define PCIE_MISC_CONTROL_1_DBI_RO_WR_EN BIT(0)
+
+/* Multiple Message Capable is log2 of the vector count: 2 vectors. Vector 0 carries firmware's
+ * own MSIs; vector 1 is for HDMA completions, which the host driver programs.
+ */
+#define PCIE_MSI_MULTIPLE_MSG_CAP 1
 
 typedef struct {
 	uint32_t pci_msi_cap_id: 8;
@@ -40,6 +50,29 @@ typedef union {
 uint32_t GetVectorsAllowed(uint32_t mult_msg_en)
 {
 	return 1 << mult_msg_en;
+}
+
+void PcieMsiAdvertiseVectors(void)
+{
+	BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_HDL_PATH_E982B20F_PCI_MSI_CAP_ID_NEXT_CTRL_REG_reg_u
+		pci_msi_cap;
+	uint32_t misc_control_1 =
+		ReadDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_PORT_LOGIC_MISC_CONTROL_1_OFF_REG_ADDR);
+
+	/* Multiple Message Capable is read-only from host config space, writable through DBI
+	 * with DBI_RO_WR_EN set. Restore DBI_RO_WR_EN afterwards.
+	 */
+	WriteDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_PORT_LOGIC_MISC_CONTROL_1_OFF_REG_ADDR,
+		    misc_control_1 | PCIE_MISC_CONTROL_1_DBI_RO_WR_EN);
+
+	pci_msi_cap.val =
+		ReadDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL_REG_REG_ADDR);
+	pci_msi_cap.f.pci_msi_multiple_msg_cap = PCIE_MSI_MULTIPLE_MSG_CAP;
+	WriteDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_MSI_CAP_PCI_MSI_CAP_ID_NEXT_CTRL_REG_REG_ADDR,
+		    pci_msi_cap.val);
+
+	WriteDbiReg(BH_PCIE_DWC_PCIE_USP_PF0_PORT_LOGIC_MISC_CONTROL_1_OFF_REG_ADDR,
+		    misc_control_1);
 }
 
 void SendPcieMsi(uint8_t x, uint8_t y, uint32_t vector_id)

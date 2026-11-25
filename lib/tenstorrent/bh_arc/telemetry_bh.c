@@ -402,6 +402,7 @@ void telemetry_platform_write_static(uint32_t app_version)
 	fw_capabilities.bits.kernel_nops_at_aiclk_fmin = 1U;
 	fw_capabilities.bits.gddr_therm_trip = 1U;
 	fw_capabilities.bits.extended_board_id = read_only->has_board_id_high ? 1U : 0U;
+	fw_capabilities.bits.hdma_host_channel_1 = 1U;
 	telemetry[TAG_FW_CAPABILITIES_0] = fw_capabilities.u32_all;
 
 	active_config.bits.kernel_nops_at_aiclk_fmin =
@@ -409,6 +410,7 @@ void telemetry_platform_write_static(uint32_t app_version)
 			->feature_enable.kernel_throttler_at_floor_en;
 	active_config.bits.gddr_therm_trip =
 		tt_bh_fwtable_get_fw_table(fwtable_dev)->feature_enable.gddr_therm_trip_en;
+	active_config.bits.hdma_host_channel_1 = 1U;
 	telemetry[TAG_FW_ACTIVE_CONFIG_0] = active_config.u32_all;
 }
 
