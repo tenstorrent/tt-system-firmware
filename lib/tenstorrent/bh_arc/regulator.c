@@ -43,8 +43,7 @@
 #define READ_IOUT                      0x8C
 #define READ_IOUT_DATA_BYTE_SIZE       2
 #define READ_IOUT_DIRECT_MASK          0x3FFF  /* 14-bit raw IOUT field */
-#define GDDRIO_IOUT_LSB_A              0.0625f /* 62.5 mA per LSB */
-#define GDDR_IO_RAIL_VOLTAGE           1.35f   /* V - fixed IO rail supply */
+#define MPS_IOUT_LSB_A                 0.0625f /* 62.5 mA per LSB */
 #define READ_POUT                      0x96
 #define READ_POUT_DATA_BYTE_SIZE       2
 #define OPERATION                      0x1
@@ -73,6 +72,8 @@ LOG_MODULE_REGISTER(regulator);
 
 /* The default value is the regulator default */
 static uint8_t vout_cmd_source = VoutCommand;
+/* Last commanded VCOREM voltage in mV, 0 until set or read back */
+static uint32_t vcorem_mv;
 static const struct device *const fwtable_dev = DEVICE_DT_GET(DT_NODELABEL(fwtable));
 
 static float ConvertLinear11ToFloat(uint16_t value)
@@ -90,8 +91,36 @@ static float ConvertLinear11ToFloat(uint16_t value)
 /* GDDR IO regulators report READ_IOUT as a direct 14-bit value, 62.5 mA/LSB. */
 static float ConvertGddrIoCurrentToFloat(uint16_t value)
 {
-	return (value & READ_IOUT_DIRECT_MASK) * GDDRIO_IOUT_LSB_A;
+	return (value & READ_IOUT_DIRECT_MASK) * MPS_IOUT_LSB_A;
 }
+
+/* MPM3695 modules report READ_IOUT as a signed direct value, 62.5 mA/LSB. */
+static float ConvertMpm3695CurrentToFloat(uint16_t value)
+{
+	return (int16_t)value * MPS_IOUT_LSB_A;
+}
+
+struct rail_monitor {
+	uint8_t addr;
+	float (*convert_iout)(uint16_t value);
+	/* Nominal output in V. The MPM3695 READ_VOUT reports the feedback node scaled by
+	 * VOUT_SCALE_LOOP, which is left at its default rather than matched to each rail's
+	 * divider, so it is not the rail output. 0 means use the commanded VCOREM voltage.
+	 */
+	float voltage;
+};
+
+static const struct rail_monitor rail_monitors[POWER_RAIL_COUNT] = {
+	[POWER_RAIL_GDDR_IO_WEST] = {GDDRIO_WEST_ADDR, ConvertGddrIoCurrentToFloat, 1.35f},
+	[POWER_RAIL_GDDR_IO_EAST] = {GDDRIO_EAST_ADDR, ConvertGddrIoCurrentToFloat, 1.35f},
+	[POWER_RAIL_VCOREM] = {P0V8_VCOREM_ADDR, ConvertLinear11ToFloat, 0},
+	[POWER_RAIL_SERDES_VDDL] = {SERDES_VDDL_ADDR, ConvertMpm3695CurrentToFloat, 0.75f},
+	[POWER_RAIL_SERDES_VDD] = {SERDES_VDD_ADDR, ConvertMpm3695CurrentToFloat, 0.75f},
+	[POWER_RAIL_SERDES_VDDH] = {SERDES_VDDH_ADDR, ConvertMpm3695CurrentToFloat, 1.2f},
+	[POWER_RAIL_GDDR_VDDR] = {GDDR_VDDR_ADDR, ConvertMpm3695CurrentToFloat, 0.85f},
+	[POWER_RAIL_GDDR_VDDA_EAST] = {GDDR_VDDA_EAST_ADDR, ConvertMpm3695CurrentToFloat, 0.85f},
+	[POWER_RAIL_GDDR_VDDA_WEST] = {GDDR_VDDA_WEST_ADDR, ConvertMpm3695CurrentToFloat, 0.85f},
+};
 
 /* The function returns the core current in A. */
 float GetVcoreCurrent(void)
@@ -104,38 +133,35 @@ float GetVcoreCurrent(void)
 	return ConvertLinear11ToFloat(iout);
 }
 
-/* The function returns the GDDR west IO rail current in A. */
-float GetGddrWestIoCurrent(void)
+/* Reads the output power of a monitored rail in W. Returns 0 on success or the I2C error, in
+ * which case *power is not written (e.g. the regulator is not fitted on this board).
+ */
+uint32_t GetRailPower(enum power_rail rail, float *power)
 {
-	I2CInit(I2CMst, GDDRIO_WEST_ADDR, I2CFastMode, PMBUS_MST_ID);
+	const struct rail_monitor *monitor = &rail_monitors[rail];
+	float voltage = monitor->voltage;
 	uint16_t iout;
+	uint32_t err;
 
-	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
-		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
-	return ConvertGddrIoCurrentToFloat(iout);
-}
+	I2CInit(I2CMst, monitor->addr, I2CFastMode, PMBUS_MST_ID);
+	err = I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
+			   READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
+	if (err) {
+		return err;
+	}
 
-/* The function returns the GDDR east IO rail current in A. */
-float GetGddrEastIoCurrent(void)
-{
-	I2CInit(I2CMst, GDDRIO_EAST_ADDR, I2CFastMode, PMBUS_MST_ID);
-	uint16_t iout;
+	if (voltage == 0) {
+		/* Reading READ_VOUT on every call would cost a second transaction in the DVFS
+		 * pass, so only read it back if VCOREM has not been set yet.
+		 */
+		if (vcorem_mv == 0) {
+			vcorem_mv = get_vcorem();
+		}
+		voltage = vcorem_mv * 0.001f;
+	}
 
-	I2CReadBytes(PMBUS_MST_ID, READ_IOUT, PMBUS_CMD_BYTE_SIZE, (uint8_t *)&iout,
-		     READ_IOUT_DATA_BYTE_SIZE, PMBUS_FLIP_BYTES);
-	return ConvertGddrIoCurrentToFloat(iout);
-}
-
-/* The function returns the GDDR west IO rail power in W. */
-float GetGddrWestIoPower(void)
-{
-	return GetGddrWestIoCurrent() * GDDR_IO_RAIL_VOLTAGE;
-}
-
-/* The function returns the GDDR east IO rail power in W. */
-float GetGddrEastIoPower(void)
-{
-	return GetGddrEastIoCurrent() * GDDR_IO_RAIL_VOLTAGE;
+	*power = MAX(monitor->convert_iout(iout), 0.0f) * voltage;
+	return 0;
 }
 
 /* The function returns the core power in W. */
@@ -218,6 +244,7 @@ uint32_t get_vcore(void)
 void set_vcorem(uint32_t voltage_in_mv)
 {
 	i2c_set_max20816(P0V8_VCOREM_ADDR, voltage_in_mv);
+	vcorem_mv = voltage_in_mv;
 }
 
 uint32_t get_vcorem(void)

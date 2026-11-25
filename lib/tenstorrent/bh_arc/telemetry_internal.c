@@ -52,21 +52,21 @@ void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data)
 
 		/* Get all dynamically updated values */
 #ifndef CONFIG_TT_BH_ARC_EMUL
-		static bool read_gddr_io_west = true;
+		static enum power_rail next_rail;
+		float rail_power;
 
 		internal_data.vcore_voltage = get_vcore();
 		AVSReadCurrent(AVS_VCORE_RAIL, &internal_data.vcore_current);
 		internal_data.vcore_power =
 			internal_data.vcore_current * internal_data.vcore_voltage * 0.001f;
-		/* Only one GDDR IO rail read fits alongside the Vcore reads in a 1 ms DVFS tick,
-		 * so alternate between them. Each rail is refreshed every other update.
+		/* Only one more rail read fits alongside the Vcore reads in a 1 ms DVFS tick, so
+		 * cycle through the rails, refreshing one per update. A rail that fails to read,
+		 * e.g. because it is not fitted on this board, keeps its last value.
 		 */
-		if (read_gddr_io_west) {
-			internal_data.gddr_io_power_west = GetGddrWestIoPower();
-		} else {
-			internal_data.gddr_io_power_east = GetGddrEastIoPower();
+		if (GetRailPower(next_rail, &rail_power) == 0) {
+			internal_data.rail_power[next_rail] = rail_power;
 		}
-		read_gddr_io_west = !read_gddr_io_west;
+		next_rail = (next_rail + 1) % POWER_RAIL_COUNT;
 
 		(void)get_gddr_temps(&internal_data.gddr_temps);
 #endif

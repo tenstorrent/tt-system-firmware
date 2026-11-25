@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include "gddr.h"
+#include "regulator.h"
 
 typedef struct {
 	float vcore_voltage;          /* mV */
@@ -16,8 +17,7 @@ typedef struct {
 	float vcore_current;          /* A */
 	float asic_temperature;       /* degC */
 	struct gddr_temps gddr_temps; /* per-instance GDDR die temps + max across all dies, degC */
-	float gddr_io_power_west;     /* W */
-	float gddr_io_power_east;     /* W */
+	float rail_power[POWER_RAIL_COUNT]; /* W, indexed by enum power_rail */
 } TelemetryInternalData;
 
 void ReadTelemetryInternal(int64_t max_staleness, TelemetryInternalData *data);
