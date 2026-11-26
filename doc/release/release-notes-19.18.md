@@ -8,6 +8,9 @@ Major enhancements with this release include:
 
 ## What's Changed
 
+- DMC: PLDM for Firmware Update (DSP0267) firmware device, writing the application image to the
+  MCUboot secondary slot; enabled per board with a `tenstorrent,pldm-fw-update` devicetree node.
+
 ## Wormhole
 
 ## Blackhole

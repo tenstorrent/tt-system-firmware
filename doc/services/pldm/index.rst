@@ -540,6 +540,38 @@ enabled Kconfig options of the DMC build.
      - ``request_id``
      - Cancel a queued or running shell request when possible.
 
+Firmware Update
+^^^^^^^^^^^^^^^
+
+With ``CONFIG_TT_PMCI_PLDM_FW_UPDATE``, the responder also answers PLDM for
+Firmware Update (DSP0267, type ``0x05``) as a firmware device, built on
+libpldm's responder. It is enabled by a ``tenstorrent,pldm-fw-update``
+devicetree node, which gives the board's UUID descriptor (and, optionally, the
+component identifier):
+
+.. code-block:: devicetree
+
+   pldm_fw_update: pldm-fw-update {
+           compatible = "tenstorrent,pldm-fw-update";
+           uuid = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx";
+   };
+
+- Commands: ``QueryDeviceIdentifiers``, ``GetFirmwareParameters``,
+  ``RequestUpdate``, ``PassComponentTable``, ``UpdateComponent``,
+  ``ActivateFirmware``, ``GetStatus``, ``CancelUpdateComponent``,
+  ``CancelUpdate``; the device requests the image with
+  ``RequestFirmwareData`` and reports ``TransferComplete``,
+  ``VerifyComplete`` and ``ApplyComplete``.
+- One component, the application image, is written to the MCUboot secondary
+  slot. ``ActivateFirmware`` requests a test swap: the new image runs after the
+  next reset and MCUboot reverts it unless it confirms itself.
+- No update is accepted while the running image is unconfirmed, since the
+  secondary slot then holds the image MCUboot would revert to.
+- Packages must be padded to the transfer size
+  (``CONFIG_TT_PMCI_PLDM_FW_UPDATE_TRANSFER_SIZE``, 32 by default): the device
+  asks for exactly the bytes left in the last chunk, and update agents built
+  on libpldm reject requests under 32 bytes.
+
 Examples
 ~~~~~~~~
 
