@@ -2,9 +2,13 @@ name: Build
 
 on:
   workflow_call:
-    secrets:
-      SIGNATURE_KEY:
-        required: true
+    inputs:
+      # true only from release.yml on a v* tag push. Then the *-signed jobs
+      # run and read the firmware signing key from the OSPO Vault (OSPO-1396).
+      # All other runs build unsigned firmware, as before.
+      sign:
+        type: boolean
+        default: false
     outputs:
       combined-fwbundle-artifact:
         description: "The combined firmware bundle artifact name"
@@ -31,6 +35,16 @@ concurrency:
   group: ${{ github.workflow }}-build-fw-${{ github.event.pull_request.number || github.event.merge_group.base_sha || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+# Firmware signing key in the OSPO Vault (OSPO-1396). Used by the *-signed
+# jobs only. The Vault action pin and the environment name are repeated in
+# each *-signed job (GitHub does not allow env there).
+env:
+  VAULT_FW_SIGNING_ROLE: fw-signing
+  VAULT_FW_SIGNING_READ: kv/data/tenstorrent/all.firmware_signing_key SIGNATURE_KEY | SIGNATURE_KEY
+
 jobs:
   genboards:
     runs-on: ubuntu-24.04
@@ -43,6 +57,7 @@ jobs:
           echo "boards=$(jq -c '.' .github/boards.json)" | tee -a $GITHUB_OUTPUT
 
   build:
+    if: ${{ !inputs.sign }}
     runs-on: ubuntu-24.04
     needs: genboards
     strategy:
@@ -72,15 +87,6 @@ jobs:
         run: |
           BOARD="$(./scripts/rev2board.sh "${{ matrix.board }}")"
           echo "BOARD=$BOARD" | tee "$GITHUB_ENV"
-
-      - shell: bash
-        run: |
-          SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -gt 42 ]; then
-            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
-          fi
 
       - name: Build firmware bundle
         shell: bash
@@ -137,6 +143,7 @@ jobs:
             build-${{ matrix.board }}/**/zephyr.stat
 
   build-recovery:
+    if: ${{ !inputs.sign }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -145,15 +152,6 @@ jobs:
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
-
-      - shell: bash
-        run: |
-          SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -gt 42 ]; then
-            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
-          fi
 
       - name: Build recovery firmware
         shell: bash
@@ -201,6 +199,7 @@ jobs:
             build-recovery/**/zephyr.signed.bin
 
   build-assembly-test:
+    if: ${{ !inputs.sign }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -228,15 +227,6 @@ jobs:
             *) echo "Unknown board: ${{ matrix.board }}"; exit 1;;
           esac
           echo "BOARD=$BOARD" | tee "$GITHUB_ENV"
-
-      - shell: bash
-        run: |
-          SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -gt 42 ]; then
-            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
-          fi
 
       - name: Build assembly firmware
         shell: bash
@@ -323,6 +313,367 @@ jobs:
           name: assembly-test-${{ matrix.board }}-${{ steps.sanitize.outputs.sanitized_ref_name }}
           path: assembly-test-preflash/**
 
+  # ---------------------------------------------------------------------------
+  # Signed release builds (OSPO-1396). Same as build, build-recovery and
+  # build-assembly-test above, plus the firmware signing key from the OSPO
+  # Vault. They run only when release.yml calls this workflow with sign: true
+  # on a v* tag push. The Vault role accepts only the environment
+  # firmware-signing, and that environment admits only v* tags. A release
+  # build with no key fails; it never falls back to unsigned firmware.
+  # ---------------------------------------------------------------------------
+  build-signed:
+    if: ${{ inputs.sign }}
+    runs-on: ubuntu-24.04
+    needs: genboards
+    environment: firmware-signing
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        board: ${{ fromJson(needs.genboards.outputs.boards) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+          persist-credentials: false
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      # Fetch tags from repositories in manifest. Needed so that
+      # git describe functions correctly when creating a build.
+      # We can remove this once https://github.com/zephyrproject-rtos/action-zephyr-setup/issues/56
+      # is fixed.
+      - name: Fetch Tags
+        shell: bash
+        run: |
+          west forall -c 'git fetch --unshallow || true'
+
+      - name: Generate BOARD
+        working-directory: tt-system-firmware
+        shell: bash
+        run: |
+          BOARD="$(./scripts/rev2board.sh "${{ matrix.board }}")"
+          echo "BOARD=$BOARD" | tee "$GITHUB_ENV"
+
+      - name: Get the firmware signing key
+        id: vault
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@8909e7247ace56b203bb0db68cc9dc8fd095c6bc # vault-secrets-v1.1.0
+        with:
+          role: ${{ env.VAULT_FW_SIGNING_ROLE }}
+          secrets: ${{ env.VAULT_FW_SIGNING_READ }}
+
+      - name: Write the signing key file
+        shell: bash
+        env:
+          SIGNATURE_KEY_B64: ${{ fromJSON(steps.vault.outputs.secrets).SIGNATURE_KEY }}
+        run: |
+          set -euo pipefail
+          SIGNATURE_KEY_FILE="$(mktemp)"
+          printf '%s\n' "$SIGNATURE_KEY_B64" | base64 -d > "$SIGNATURE_KEY_FILE"
+          if [ "$(wc -c < "$SIGNATURE_KEY_FILE")" -le 42 ]; then
+            echo "::error::No valid firmware signing key. A release build must be signed."
+            exit 1
+          fi
+          echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+
+      # The shared Vault action does not leave the tailnet. The build does not
+      # need it.
+      - name: Leave tailnet
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if command -v tailscale >/dev/null 2>&1; then
+            sudo tailscale logout || { echo "::warning::tailscale logout failed; taking the interface down"; sudo tailscale down || true; }
+          else
+            echo "not on the tailnet"
+          fi
+
+      - name: Build firmware bundle
+        shell: bash
+        run: |
+          if [ "$BOARD" = "" ]; then
+            echo "BOARD is not set"
+            exit 1
+          fi
+
+          EXTRA_ARGS="--"
+          EXTRA_ARGS+=" -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y"
+          EXTRA_ARGS+=" -DSB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$SIGNATURE_KEY_FILE\""
+
+          west build \
+            -d build-${{ matrix.board }} \
+            --sysbuild \
+            -p \
+            -b $BOARD \
+            tt-system-firmware/app/smc \
+            $EXTRA_ARGS
+
+      - name: Verify firmware signature
+        shell: bash
+        run: |
+          # verify that built images for smc and dmc fw are signed
+          # imgtool returns a non-zero exit code if the image is not signed
+          if ! [[ "${{ matrix.board }}" =~ ^galaxy(_revc|_cf)?$ ]]; then
+            imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
+          fi
+          imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/recovery/zephyr/zephyr.signed.bin
+          imgtool verify --key "$SIGNATURE_KEY_FILE" build-${{ matrix.board }}/smc/zephyr/zephyr.signed.bin
+
+      - name: Upload firmware assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.board }}
+          path: |
+            build-${{ matrix.board }}/update.fwbundle
+            build-${{ matrix.board }}/**/.config
+            build-${{ matrix.board }}/**/devicetree_generated.h
+            build-${{ matrix.board }}/**/zephyr.bin
+            build-${{ matrix.board }}/**/zephyr.dts
+            build-${{ matrix.board }}/**/zephyr.elf
+            build-${{ matrix.board }}/**/zephyr.hex
+            build-${{ matrix.board }}/**/zephyr.map
+            build-${{ matrix.board }}/**/zephyr.signed.bin
+            build-${{ matrix.board }}/**/zephyr.signed.hex
+            build-${{ matrix.board }}/**/zephyr.stat
+
+  build-recovery-signed:
+    if: ${{ inputs.sign }}
+    runs-on: ubuntu-24.04
+    environment: firmware-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+          persist-credentials: false
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      - name: Get the firmware signing key
+        id: vault
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@8909e7247ace56b203bb0db68cc9dc8fd095c6bc # vault-secrets-v1.1.0
+        with:
+          role: ${{ env.VAULT_FW_SIGNING_ROLE }}
+          secrets: ${{ env.VAULT_FW_SIGNING_READ }}
+
+      - name: Write the signing key file
+        shell: bash
+        env:
+          SIGNATURE_KEY_B64: ${{ fromJSON(steps.vault.outputs.secrets).SIGNATURE_KEY }}
+        run: |
+          set -euo pipefail
+          SIGNATURE_KEY_FILE="$(mktemp)"
+          printf '%s\n' "$SIGNATURE_KEY_B64" | base64 -d > "$SIGNATURE_KEY_FILE"
+          if [ "$(wc -c < "$SIGNATURE_KEY_FILE")" -le 42 ]; then
+            echo "::error::No valid firmware signing key. A release build must be signed."
+            exit 1
+          fi
+          echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+
+      - name: Leave tailnet
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if command -v tailscale >/dev/null 2>&1; then
+            sudo tailscale logout || { echo "::warning::tailscale logout failed; taking the interface down"; sudo tailscale down || true; }
+          else
+            echo "not on the tailnet"
+          fi
+
+      - name: Build recovery firmware
+        shell: bash
+        run: |
+
+          EXTRA_ARGS="--"
+          EXTRA_ARGS+=" -DEXTRA_CONF_FILE=sysbuild/recovery.conf"
+          EXTRA_ARGS+=" -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y"
+          EXTRA_ARGS+=" -DCONFIG_MCUBOOT_GENERATE_UNSIGNED_IMAGE=n"
+          EXTRA_ARGS+=" -DCONFIG_MCUBOOT_SIGNATURE_KEY_FILE=\"$SIGNATURE_KEY_FILE\""
+
+          west build \
+            -d build-recovery \
+            -p \
+            -b tt_blackhole@p100a/tt_blackhole/smc \
+            tt-system-firmware/app/smc \
+            $EXTRA_ARGS
+
+      - name: Verify recovery signature
+        shell: bash
+        run: |
+          # imgtool returns a non-zero exit code if the image is not signed
+          imgtool verify --key "$SIGNATURE_KEY_FILE" build-recovery/zephyr/zephyr.signed.bin
+
+      - name: Upload recovery assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery
+          path: |
+            build-recovery/**/.config
+            build-recovery/**/devicetree_generated.h
+            build-recovery/**/zephyr.bin
+            build-recovery/**/zephyr.dts
+            build-recovery/**/zephyr.elf
+            build-recovery/**/zephyr.hex
+            build-recovery/**/zephyr.map
+            build-recovery/**/zephyr.stat
+            build-recovery/**/zephyr.signed.bin
+
+  build-assembly-test-signed:
+    if: ${{ inputs.sign }}
+    runs-on: ubuntu-24.04
+    environment: firmware-signing
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # FIXME: use board revisions from boards.json and filter those that support assembly tests
+        board:
+          - p150
+          - p300
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tt-system-firmware
+          persist-credentials: false
+      - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
+        with:
+          app-path: tt-system-firmware
+
+      - name: Generate BOARD
+        # FIXME: use board revisions from boards.json and filter those that support assembly tests
+        shell: bash
+        run: |
+          case "${{ matrix.board }}" in
+            p150) BOARD=tt_blackhole@p150a/tt_blackhole/dmc;;
+            p300) BOARD=tt_blackhole@p300a/tt_blackhole/dmc;;
+
+            *) echo "Unknown board: ${{ matrix.board }}"; exit 1;;
+          esac
+          echo "BOARD=$BOARD" | tee "$GITHUB_ENV"
+
+      - name: Get the firmware signing key
+        id: vault
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@8909e7247ace56b203bb0db68cc9dc8fd095c6bc # vault-secrets-v1.1.0
+        with:
+          role: ${{ env.VAULT_FW_SIGNING_ROLE }}
+          secrets: ${{ env.VAULT_FW_SIGNING_READ }}
+
+      - name: Write the signing key file
+        shell: bash
+        env:
+          SIGNATURE_KEY_B64: ${{ fromJSON(steps.vault.outputs.secrets).SIGNATURE_KEY }}
+        run: |
+          set -euo pipefail
+          SIGNATURE_KEY_FILE="$(mktemp)"
+          printf '%s\n' "$SIGNATURE_KEY_B64" | base64 -d > "$SIGNATURE_KEY_FILE"
+          if [ "$(wc -c < "$SIGNATURE_KEY_FILE")" -le 42 ]; then
+            echo "::error::No valid firmware signing key. A release build must be signed."
+            exit 1
+          fi
+          echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+
+      - name: Leave tailnet
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if command -v tailscale >/dev/null 2>&1; then
+            sudo tailscale logout || { echo "::warning::tailscale logout failed; taking the interface down"; sudo tailscale down || true; }
+          else
+            echo "not on the tailnet"
+          fi
+
+      - name: Build assembly firmware
+        shell: bash
+        run: |
+          if [ "$BOARD" = "" ]; then
+            echo "BOARD is not set"
+            exit 1
+          fi
+
+          EXTRA_ARGS="--"
+          EXTRA_ARGS+=" -DCONFIG_COMPILER_WARNINGS_AS_ERRORS=y"
+          EXTRA_ARGS+=" -DCONFIG_TT_ASSEMBLY_TEST=y"
+          EXTRA_ARGS+=" -DCONFIG_MCUBOOT_GENERATE_UNSIGNED_IMAGE=n"
+          EXTRA_ARGS+=" -DSB_CONFIG_BOOT_SIGNATURE_KEY_FILE=\"$SIGNATURE_KEY_FILE\""
+
+          west build \
+            -d build-assembly-test-${{ matrix.board }} \
+            --sysbuild \
+            -S rtt-console \
+            -p \
+            -b $BOARD \
+            tt-system-firmware/app/dmc \
+            $EXTRA_ARGS
+
+      - name: Verify firmware signature
+        shell: bash
+        run: |
+          # imgtool returns a non-zero exit code if the image is not signed
+          imgtool verify --key "$SIGNATURE_KEY_FILE" build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
+
+      - name: Sanitize Ref Name
+        id: sanitize
+        run: |
+          REF_NAME="${{ github.ref_name }}"
+          SANITIZED=$(echo "$REF_NAME" | sed 's/[ /]/_/g')
+          echo "sanitized_ref_name=$SANITIZED" >> $GITHUB_OUTPUT
+
+      - name: Rename default to test expectations
+        shell: bash
+        run: |
+            mkdir assembly-test-preflash
+            cp build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.hex assembly-test-preflash/${{ matrix.board }}-bootloader-${{ steps.sanitize.outputs.sanitized_ref_name }}.hex
+            cp build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.signed.hex assembly-test-preflash/${{ matrix.board }}-app-${{ steps.sanitize.outputs.sanitized_ref_name }}.signed.hex
+
+      - name: Upload firmware assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: assembly-fw-${{ matrix.board }}
+          path: |
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/.config
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/**/devicetree_generated.h
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.bin
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.dts
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.elf
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.hex
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.map
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.signed.bin
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.signed.hex
+            build-assembly-test-${{ matrix.board }}/dmc/zephyr/zephyr.stat
+
+      - name: Upload mcuboot assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: assembly-mcuboot-${{ matrix.board }}
+          path: |
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/.config
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/**/devicetree_generated.h
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.bin
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.dts
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.elf
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.hex
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.map
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.signed.bin
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.signed.hex
+            build-assembly-test-${{ matrix.board }}/mcuboot/zephyr/zephyr.stat
+
+      - name: Upload test collateral
+        uses: actions/upload-artifact@v4
+        with:
+          name: assembly-test-${{ matrix.board }}-${{ steps.sanitize.outputs.sanitized_ref_name }}
+          path: assembly-test-preflash/**
+
   build-preflash:
     runs-on: ubuntu-24.04
     strategy:
@@ -351,7 +702,9 @@ jobs:
 
   build-combined-fwbundle:
     runs-on: ubuntu-24.04
-    needs: build
+    # Exactly one of build and build-signed runs; the other is skipped.
+    needs: [build, build-signed]
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build-signed.result == 'success') }}
     outputs:
       combined-fwbundle-artifact: ${{ steps.set_combined_fwbundle_output.outputs.combined_fwbundle_artifact }}
     steps:

@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   should-run:
     if: >
@@ -25,9 +28,13 @@ jobs:
 
   build-fw-artifact:
     needs: should-run
+    # build-fw.yml holds release-only *-signed jobs that ask for id-token:
+    # write. They do not run here (input sign is false), and no OSPO Vault
+    # role accepts these runs. The firmware built here is unsigned (OSPO-1396).
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/build-fw.yml
-    secrets:
-      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
 
   # Generate a matrix containing the boards with a Metal target
   generate-matrix:

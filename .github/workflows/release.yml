@@ -20,6 +20,14 @@ env:
     else
       echo "Not publishing release notes for release candidate $VERSION"
     fi
+  # Firmware signing key in the OSPO Vault (OSPO-1396). The Vault action pin
+  # and the environment name are repeated in each job that reads a key
+  # (GitHub does not allow env there).
+  VAULT_FW_SIGNING_ROLE: fw-signing
+  VAULT_FW_SIGNING_READ: kv/data/tenstorrent/all.firmware_signing_key SIGNATURE_KEY | SIGNATURE_KEY
+
+permissions:
+  contents: read
 
 jobs:
   prepare-release:
@@ -68,6 +76,13 @@ jobs:
   build-recovery-bundle:
     runs-on: ubuntu-24.04
     needs: prepare-release
+    # Only a v* tag push gets the firmware signing key: the OSPO Vault role
+    # binds this environment, and the environment admits only tags v*
+    # (OSPO-1396).
+    environment: firmware-signing
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -76,16 +91,41 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tt-system-firmware
+          persist-credentials: false
       - uses: ./tt-system-firmware/.github/workflows/prepare-zephyr
         with:
           app-path: tt-system-firmware
-      - shell: bash
+      - name: Get the firmware signing key
+        id: vault
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@8909e7247ace56b203bb0db68cc9dc8fd095c6bc # vault-secrets-v1.1.0
+        with:
+          role: ${{ env.VAULT_FW_SIGNING_ROLE }}
+          secrets: ${{ env.VAULT_FW_SIGNING_READ }}
+      # A release must be signed: no key, no release.
+      - name: Write the signing key file
+        shell: bash
+        env:
+          SIGNATURE_KEY_B64: ${{ fromJSON(steps.vault.outputs.secrets).SIGNATURE_KEY }}
         run: |
+          set -euo pipefail
           SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -gt 42 ]; then
-            echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+          printf '%s\n' "$SIGNATURE_KEY_B64" | base64 -d > "$SIGNATURE_KEY_FILE"
+          if [ "$(wc -c < "$SIGNATURE_KEY_FILE")" -le 42 ]; then
+            echo "::error::No valid firmware signing key. A release build must be signed."
+            exit 1
+          fi
+          echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
+      # The shared Vault action does not leave the tailnet. The build does not
+      # need it.
+      - name: Leave tailnet
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if command -v tailscale >/dev/null 2>&1; then
+            sudo tailscale logout || { echo "::warning::tailscale logout failed; taking the interface down"; sudo tailscale down || true; }
+          else
+            echo "not on the tailnet"
           fi
       - name: Build Recovery Bundle
         shell: bash
@@ -104,9 +144,14 @@ jobs:
 
   build-release:
     needs: [prepare-release]
+    # The *-signed jobs of build-fw.yml read the firmware signing key from
+    # the OSPO Vault in environment firmware-signing (OSPO-1396).
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/build-fw.yml
-    secrets:
-      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
+    with:
+      sign: true
 
   build-tooling:
     needs: [prepare-release]
