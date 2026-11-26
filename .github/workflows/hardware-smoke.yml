@@ -24,6 +24,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   gen-config:
     runs-on: ubuntu-24.04
@@ -188,16 +191,13 @@ jobs:
         run: |
           echo "ASIC_ID=0" >> "$GITHUB_ENV"
 
-      - name: Check signing key
+      # Test runs never get the release signing key (OSPO-1396). They sign
+      # with a temporary key, as they have done since 2026-11-13.
+      - name: Create temporary signing key
         shell: bash
         run: |
           SIGNATURE_KEY_FILE="$(mktemp)"
-          echo "${{ secrets.SIGNATURE_KEY }}" | base64 -d > "$SIGNATURE_KEY_FILE"
-          SZ=$(wc -c "$SIGNATURE_KEY_FILE" | awk '{print $1}')
-          if [ $SZ -lt 42 ]; then
-            echo "No valid signing key found, using temporary key"
-            openssl genrsa -out "$SIGNATURE_KEY_FILE" 2048
-          fi
+          openssl genrsa -out "$SIGNATURE_KEY_FILE" 2048
           echo "SIGNATURE_KEY_FILE=$SIGNATURE_KEY_FILE" >> "$GITHUB_ENV"
 
       # Build bh-mod to be used by ccfgovr tests
