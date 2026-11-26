@@ -12,6 +12,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # Single source of truth for whether the long tests should run. Downstream
   # jobs gate on this via `needs` so the condition lives in exactly one place.
@@ -29,9 +32,13 @@ jobs:
     needs: should-run
     # Only consumed by BH jobs, which the whgx-nightly label skips.
     if: github.event.label.name != 'whgx-nightly'
+    # build-fw.yml holds release-only *-signed jobs that ask for id-token:
+    # write. They do not run here (input sign is false), and no OSPO Vault
+    # role accepts these runs. The firmware built here is unsigned (OSPO-1396).
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/build-fw.yml
-    secrets:
-      SIGNATURE_KEY: ${{ secrets.SIGNATURE_KEY }}
 
   gen-config:
     needs: should-run

@@ -11,6 +11,14 @@ on:
 # Defines two custom environment variables for the workflow. These are used for the Container registry domain, and a name for the Docker image that this workflow builds.
 env:
   REGISTRY: ghcr.io
+  # Firmware signing key in the OSPO Vault (OSPO-1396), for the recovery
+  # image only. The Vault action pin and the environment name are in job
+  # build-recovery-image (GitHub does not allow env there).
+  VAULT_FW_SIGNING_ROLE: fw-signing
+  VAULT_FW_SIGNING_READ: kv/data/tenstorrent/all.firmware_signing_key SIGNATURE_KEY | SIGNATURE_KEY
+
+permissions:
+  contents: read
 
 jobs:
   build-ci-image:
@@ -67,7 +75,13 @@ jobs:
           push-to-registry: true
 
   build-recovery-image:
+    # The recovery image is signed with the firmware signing key. Only a v*
+    # tag push gets the key: the OSPO Vault role binds the environment
+    # firmware-signing, and the environment admits only tags v* (OSPO-1396).
+    # A manual run builds the other two images only.
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
+    environment: firmware-signing
     env:
       IMAGE_NAME: ${{ github.repository }}/recovery-image
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
@@ -86,6 +100,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Log in to the Container registry
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
@@ -100,6 +116,42 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
+      - name: Get the firmware signing key
+        id: vault
+        timeout-minutes: 10
+        uses: tenstorrent/.github/actions/vault-secrets@8909e7247ace56b203bb0db68cc9dc8fd095c6bc # vault-secrets-v1.1.0
+        with:
+          role: ${{ env.VAULT_FW_SIGNING_ROLE }}
+          secrets: ${{ env.VAULT_FW_SIGNING_READ }}
+
+      # The build secret signing_key is the base64 key, as before. It goes to
+      # BuildKit as a secret file outside the build context; the file is
+      # removed after the build. A release must be signed: no key, no image.
+      - name: Write the signing key file
+        shell: bash
+        env:
+          SIGNATURE_KEY_B64: ${{ fromJSON(steps.vault.outputs.secrets).SIGNATURE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ "$(printf '%s' "$SIGNATURE_KEY_B64" | base64 -d | wc -c)" -le 42 ]; then
+            echo "::error::No valid firmware signing key. A release image must be signed."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$SIGNATURE_KEY_B64" > "$RUNNER_TEMP/signing_key.b64"
+
+      # The shared Vault action does not leave the tailnet. The build does not
+      # need it.
+      - name: Leave tailnet
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if command -v tailscale >/dev/null 2>&1; then
+            sudo tailscale logout || { echo "::warning::tailscale logout failed; taking the interface down"; sudo tailscale down || true; }
+          else
+            echo "not on the tailnet"
+          fi
+
       - name: Build and push Docker image
         id: push
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
@@ -108,11 +160,16 @@ jobs:
           build-args: |
             REPO_REV=${{ github.ref_name }}
             REPO_URL=${{ github.server_url }}/${{ github.repository }}
-          secrets: |
-            "signing_key=${{ secrets.SIGNATURE_KEY }}"
+          secret-files: |
+            signing_key=${{ runner.temp }}/signing_key.b64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Remove the signing key file
+        if: ${{ always() }}
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/signing_key.b64"
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v3
