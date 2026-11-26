@@ -186,7 +186,7 @@ static int pmbus_sensor_channel_get(const struct device *dev, enum sensor_channe
 static int pmbus_sensor_init(const struct device *dev)
 {
 	const struct pmbus_sensor_config *config = dev->config;
-	uint32_t smbus_config = SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC;
+	uint32_t smbus_config = SMBUS_MODE_CONTROLLER;
 	int ret;
 
 	if (!device_is_ready(config->smbus.bus)) {
