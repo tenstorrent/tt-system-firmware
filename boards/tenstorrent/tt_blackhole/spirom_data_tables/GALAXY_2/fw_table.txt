@@ -20,6 +20,7 @@ chip_limits {
   gddr_therm_trip_critical_temp: 110
   gddr_therm_trip_duration_min: 1
   max_tdp_limit: 200
+  board_power_limit: 450
 }
 
 feature_enable {
