@@ -41,3 +41,13 @@ config TT_PMCI_PLDM_MCTP_RESPONDER
 	  Enable Tenstorrent PLDM responder over an MCTP I3C target transport.
 	  The driver consumes PLDM messages and emits responses for supported
 	  PLDM Base and Platform commands.
+
+config TT_PMCI_PLDM_LIBPLDM_FD
+	bool "Build the libpldm firmware device responder"
+	depends on PLDM
+	select PLDM_ABI_TESTING
+	help
+	  Compile libpldm's DSP0267 firmware device responder (pldm_fd_*,
+	  src/firmware_device/fd.c) and the PLDM control helper it calls
+	  (src/control.c). The libpldm Zephyr module does not build them, and
+	  their API is still marked testing (LIBPLDM_ABI_TESTING).
