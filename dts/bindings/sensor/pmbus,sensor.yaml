@@ -10,3 +10,11 @@ include: [sensor-device.yaml, base.yaml]
 properties:
   reg:
     required: true
+
+  dmc_efuse:
+    type: boolean
+    description: |
+      The device is a DMC-managed eFuse. Its telemetry format is chosen at
+      runtime by MFR_SYS_CTRL bit 12 (REPORT_FORMAT), and in DIRECT format the
+      READ_PIN resolution comes from DEVICE_CONFIG_00 bits 1:0 (SCALE_SEL). The
+      driver reads both once at init when this is set.

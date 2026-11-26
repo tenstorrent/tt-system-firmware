@@ -217,6 +217,7 @@
 		pmbus_sensor: sensor@40 {
 			compatible = "pmbus,sensor";
 			reg = <0x40>;
+			dmc_efuse;
 			status = "okay";
 		};
 	};
