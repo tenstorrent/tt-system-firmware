@@ -1,0 +1,12 @@
+/*
+ * Copyright (c) 2026 Tenstorrent AI ULC
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	pldm_fw_update: pldm-fw-update {
+		compatible = "tenstorrent,pldm-fw-update";
+		uuid = "12345678-9abc-4def-8123-456789abcdef";
+	};
+};

@@ -652,7 +652,9 @@ int main(void)
 
 	update_fan_speed(false);
 
-	if (bist_rc == 0 && !boot_is_img_confirmed()) {
+	if (IS_ENABLED(CONFIG_DMC_TEST_SKIP_IMAGE_CONFIRM)) {
+		LOG_WRN("Test build: image not confirmed; after a test swap, MCUboot reverts it");
+	} else if (bist_rc == 0 && !boot_is_img_confirmed()) {
 		ret = boot_write_img_confirmed();
 		if (ret < 0) {
 			LOG_DBG("%s() failed: %d", "boot_write_img_confirmed", ret);

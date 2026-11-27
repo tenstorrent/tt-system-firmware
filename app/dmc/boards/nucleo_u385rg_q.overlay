@@ -36,6 +36,12 @@
 		oem-handler = <&pldm_shell>;
 	};
 
+	pldm_fw_update: pldm-fw-update {
+		compatible = "tenstorrent,pldm-fw-update";
+		/* Identifies the DMC application on this board to PLDM update agents */
+		uuid = "544081c1-6b18-460e-b9dc-4e049340b5b5";
+	};
+
 	pldm_shell: pldm_shell {
 		compatible = "tenstorrent,pldm-oem-handler";
 		status = "okay";

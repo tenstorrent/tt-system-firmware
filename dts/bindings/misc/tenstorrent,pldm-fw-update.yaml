@@ -1,0 +1,29 @@
+# Copyright (c) 2026 Tenstorrent AI ULC
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  PLDM for Firmware Update (DSP0267) firmware device identity.
+
+  An update agent offers a firmware package to a device only if the package's
+  descriptors match the ones the device reports, so the UUID must differ
+  between boards whose images are not interchangeable.
+
+compatible: "tenstorrent,pldm-fw-update"
+
+include: base.yaml
+
+properties:
+  uuid:
+    type: string
+    required: true
+    description: |
+      UUID descriptor reported in QueryDeviceIdentifiers, as
+      "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".
+
+  component-id:
+    type: int
+    default: 1
+    description: |
+      Component identifier of the application image, the one component
+      the device updates. The default 1 suits a board with no other
+      firmware component; a package names the same identifier.

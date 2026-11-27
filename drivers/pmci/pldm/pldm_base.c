@@ -16,6 +16,10 @@
 #include "pldm_platform.h"
 #endif
 
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+#include "pldm_fw_update.h"
+#endif
+
 #ifdef CONFIG_PMCI_PLDM_OEM
 #include "pldm_mctp_responder.h"
 #include <zephyr/drivers/pmci/pldm/pldm_oem_handler.h>
@@ -103,6 +107,10 @@ static int pldm_handle_get_types(const struct pldm_header_info *req_hdr,
 	response.pldm_types[PLDM_PLATFORM / 8].byte |= BIT(PLDM_PLATFORM % 8);
 #endif
 
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+	response.pldm_types[PLDM_FWUP / 8].byte |= BIT(PLDM_FWUP % 8);
+#endif
+
 #if CONFIG_PMCI_PLDM_OEM
 	if (oem_handler != NULL) {
 		response.pldm_types[PLDM_OEM_TYPE / 8].byte |= BIT(PLDM_OEM_TYPE % 8);
@@ -163,6 +171,12 @@ static int pldm_handle_get_version(const struct pldm_header_info *req_hdr,
 		}
 	}
 #endif /*CONFIG_PMCI_PLDM_PLATFORM*/
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+	else if (type == PLDM_FWUP) {
+		versions = tt_pldm_fw_update_versions;
+		versions_size = sizeof(tt_pldm_fw_update_versions);
+	}
+#endif
 #if CONFIG_PMCI_PLDM_OEM
 	else if (type == PLDM_OEM_TYPE && oem_handler != NULL) {
 		versions = pldm_oem_handler_get_versions(oem_handler, &versions_size);
@@ -218,6 +232,11 @@ static int pldm_handle_get_commands(const struct pldm_header_info *req_hdr,
 			return pldm_cc_only_response(req_hdr, PLDM_ERROR_UNSUPPORTED_PLDM_CMD,
 						     resp_msg, resp_pldm_len);
 		}
+	}
+#endif
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+	else if (type == PLDM_FWUP) {
+		commands = tt_pldm_fw_update_commands;
 	}
 #endif
 #if CONFIG_PMCI_PLDM_OEM

@@ -41,3 +41,59 @@ config TT_PMCI_PLDM_MCTP_RESPONDER
 	  Enable Tenstorrent PLDM responder over an MCTP I3C target transport.
 	  The driver consumes PLDM messages and emits responses for supported
 	  PLDM Base and Platform commands.
+
+config TT_PMCI_PLDM_MAX_MESSAGE_LEN
+	int "Largest PLDM message the responder sends or receives"
+	depends on TT_PMCI_PLDM_MCTP_RESPONDER
+	default 256 if TT_PMCI_PLDM_FW_UPDATE
+	default 64
+	range 64 2048
+	help
+	  Counted from the PLDM header. Longer messages are dropped. Each
+	  queued receive message reserves this much RAM, and so does the
+	  responder's transmit buffer.
+
+config TT_PMCI_PLDM_RX_WORKQ_STACK_SIZE
+	int "Stack size of the PLDM receive work queue"
+	depends on TT_PMCI_PLDM_MCTP_RESPONDER
+	default 2048 if TT_PMCI_PLDM_FW_UPDATE
+	default 1024
+
+config TT_PMCI_PLDM_LIBPLDM_FD
+	bool "Build the libpldm firmware device responder"
+	depends on PLDM
+	select PLDM_ABI_TESTING
+	help
+	  Compile libpldm's DSP0267 firmware device responder (pldm_fd_*,
+	  src/firmware_device/fd.c) and the PLDM control helper it calls
+	  (src/control.c). The libpldm Zephyr module does not build them, and
+	  their API is still marked testing (LIBPLDM_ABI_TESTING).
+
+config TT_PMCI_PLDM_FW_UPDATE
+	bool "PLDM firmware update (DSP0267) firmware device"
+	default y
+	depends on DT_HAS_TENSTORRENT_PLDM_FW_UPDATE_ENABLED
+	depends on PLDM && MCUBOOT_IMG_MANAGER
+	depends on $(dt_nodelabel_enabled,slot1_partition)
+	select TT_PMCI_PLDM_LIBPLDM_FD
+	select IMG_ERASE_PROGRESSIVELY
+	help
+	  Answer PLDM for Firmware Update (type 5), with the identity given by
+	  the tenstorrent,pldm-fw-update devicetree node. The update agent's
+	  image is written to the MCUboot secondary slot, and ActivateFirmware
+	  requests a test swap. The new image runs after the next reset and
+	  must confirm itself, or MCUboot reverts it. No update is accepted
+	  while the running image is unconfirmed.
+
+if TT_PMCI_PLDM_FW_UPDATE
+
+config TT_PMCI_PLDM_FW_UPDATE_TRANSFER_SIZE
+	int "Largest firmware data chunk to request"
+	default 32
+	range 32 1024
+	help
+	  libpldm never asks for less than 32 bytes. Each chunk arrives in
+	  one PLDM message, so the responder must accept messages this size
+	  plus 4 bytes of PLDM header and completion code.
+
+endif # TT_PMCI_PLDM_FW_UPDATE

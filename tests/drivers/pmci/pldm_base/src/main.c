@@ -14,6 +14,11 @@
 #include <stdint.h>
 
 #include "pldm_base.h"
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+#include <libpldm/firmware_update.h>
+
+#include "pldm_fw_update.h"
+#endif
 
 #define RESP_BUF_PAYLOAD_MAX 64U
 
@@ -238,6 +243,9 @@ ZTEST(pldm_base, test_get_types_base_success)
 	zassert_equal(rc, 0);
 	zassert_equal(types_resp.completion_code, PLDM_SUCCESS);
 	zassert_true((types_resp.pldm_types[PLDM_BASE / 8].byte & BIT(PLDM_BASE % 8)) != 0U);
+	/* Firmware update (type 5) only when it is built in */
+	zassert_equal((types_resp.pldm_types[PLDM_FWUP / 8].byte & BIT(PLDM_FWUP % 8)) != 0U,
+		      IS_ENABLED(CONFIG_TT_PMCI_PLDM_FW_UPDATE));
 }
 
 ZTEST(pldm_base, test_get_types_rejects_invalid_length)
@@ -342,5 +350,68 @@ ZTEST(pldm_base, test_get_version_base_success)
 	zassert_equal(sys_le32_to_cpu(ver_resp->next_transfer_handle), 0U);
 	zassert_equal(ver_resp->transfer_flag, PLDM_START_AND_END);
 }
+
+#ifdef CONFIG_TT_PMCI_PLDM_FW_UPDATE
+ZTEST(pldm_base, test_get_version_fw_update)
+{
+	PLDM_MSG_BUFFER(req_buf, PLDM_GET_VERSION_REQ_BYTES);
+	PLDM_MSG_BUFFER(resp_buf, RESP_BUF_PAYLOAD_MAX);
+	struct pldm_msg *req_msg = (struct pldm_msg *)req_buf;
+	struct pldm_msg *resp_msg = (struct pldm_msg *)resp_buf;
+	const uint8_t instance = 15U;
+	struct pldm_header_info req_hdr = base_req_hdr(instance, PLDM_GET_PLDM_VERSION);
+	uint8_t tid = 0x2aU;
+	const struct pldm_get_version_resp *ver_resp;
+	size_t resp_pldm_len;
+	int rc;
+
+	rc = encode_get_version_req(instance, 0U, PLDM_GET_FIRSTPART, PLDM_FWUP, req_msg);
+	zassert_equal(rc, PLDM_SUCCESS);
+
+	rc = pldm_base_build_response(&tid, NULL, &req_hdr, req_msg, PLDM_GET_VERSION_REQ_BYTES,
+				      resp_msg, &resp_pldm_len);
+	zassert_equal(rc, 0);
+	assert_response_header(resp_msg, instance, PLDM_GET_PLDM_VERSION);
+
+	ver_resp = (const struct pldm_get_version_resp *)resp_msg->payload;
+	zassert_equal(ver_resp->completion_code, PLDM_SUCCESS);
+	zassert_equal(resp_pldm_len - sizeof(struct pldm_msg_hdr),
+		      offsetof(struct pldm_get_version_resp, version_data) +
+			      sizeof(tt_pldm_fw_update_versions));
+	zassert_mem_equal(ver_resp->version_data, tt_pldm_fw_update_versions,
+			  sizeof(tt_pldm_fw_update_versions));
+}
+
+ZTEST(pldm_base, test_get_commands_fw_update)
+{
+	PLDM_MSG_BUFFER(req_buf, PLDM_GET_COMMANDS_REQ_BYTES);
+	PLDM_MSG_BUFFER(resp_buf, RESP_BUF_PAYLOAD_MAX);
+	struct pldm_msg *req_msg = (struct pldm_msg *)req_buf;
+	struct pldm_msg *resp_msg = (struct pldm_msg *)resp_buf;
+	const uint8_t instance = 16U;
+	const ver32_t version = {0};
+	struct pldm_header_info req_hdr = base_req_hdr(instance, PLDM_GET_PLDM_COMMANDS);
+	bitfield8_t commands[PLDM_MAX_CMDS_PER_TYPE / 8] = {0};
+	uint8_t tid = 0x2aU;
+	uint8_t cc;
+	size_t resp_pldm_len;
+	int rc;
+
+	rc = encode_get_commands_req(instance, PLDM_FWUP, version, req_msg);
+	zassert_equal(rc, PLDM_SUCCESS);
+
+	rc = pldm_base_build_response(&tid, NULL, &req_hdr, req_msg, PLDM_GET_COMMANDS_REQ_BYTES,
+				      resp_msg, &resp_pldm_len);
+	zassert_equal(rc, 0);
+	assert_response_header(resp_msg, instance, PLDM_GET_PLDM_COMMANDS);
+
+	rc = decode_get_commands_resp(resp_msg, resp_pldm_len - sizeof(struct pldm_msg_hdr), &cc,
+				      commands);
+	zassert_equal(rc, PLDM_SUCCESS);
+	zassert_equal(cc, PLDM_SUCCESS);
+	zassert_mem_equal(commands, tt_pldm_fw_update_commands, sizeof(commands));
+	zassert_true((commands[PLDM_REQUEST_UPDATE / 8].byte & BIT(PLDM_REQUEST_UPDATE % 8)) != 0U);
+}
+#endif /* CONFIG_TT_PMCI_PLDM_FW_UPDATE */
 
 ZTEST_SUITE(pldm_base, NULL, NULL, NULL, NULL, NULL);

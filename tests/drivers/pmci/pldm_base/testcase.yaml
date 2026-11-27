@@ -4,3 +4,13 @@ common:
 tests:
   drivers.pmci.pldm_base:
     tags: pmci pldm
+  drivers.pmci.pldm_base.fw_update:
+    tags: pmci pldm
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=fw_update.overlay
+    extra_configs:
+      - CONFIG_FLASH=y
+      - CONFIG_FLASH_MAP=y
+      - CONFIG_STREAM_FLASH=y
+      - CONFIG_IMG_MANAGER=y
+      - CONFIG_MCUBOOT_IMG_MANAGER=y
