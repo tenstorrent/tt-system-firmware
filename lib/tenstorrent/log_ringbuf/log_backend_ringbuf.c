@@ -26,33 +26,48 @@ static uint32_t log_format_current = CONFIG_LOG_BACKEND_RINGBUF_OUTPUT_DEFAULT;
 
 RING_BUF_DECLARE(ringbuf_output_buf, CONFIG_LOG_BACKEND_RINGBUF_BUFFER_SIZE);
 
+/* Zeroed whenever the ring buffer is reset, so a claim that spans a reset
+ * cannot be finished against data logged after it.
+ */
+static uint32_t claimed;
+
 /**
  * Get address of ring buffer log backend buffer.
- * internally calls `ring_buf_get_claim()` on the logging ring buffer.
+ * internally calls `ring_buf_get_ptr()` on the logging ring buffer.
  * @param data Pointer to address. Will be set to location within ring buffer
  * @param length Requested length of data to claim
  * @return Number of valid bytes claimed. May be less than requested length.
  */
 int log_backend_ringbuf_get_claim(uint8_t **data, size_t length)
 {
-	return ring_buf_get_claim(&ringbuf_output_buf, data, length);
+	uint32_t n = MIN(ring_buf_get_ptr(&ringbuf_output_buf, data, claimed), length);
+
+	claimed += n;
+	return n;
 }
 
 /**
  * Finish claiming data from the ring buffer log backend.
- * internally calls `ring_buf_get_finish()` on the logging ring buffer.
+ * internally calls `ring_buf_consume()` on the logging ring buffer.
  * @param length Number of bytes read from the buffer.
  * @return 0 on success, negative error code on failure.
  */
 int log_backend_ringbuf_finish_claim(size_t length)
 {
-	return ring_buf_get_finish(&ringbuf_output_buf, length);
+	if (length > claimed) {
+		return -EINVAL;
+	}
+
+	ring_buf_consume(&ringbuf_output_buf, length);
+	claimed = 0;
+	return 0;
 }
 
 /* This function is exported so the application can reset buffer state */
 void log_backend_ringbuf_clear(void)
 {
 	ring_buf_reset(&ringbuf_output_buf);
+	claimed = 0;
 }
 
 /* Finally, allow the application to query ring buffer size */
@@ -75,6 +90,7 @@ static int char_out(uint8_t *data, size_t length, void *ctx)
 		if (ring_buf_space_get(&ringbuf_output_buf) < length) {
 			/* Drop existing data and start logging to front of buffer */
 			ring_buf_reset(&ringbuf_output_buf);
+			claimed = 0;
 		}
 	}
 

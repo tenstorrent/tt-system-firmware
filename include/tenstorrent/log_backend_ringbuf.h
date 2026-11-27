@@ -13,7 +13,7 @@ extern "C" {
 
 /**
  * Get address of ring buffer log backend buffer.
- * internally calls `ring_buf_get_claim()` on the logging ring buffer.
+ * internally calls `ring_buf_get_ptr()` on the logging ring buffer.
  * @param data Pointer to address. Will be set to location within ring buffer
  * @param length Requested length of data to claim
  * @return Number of valid bytes claimed. May be less than requested length.
@@ -22,7 +22,7 @@ int log_backend_ringbuf_get_claim(uint8_t **data, size_t length);
 
 /**
  * Finish claiming data from the ring buffer log backend.
- * internally calls `ring_buf_get_finish()` on the logging ring buffer.
+ * internally calls `ring_buf_consume()` on the logging ring buffer.
  * @param length Number of bytes read from the buffer.
  * @return 0 on success, negative error code on failure.
  */

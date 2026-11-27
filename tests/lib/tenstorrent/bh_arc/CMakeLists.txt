@@ -23,13 +23,9 @@ set(PROTO_PY_DIR  "${CMAKE_BINARY_DIR}/zephyr/python_proto_files")
 set(BIN_DIR       "${CMAKE_BINARY_DIR}/smc/generated_board_cfg/P150B")
 set(FLASH_BIN     "${CMAKE_BINARY_DIR}/flash.bin")
 
-# Need protoc on PATH (apt: protobuf-compiler) for the .proto → *_pb2.py step.
-find_program(PROTOC_EXE protoc)
-if(NOT PROTOC_EXE)
-    message(FATAL_ERROR
-        "protoc not found. Install with 'sudo apt install protobuf-compiler'. "
-        "It is required to generate flash.bin for these tests.")
-endif()
+# nanopb's wrapper prefers the protoc bundled with grpcio-tools over the one on
+# PATH, which may be too old for proto3 optional fields.
+set(PROTOC_EXE ${ZEPHYR_NANOPB_MODULE_DIR}/generator/protoc)
 
 if(PROTOC_EXE)
     # ───── Step 1: .proto → *_pb2.py (protoc) ────────────────────────────

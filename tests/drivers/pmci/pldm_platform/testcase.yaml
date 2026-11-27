@@ -3,4 +3,6 @@ common:
     - native_sim
 tests:
   drivers.pmci.pldm_platform:
-    tags: pmci pldm
+    tags:
+      - pmci
+      - pldm

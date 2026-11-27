@@ -3,4 +3,7 @@ common:
     - native_sim
 tests:
   drivers.pmci.tt_pldm_oem:
-    tags: pmci pldm oem
+    tags:
+      - pmci
+      - pldm
+      - oem

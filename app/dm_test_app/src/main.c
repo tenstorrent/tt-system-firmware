@@ -135,7 +135,7 @@ static const uint8_t post_font_hex[16] = {
 #define GLYPH_T (SEG_D | SEG_E | SEG_F | SEG_G)
 
 static const struct spi_dt_spec max7221_spi =
-	SPI_DT_SPEC_GET(DT_NODELABEL(max7221), SPI_WORD_SET(8) | SPI_OP_MODE_MASTER);
+	SPI_DT_SPEC_GET(DT_NODELABEL(max7221), SPI_WORD_SET(8) | SPI_OP_MODE_CONTROLLER);
 
 static int max7221_write(uint8_t reg, uint8_t val)
 {

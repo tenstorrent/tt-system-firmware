@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#include <app_version.h>
+#include <zephyr/app_version.h>
 #include <tenstorrent/bist.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/gpio.h>

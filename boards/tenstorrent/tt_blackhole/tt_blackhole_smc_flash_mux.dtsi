@@ -47,7 +47,7 @@
 	 * reflashable.
 	 */
 	flash_mt25q: mt25q@0 {
-		compatible = "jedec,mspi-nor";
+		compatible = "jedec,nor";
 		TT_SPI_FLASH_COMMON
 		jedec-id = [20 bb 20]; /* Micron MT25QU512ABB */
 		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
@@ -58,7 +58,7 @@
 	};
 
 	flash_mx25u: mx25u@0 {
-		compatible = "jedec,mspi-nor";
+		compatible = "jedec,nor";
 		TT_SPI_FLASH_COMMON
 		jedec-id = [c2 25 3a]; /* Macronix MX25U51245G */
 		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
@@ -77,7 +77,7 @@
 	};
 
 	flash_gd25lf: gd25lf@0 {
-		compatible = "jedec,mspi-nor";
+		compatible = "jedec,nor";
 		TT_SPI_FLASH_COMMON
 		jedec-id = [c8 63 1a]; /* GigaDevice GD25LF512MF */
 		mspi-io-mode = "MSPI_IO_MODE_QUAD_1_4_4";
@@ -98,7 +98,7 @@
 	};
 
 	flash_w25q: w25q@0 {
-		compatible = "winbond,w25q51rw", "jedec,mspi-nor";
+		compatible = "winbond,w25q51rw", "jedec,nor";
 		TT_SPI_FLASH_COMMON
 		jedec-id = [ef 60 20]; /* Winbond W25Q51RW-Q/-N */
 		/* Improve BH Galaxy IO0 signal integrity. */
@@ -118,7 +118,7 @@
 	};
 
 	flash_single_io: flash@0 {
-		compatible = "jedec,mspi-nor";
+		compatible = "jedec,nor";
 		TT_SPI_FLASH_COMMON
 		/* No jedec-id: accepts any chip. The driver defaults for
 		 * single-lane 4-byte addressing are universal commands: 0Ch

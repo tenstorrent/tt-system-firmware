@@ -112,7 +112,7 @@
 	pinctrl-names = "default";
 
 	spi_flash: eeprom@0 {
-		compatible = "jedec,mspi-nor";
+		compatible = "jedec,nor";
 		reg = <0>;
 		status = "okay";
 		size = <DT_SIZE_M(512)>;

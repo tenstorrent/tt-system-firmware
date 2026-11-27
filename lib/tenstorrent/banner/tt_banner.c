@@ -8,7 +8,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/bindesc.h>
 #include <tenstorrent/tt_bindesc.h>
-#include <version.h>
+#include <zephyr/version.h>
 
 static int tt_boot_banner(void)
 {

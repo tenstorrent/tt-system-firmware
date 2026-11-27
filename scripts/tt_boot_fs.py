@@ -1069,16 +1069,11 @@ def _load_edt(dts_file: str, bindings_dirs: list[str]):
     Loads the Zephyr devicetree, which needs edtlib from the Zephyr tree.
     """
 
+    zephyr_base = Path(
+        os.environ.get("ZEPHYR_BASE", Path(__file__).resolve().parents[2] / "zephyr")
+    )
     sys.path.insert(
-        0,
-        str(
-            Path(__file__).parents[6]
-            / "zephyr"
-            / "scripts"
-            / "dts"
-            / "python-devicetree"
-            / "src"
-        ),
+        0, str(zephyr_base / "scripts" / "dts" / "python-devicetree" / "src")
     )
     from devicetree import edtlib
 

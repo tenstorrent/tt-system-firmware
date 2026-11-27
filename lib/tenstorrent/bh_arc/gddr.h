@@ -10,7 +10,7 @@
 #include "gddr_params.h"
 
 #include <zephyr/sys/util.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 /* Oldest telemetry table version the SMC can still consume. Tables older than
  * GDDR_TELEMETRY_TABLE_T_VERSION simply lack the newer trailing fields.

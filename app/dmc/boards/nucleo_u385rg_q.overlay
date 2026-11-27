@@ -57,7 +57,7 @@
 		tdp: tdp {
 			compatible = "tenstorrent,pldm-numeric-sensor";
 			sensor = <&smc_sensor>;
-			channel-type = <45>;
+			channel-type = <46>;
 			channel-index = <0>;
 			sensor-id = <BH_PLDM_SENSOR_ID_TDP>;
 		};
