@@ -49,8 +49,9 @@ static void set_emulated_temp_and_wait(float temp_c)
 	k_msleep(TELEM_REFRESH_MS + 20);
 }
 
-static int read_channel(const struct rtio_iodev *iodev, enum sensor_channel channel_type,
-			uint8_t channel_index, struct sensor_value *value)
+/* Read into read_buf + offset: callers do not have to align the RTIO read buffer */
+static int read_channel_at(const struct rtio_iodev *iodev, enum sensor_channel channel_type,
+			   uint8_t channel_index, size_t offset, struct sensor_value *value)
 {
 	const struct sensor_decoder_api *decoder;
 	struct sensor_chan_spec channel = {
@@ -58,7 +59,8 @@ static int read_channel(const struct rtio_iodev *iodev, enum sensor_channel chan
 		.chan_idx = channel_index,
 	};
 	struct sensor_q31_data q31 = {0};
-	uint8_t read_buf[64];
+	uint8_t storage[64 + 8] __aligned(8);
+	uint8_t *read_buf = &storage[offset];
 	size_t base_size;
 	size_t frame_size;
 	int rc;
@@ -73,7 +75,7 @@ static int read_channel(const struct rtio_iodev *iodev, enum sensor_channel chan
 		return rc;
 	}
 
-	if (base_size > sizeof(read_buf)) {
+	if (offset > 8U || base_size > sizeof(storage) - offset) {
 		return -ENOMEM;
 	}
 
@@ -91,6 +93,12 @@ static int read_channel(const struct rtio_iodev *iodev, enum sensor_channel chan
 	}
 
 	return q31_to_sensor_value(&q31, value);
+}
+
+static int read_channel(const struct rtio_iodev *iodev, enum sensor_channel channel_type,
+			uint8_t channel_index, struct sensor_value *value)
+{
+	return read_channel_at(iodev, channel_type, channel_index, 0U, value);
 }
 
 static void *bh_arc_telem_setup(void)
@@ -126,6 +134,19 @@ ZTEST(bh_arc_telem, test_temperature_read)
 	set_emulated_temp_and_wait(25.5f);
 
 	rc = read_channel(&temp_iodev, SENSOR_CHAN_DIE_TEMP, 0U, &value);
+	zassert_ok(rc, "temperature read failed: %d", rc);
+	zassert_within(sensor_value_to_micro(&value), 25500000LL, TELEM_TOLERANCE_MICRO);
+}
+
+ZTEST(bh_arc_telem, test_temperature_read_unaligned_buffer)
+{
+	struct sensor_value value;
+	int rc;
+
+	set_emulated_temp_and_wait(25.5f);
+
+	/* 2-byte aligned, as the PLDM platform's read buffer was on a Cortex-M build */
+	rc = read_channel_at(&temp_iodev, SENSOR_CHAN_DIE_TEMP, 0U, 2U, &value);
 	zassert_ok(rc, "temperature read failed: %d", rc);
 	zassert_within(sensor_value_to_micro(&value), 25500000LL, TELEM_TOLERANCE_MICRO);
 }
